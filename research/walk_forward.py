@@ -38,7 +38,7 @@ from backtest import run_backtest
 from exchange.env import REPO_ROOT
 from research.agents.base import FoldResult, Researcher
 from research.agents.deterministic import DeterministicResearcher
-from research.scoring import deflated_sharpe, fold_stability_score
+from research.scoring import deflated_sharpe, fold_stability_score, tail_aware_score
 from strategy.signals import StrategyParams
 
 log = logging.getLogger(__name__)
@@ -128,8 +128,17 @@ def best_combo_for_train(
     symbol: str,
     strategy_name: str = "snapback-v1",
     entry_tf: str = "15m",
+    scoring: str = "tail_aware",
 ) -> tuple[dict[str, Any], dict] | None:
-    """Train-side sweep. Return (combo, result) for the deflated-Sharpe winner."""
+    """Train-side sweep. Return (combo, result) for the highest-scoring combo.
+
+    `scoring`:
+      - "tail_aware" (default, post-P3.5): rank by return/max-DD, penalised
+        by multi-trial deflation. Picks combos that don't blow up on train.
+      - "deflated_sharpe" (pre-P3.5 default): rank by Sharpe minus deflation.
+        Kept for backward-compat / ablation studies. Don't use for production
+        promotion decisions — proven in P3.5 to pick OOS-fragile combos.
+    """
     num_combos = len(combos)
     best: tuple[dict[str, Any], dict] | None = None
     best_score = -1e18
@@ -137,7 +146,15 @@ def best_combo_for_train(
         r = _evaluate_combo(combo, base, train_start, train_end, symbol, strategy_name, entry_tf)
         if r is None or r["trades"] < min_trades:
             continue
-        score = deflated_sharpe(r["sharpe"], num_combos)
+        if scoring == "tail_aware":
+            score = tail_aware_score(
+                after_funding_pct=r.get("after_funding_pct") or r["backtest_return_pct"],
+                max_drawdown_pct=r["max_drawdown_pct"],
+                sharpe=r["sharpe"],
+                num_trials=num_combos,
+            )
+        else:
+            score = deflated_sharpe(r["sharpe"], num_combos)
         if score > best_score:
             best_score = score
             best = (combo, r)
@@ -261,13 +278,44 @@ def write_reports(
 
 
 def _evaluate_promotion(folds: list[FoldResult], cfg: dict) -> dict:
+    """Promotion gate with median-based AND mean-based checks.
+
+    The original 3-check gate (median Sharpe + stability + drift) accepted
+    carry-v2 in P3.4 phaseC despite its compounded equity going $100 →
+    $62.30 over 2.3 years (CAGR −18.6%). The problem: carry-style
+    strategies have many small wins and rare giant losses. Median is
+    robust to outliers; that's exactly the *wrong* property here, because
+    the rare giant losses are what determine survival.
+
+    The new gate adds three checks that explicitly look at the tail:
+      - min_mean_test_return_pct  (mean per-fold return must be positive)
+      - min_compounded_cagr_pct   (compounded equity replay must be > 0)
+      - max_single_fold_loss_pct  (worst fold loss must stay above this)
+
+    A strategy must clear ALL of the median-based checks AND ALL of the
+    mean-based checks to promote.
+    """
     if not folds:
         return {"passed": False, "reason": "no folds"}
     import statistics
     test_sharpes = [f.test_sharpe for f in folds]
     train_sharpes = [f.train_sharpe for f in folds]
+    test_returns = [f.test_after_funding_pct for f in folds]
     median_test = statistics.median(test_sharpes)
+    mean_test_return = statistics.mean(test_returns)
+    worst_fold_loss = min(test_returns)
     stability = fold_stability_score(test_sharpes)
+
+    # Compounded equity replay — what would you actually earn if you ran
+    # this serially? Each fold's return compounds onto the prior fold.
+    equity = 1.0
+    for r in test_returns:
+        equity *= (1.0 + r / 100.0)
+    compounded_return_pct = (equity - 1.0) * 100.0
+    total_days = sum(1 for _ in folds) * 30  # approx; folds use test_days~30
+    years = max(total_days / 365.25, 1e-6)
+    compounded_cagr_pct = (equity ** (1.0 / years) - 1.0) * 100.0
+
     drift_values = []
     for tr, te in zip(train_sharpes, test_sharpes):
         if abs(tr) > 1e-6:
@@ -278,11 +326,20 @@ def _evaluate_promotion(folds: list[FoldResult], cfg: dict) -> dict:
         "min_median_test_sharpe": cfg.get("min_median_test_sharpe", 0.5),
         "min_fold_stability": cfg.get("min_fold_stability", 0.5),
         "max_train_test_drift_pct": cfg.get("max_train_test_drift_pct", 50.0),
+        # NEW mean-based / tail-based checks (defaults are intentionally
+        # easy so old sweep YAMLs still produce a "passed" decision when
+        # they actually should; tighten per sweep YAML for new strategies).
+        "min_mean_test_return_pct": cfg.get("min_mean_test_return_pct", 0.0),
+        "min_compounded_cagr_pct": cfg.get("min_compounded_cagr_pct", 0.0),
+        "max_single_fold_loss_pct": cfg.get("max_single_fold_loss_pct", -100.0),
     }
     checks = {
         "median_test_sharpe": median_test >= thresholds["min_median_test_sharpe"],
         "fold_stability": stability >= thresholds["min_fold_stability"],
         "train_test_drift": median_drift <= thresholds["max_train_test_drift_pct"],
+        "mean_test_return": mean_test_return >= thresholds["min_mean_test_return_pct"],
+        "compounded_cagr": compounded_cagr_pct >= thresholds["min_compounded_cagr_pct"],
+        "worst_fold_loss": worst_fold_loss >= thresholds["max_single_fold_loss_pct"],
     }
     return {
         "passed": all(checks.values()),
@@ -291,6 +348,10 @@ def _evaluate_promotion(folds: list[FoldResult], cfg: dict) -> dict:
             "median_test_sharpe": median_test,
             "fold_stability": stability,
             "median_train_test_drift_pct": median_drift,
+            "mean_test_return_pct": mean_test_return,
+            "compounded_cagr_pct": compounded_cagr_pct,
+            "compounded_total_return_pct": compounded_return_pct,
+            "worst_fold_loss_pct": worst_fold_loss,
         },
         "checks": checks,
     }
@@ -338,21 +399,36 @@ def _render_markdown(
         "| check | measured | threshold | pass |",
         "|---|---:|---:|:---:|",
     ])
+    thr_keymap = {
+        "median_test_sharpe": "min_median_test_sharpe",
+        "fold_stability": "min_fold_stability",
+        "train_test_drift": "max_train_test_drift_pct",
+        "mean_test_return": "min_mean_test_return_pct",
+        "compounded_cagr": "min_compounded_cagr_pct",
+        "worst_fold_loss": "max_single_fold_loss_pct",
+    }
+    meas_keymap = {
+        "median_test_sharpe": "median_test_sharpe",
+        "fold_stability": "fold_stability",
+        "train_test_drift": "median_train_test_drift_pct",
+        "mean_test_return": "mean_test_return_pct",
+        "compounded_cagr": "compounded_cagr_pct",
+        "worst_fold_loss": "worst_fold_loss_pct",
+    }
     for key, ok in promo["checks"].items():
-        thr_key = {
-            "median_test_sharpe": "min_median_test_sharpe",
-            "fold_stability": "min_fold_stability",
-            "train_test_drift": "max_train_test_drift_pct",
-        }[key]
-        meas_key = {
-            "median_test_sharpe": "median_test_sharpe",
-            "fold_stability": "fold_stability",
-            "train_test_drift": "median_train_test_drift_pct",
-        }[key]
+        thr_key = thr_keymap[key]
+        meas_key = meas_keymap[key]
         out.append(
             f"| {key} | {promo['measured'][meas_key]:+.2f} | "
             f"{promo['thresholds'][thr_key]} | {'✅' if ok else '❌'} |"
         )
+    # Surface the compounded return prominently — this is the gate fix that
+    # closes the P3.4 hole where median Sharpe was positive but compounded
+    # CAGR was -18.6%.
+    cagr = promo["measured"]["compounded_cagr_pct"]
+    tot = promo["measured"]["compounded_total_return_pct"]
+    out.append("")
+    out.append(f"**Compounded equity replay:** total {tot:+.2f}%, CAGR {cagr:+.2f}%/year")
 
     if next_ranges:
         out.extend(["", "## Suggested next sweep (top-2 winners per param)", "", "```yaml"])

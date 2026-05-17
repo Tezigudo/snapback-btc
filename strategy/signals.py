@@ -78,6 +78,11 @@ class StrategyParams:
     funding_exit_threshold: float = 0.00005
     sl_pct: float = 0.01
     max_24h_change_pct: float = 100.0     # 100 = disabled (no filter)
+    # Carry-v3 NEW tail-risk gates (100 / 100 = both disabled = v2 behaviour)
+    atr_percentile_threshold: float = 100.0
+    dd_halt_pct: float = 100.0
+    # Carry-v4 NEW trend gate (0 = disabled = v3 behaviour)
+    trend_ema_period: int = 0
 
     @classmethod
     def from_yaml(cls, path: str | None = None) -> "StrategyParams":

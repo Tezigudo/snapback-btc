@@ -39,6 +39,8 @@ from strategy.regime import attach_regimes
 from strategy.prep_tf import prepare_simple_data
 from strategy.signals_carry import CarryHarvester
 from strategy.signals_carry_v2 import CarryHarvesterV2
+from strategy.signals_carry_v3 import CarryHarvesterV3
+from strategy.signals_carry_v4 import CarryHarvesterV4
 from strategy.signals_donchian import (
     DonchianBreakoutBTC,
     DonchianBreakoutBTCv2,
@@ -47,7 +49,7 @@ from strategy.signals_donchian import (
 from strategy.signals_v2 import SnapbackBTCv2
 
 # Carry + Donchian work on any single entry TF (snapback strictly needs 15m+1h).
-_TF_AGNOSTIC_STRATEGIES = {"carry-v1", "carry-v2", "donchian-v1", "donchian-v2"}
+_TF_AGNOSTIC_STRATEGIES = {"carry-v1", "carry-v2", "carry-v3", "carry-v4", "donchian-v1", "donchian-v2"}
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
 # an integer unit. Returns are scale-invariant so headline metrics are
@@ -88,6 +90,8 @@ STRATEGIES: dict[str, type[Strategy]] = {
     "donchian-v2": DonchianBreakoutBTCv2,
     "carry-v1": CarryHarvester,
     "carry-v2": CarryHarvesterV2,
+    "carry-v3": CarryHarvesterV3,
+    "carry-v4": CarryHarvesterV4,
 }
 
 # Strategies that need regime columns layered on top of the snapback prep.
@@ -301,6 +305,10 @@ def _apply_params_to_class(cls: type[Strategy], params: StrategyParams) -> None:
         "donchian_period_entry", "donchian_period_exit", "atr_trail_multiple",
         "funding_threshold", "funding_exit_threshold", "sl_pct",
         "max_24h_change_pct",
+        # carry-v3
+        "atr_percentile_threshold", "dd_halt_pct",
+        # carry-v4
+        "trend_ema_period",
     ):
         if hasattr(cls, field):
             setattr(cls, field, getattr(params, field))

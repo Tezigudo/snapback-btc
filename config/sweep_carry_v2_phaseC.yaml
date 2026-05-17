@@ -19,6 +19,12 @@ promotion:
   min_median_test_sharpe: 0.5
   min_fold_stability: 0.5
   max_train_test_drift_pct: 50
+  # Tail-risk gates added in P3.5 after discovering the prior 3-check gate
+  # accepted carry-v2 with a -18.6% CAGR. These three demand that the
+  # strategy actually make money in expectation, not just on the median.
+  min_mean_test_return_pct: 0.5      # mean per-fold return > 0.5%
+  min_compounded_cagr_pct: 5.0       # CAGR if run serially > 5%/year
+  max_single_fold_loss_pct: -15.0    # no single fold loses more than 15%
 
 # 3 × 3 × 3 × 2 = 54 combos
 grid:

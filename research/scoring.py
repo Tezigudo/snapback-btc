@@ -65,3 +65,37 @@ def fold_stability_score(test_sharpes: list[float]) -> float:
     if not finite:
         return 0.0
     return sum(1 for s in finite if s > 0) / len(finite)
+
+
+def tail_aware_score(
+    after_funding_pct: float,
+    max_drawdown_pct: float,
+    sharpe: float,
+    num_trials: int,
+    periods_per_year: int = 252,
+    dd_floor_pct: float = 5.0,
+) -> float:
+    """Calmar-like ranking score that penalises blow-up combos.
+
+    Replaces `deflated_sharpe` as the train-side combo selector. The P3.5
+    experiment showed Sharpe-ranked selection picked combos that scored
+    high on train (smooth, many small trades) but blew up OOS — because
+    Sharpe doesn't see tail risk. This metric rewards return-per-DD and
+    still applies the multi-trial deflation penalty.
+
+    Formula:
+        score = (after_funding_pct / max(|max_dd_pct|, dd_floor_pct))
+              - deflation_penalty
+
+    `dd_floor_pct` prevents division-by-tiny when a combo had no drawdown
+    on the train window (a combo with 0.1% return and 0.01% DD shouldn't
+    score 10x).
+    """
+    if not np.isfinite(after_funding_pct) or not np.isfinite(max_drawdown_pct):
+        return -1e18
+    dd = max(abs(float(max_drawdown_pct)), float(dd_floor_pct))
+    base = float(after_funding_pct) / dd
+    penalty = 0.0
+    if num_trials > 1 and np.isfinite(sharpe):
+        penalty = float(np.sqrt(2.0 * np.log(num_trials)) / np.sqrt(periods_per_year))
+    return base - penalty

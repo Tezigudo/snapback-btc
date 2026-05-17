@@ -50,8 +50,9 @@ python -c "from exchange.env import get_env; print(get_env())"   # -> 'testnet'
 - [x] P3 — walk-forward + OOS (deterministic researcher; LLM seam ready)
 - [x] P3.2 — strategy bake-off: snapback v1/v2 retired, Donchian + carry promising
 - [x] P3.3 — v2 refinements + ensemble: carry-v2 leads (2/3 promotion checks pass)
-- [x] P3.4 — leverage + TF sweeps: **carry-v2 PROMOTES at 15m, 3x** (leverage proved cosmetic)
-- [ ] P4 — live testnet (7-day soak with carry-v2 at 3x)
+- [x] P3.4 — leverage + TF sweeps (leverage set to 20x permanent)
+- [x] P3.5 — **promotion gate was broken**; rebuilt with tail-risk checks; carry-v4 + trend gate + tail-aware selection lifted CAGR -18.6% → +4.95% (still at boundary, NOT P4-ready)
+- [ ] P4 — blocked on OOS validation of carry-v4 on 2025 data
 - [ ] P5 — monitor + viz
 - [ ] P6 — mainnet gate
 
@@ -72,8 +73,26 @@ All ran on the same 2022-06 → 2024-12 walk-forward with fees + slippage + fund
 
 P3.4 leverage ablation: phase C pass at 20x and at 3x produced *identical*
 numbers (Sharpe +0.70, stability 60%, drift +40%). The pass came from
-`test_days=30 + min_trades=6`, NOT from leverage. Carry-v2 graduates at
-the safe 3x. Live bot needs no `RISK_REVIEW` override.
+`test_days=30 + min_trades=6`, NOT from leverage.
+
+**P3.5 correction:** the "PASS" was a broken-gate artefact. Replaying
+the 28 fold returns serially produces $100 → $62.30 over 2.3 years —
+**CAGR −18.6%/year**. The 3-check median-based gate didn't see three
+tail folds (−47%, −25%, −21%) wipe out 25 small winners. Rebuilt the
+gate with strict mean/CAGR/max-loss checks (`min_compounded_cagr_pct`,
+`min_mean_test_return_pct`, `max_single_fold_loss_pct`). Architectural
+fixes — trend EMA gate (carry-v4), tail-aware combo selection
+(`research/scoring.py: tail_aware_score`) — lifted CAGR to **+4.95%**
+on the same fold set, but with **negative median Sharpe (−0.05)** and
+**48% fold-positive rate**, this is at the floor of noise, not a real
+edge. Live deployment is blocked on **out-of-sample validation against
+2025 data** before P4 testnet.
+
+**Per-user-decision:** leverage permanently set to 20x in
+`config/params.yaml` and `risk.py: MAX_LEVERAGE`. Ablation showed
+leverage doesn't change carry-v2/v4 returns (cap doesn't bind for the
+winning combos) but live tail-risk at 20x is real (flash crash past SL
+= liquidation).
 
 ## Research
 

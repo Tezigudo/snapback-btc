@@ -1,0 +1,36 @@
+# Carry v3 walk-forward — same baseline as v2 phaseC + sweep over the two
+# new tail-risk gates (atr_percentile_threshold + dd_halt_pct).
+#
+# Strict gate (matches sweep_carry_v2_phaseC.yaml). v3 needs to PASS all
+# six checks to count, not just three.
+
+train_days: 60
+test_days: 30
+step_days: 30
+min_trades_train: 6
+
+promotion:
+  min_median_test_sharpe: 0.5
+  min_fold_stability: 0.5
+  max_train_test_drift_pct: 50
+  min_mean_test_return_pct: 0.5
+  min_compounded_cagr_pct: 5.0
+  max_single_fold_loss_pct: -15.0
+
+# Base params (carried) + gate sweeps.
+# 3 (funding_threshold) × 2 (sl_pct) × 3 (max_24h) × 3 (atr_pct) × 3 (dd_halt) = 162 combos
+# That's a lot. Trim to 2/2/2/3/3 = 72 combos for speed.
+grid:
+  funding_threshold:        [0.0001, 0.0002]
+  sl_pct:                   [0.010, 0.015]
+  max_24h_change_pct:       [100.0, 3.0]
+  atr_percentile_threshold: [100.0, 80.0, 60.0]   # 100 = off; 60 = very strict
+  dd_halt_pct:              [100.0, 10.0, 5.0]    # 100 = off; 5 = very strict
+  leverage:                 [20]
+  # carried (ignored by carry):
+  rsi_period:         [2]
+  rsi_long_threshold: [10]
+  volume_multiple:    [1.0]
+  atr_tp_multiple:    [1.5]
+  atr_sl_multiple:    [1.0]
+  time_stop_bars:     [48]

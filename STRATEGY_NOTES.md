@@ -266,27 +266,143 @@ remember before any P4 testnet or P6 mainnet decision:
    refuses to deploy any strategy at >3x without `RISK_REVIEW=1` and a
    manual edit. Carry-v2 needs no override; the strategy works at 3x.
 
-## Next experiments (in honest priority order, post-P3.4)
+## P3.5 — the promotion gate was broken; carry-v2 was a money-loser
 
-1. **Revert backtest leverage default to 3x.** The 20x default we set
-   for the P3.4 leverage sweep is now misleading; phase C ablation
-   proves carry-v2 doesn't need it. Will revert
-   `config/params.yaml: leverage: 20 → 3` and class attrs before P4.
-2. **Proceed to P4 testnet with carry-v2** using the best phaseC
-   gridpoint (funding_threshold=0.0001, sl_pct=0.015, max_24h=100.0,
-   leverage=3). 7-day soak on Binance testnet. Compare live fill
-   results to the backtest.
-3. **Donchian v2 at 4h stays in the zoo** as second-tier. Not P4
-   material until drift closes. Worth one more pass with regime gating
-   (skip entries when ATR percentile > 80) — a half-day experiment.
-4. **Deflated-Sharpe needs a leverage penalty.** The donchian TF sweeps
-   showed train-side selection drifting toward 25x in losing OOS
-   regimes — classic over-fit-on-amplified-noise. Add a leverage term
-   to `research/scoring.py: deflated_sharpe()` before the next sweep
-   that includes leverage as a swept knob.
-5. **Defer indefinitely:** ensemble work, multi-symbol expansion. Both
-   blocked on demonstrating live edge with a single strategy first.
+Discovered after a user request to summarise actual PnL per trade. The
+**P3.4 "PROMOTES ✅" call was wrong**: replaying the 28 fold returns
+serially produces $100 → $62.30 over 2.3 years. **CAGR −18.6% per year.**
+Three tail folds (−47%, −25%, −21%) wiped out 25+ small winning folds.
+The 3-check gate (median Sharpe + stability + drift) never saw this
+because median statistics are robust to outliers — exactly the wrong
+property for carry strategies.
 
-Snapback (v1/v2): **dead-end**, kept as baseline. Donchian (v1/v2):
-**zoo resident**, best at 4h but never promotes. Ensemble: **falsified**.
-Carry-v2 at 15m, 3x: **lead candidate for P4 testnet**.
+### Fix 1 — strict promotion gate (research/walk_forward.py)
+
+Added 3 tail-aware checks alongside the 3 median-based ones:
+  - `min_mean_test_return_pct`: mean per-fold return must be > threshold
+  - `min_compounded_cagr_pct`: compounded equity replay must beat threshold
+  - `max_single_fold_loss_pct`: worst fold loss capped
+
+Reran carry-v2 phaseC against the new gate: correctly REJECTED.
+Compounded CAGR −18.60% renders red; the writeup also surfaces a
+"Compounded equity replay" line in every walk-forward MD so this can
+never hide again.
+
+### Fix 2 — carry-v3 with two reactive gates
+
+  - `atr_percentile_threshold`: skip entries when current realised vol
+    is above Nth percentile over a 30-day lookback
+  - `dd_halt_pct`: skip entries when current equity is more than X%
+    below a 20-day trailing high (drawdown circuit breaker)
+
+**Result:** CAGR went −18.6% → −17.4%. Marginal. The gates were
+reactive — they trigger after damage is done. Fold 27 (Trump rally,
+sustained positive funding) still lost the same money because by the
+time vol normalised and DD halt fired, the strategy had already shorted
+into a 35% rally 38 times.
+
+### Fix 3 — carry-v4 with trend gate
+
+The fold 27 pattern (carrying against a sustained trend) was the
+dominant failure mode. Added a trend EMA filter:
+  - Refuse to SHORT when close > trend_ema (BTC in uptrend)
+  - Refuse to LONG when close < trend_ema (BTC in downtrend)
+
+**Smoke test on fold 27:** trade count 25 → 6, loss −33% → −7%. Worked.
+**Walk-forward result:** CAGR −17.4% → **+2.30%**. Compounded equity
+$62 → $105. Mean return per fold turned positive (+0.69%).
+
+But: 16/28 folds picked `trend_ema_period=0` (gate OFF) because the
+train-side combo selection was still using deflated Sharpe, which
+doesn't see tail risk. So the sweep often picked the "no trend gate"
+combo despite the gate being available.
+
+### Fix 4 — tail-aware combo selection (research/scoring.py)
+
+Replaced `deflated_sharpe(train_sharpe)` with `tail_aware_score`:
+  `score = after_funding_pct / max(|max_dd|, 5) - deflation_penalty`
+
+Now the sweep picks combos with high return-per-drawdown on the train
+window. **Result:** CAGR **+2.30% → +4.95%**, mean return +0.69% → +0.97%,
+worst fold loss −17.30% → −15.73%.
+
+### Final carry-v4 (tail-aware) — honest endpoint
+
+| Check | Measured | Threshold | Pass |
+|---|---:|---:|:---:|
+| median_test_sharpe | −0.05 | +0.5 | ❌ |
+| fold_stability | 48% | 50% | ❌ |
+| train_test_drift | +107% | 50% | ❌ |
+| mean_test_return | +0.97% | +0.5% | ✅ |
+| compounded_cagr | **+4.95%** | **+5.0%** | ❌ (by 0.05%) |
+| worst_fold_loss | −15.73% | −15.0% | ❌ (by 0.73%) |
+
+**This is not "almost passing." This is the floor of noise.** All three
+thresholds were chosen without principled justification, and CAGR
++4.95% vs target +5.0% on the same data the sweep selected against is
+within the curve-fit envelope. If we tuned `trend_ema_period` finer we'd
+hit +5.01% and call it a pass — and that would not survive live.
+
+The two signals that make this clearly NOT a real edge:
+  - **Median Sharpe is NEGATIVE** while mean is positive → fat-right-tail
+    distribution. Few jackpot folds carry the mean; most folds are
+    flat-to-slightly-negative. Fold 24's +36% (9 trades) is a regime
+    jackpot, not a 30-day-strategy outcome.
+  - **48% fold stability** is worse than coin flip. The strategy has no
+    per-fold edge; the positive aggregate is luck of the window.
+
+### Honest conclusion
+
+After 4 strategy versions and 2 selection-criterion variants on the same
+2022-06 → 2024-12 fold set, the best we can do is +4.95% CAGR with
+negative median Sharpe and 48% fold-positive rate. **Carry-v4 does NOT
+pass promotion** under any defensible threshold choice. The
+architectural fixes are real (strict gate + trend gate + tail-aware
+selection all moved CAGR up by ~22 percentage points cumulatively), but
+the strategy itself is at best marginally profitable in expectation.
+Live deployment at 20x with real slippage would likely turn slightly
+negative.
+
+## Next experiments (in honest priority order, post-P3.5)
+
+The right move is NOT another sweep iteration on this data. We've
+exhausted what train-window selection on the 2022-06 → 2024-12 fold
+set can teach us. Either of these is a cleaner "real edge?" test than
++0.05% CAGR tuning:
+
+1. **Out-of-sample validation on 2025-01 → 2025-05 (untouched data).**
+   Pull klines + funding for the 5 months after the walk-forward window.
+   Run carry-v4 with the best train-window combos as fixed params. If
+   compounded equity stays positive on truly unseen data, the edge is
+   real. If it goes negative, we've been curve-fitting and carry on BTC
+   perp is genuinely dead. ~1 hour of work.
+
+2. **Stepped-start sensitivity:** rerun the same walk-forward starting
+   in Jan, Feb, Mar, Apr 2022. If results swing wildly across start
+   dates, the fold boundaries are doing the work and the "edge" is an
+   artifact. ~3 hours.
+
+3. **If both (1) and (2) confirm marginal edge:** then proceed to
+   testnet P4 with carry-v4 + best combo, knowing the expected return
+   is borderline. The testnet itself becomes the next validation step.
+
+4. **If (1) shows the edge is gone OOS:** declare carry on BTC perp
+   dead and pivot. Possible next directions:
+     - Multi-asset (ETH, SOL) — funding dynamics differ; maybe carry
+       works elsewhere.
+     - Cross-exchange basis trade — true low-risk arb, not directional.
+     - Stop trying to make BTC perp work for a deterministic carry
+       strategy.
+
+**Do not run another carry sweep on the existing data.** That path is
+exhausted. The next move is out-of-sample or pivot.
+
+### Status of the strategy zoo
+
+| Strategy | Status |
+|---|---|
+| snapback-v1 / v2 | dead — kept as cautionary baseline |
+| donchian-v1 / v2 (any TF) | doesn't pass; 4h is best but drift > 50% |
+| carry-v1 / v2 / v3 | dead — superseded by v4 |
+| **carry-v4 + tail-aware** | **boundary; needs OOS validation before P4** |
+| ensemble(d+c) | falsified — equal-weight doesn't help |
