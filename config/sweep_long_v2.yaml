@@ -1,0 +1,21 @@
+# v2 sweep (regime-gated). Same 12-combo grid as sweep_long.yaml so we
+# can compare v1 vs v2 apples-to-apples on the same window.
+# min_trades_train lowered to 4 because v2 is intentionally selective.
+
+train_days: 60
+test_days: 20
+step_days: 30
+min_trades_train: 4
+
+promotion:
+  min_median_test_sharpe: 0.5
+  min_fold_stability: 0.5
+  max_train_test_drift_pct: 50
+
+grid:
+  rsi_period:           [2]
+  rsi_long_threshold:   [10, 20]
+  volume_multiple:      [1.0, 1.5]
+  atr_tp_multiple:      [1.0, 1.5, 2.0]
+  atr_sl_multiple:      [1.0]
+  time_stop_bars:       [48]

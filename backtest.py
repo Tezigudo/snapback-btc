@@ -35,6 +35,8 @@ from strategy.signals import (
     StrategyParams,
     prepare_strategy_data,
 )
+from strategy.regime import attach_regimes
+from strategy.signals_v2 import SnapbackBTCv2
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
 # an integer unit. Returns are scale-invariant so headline metrics are
@@ -70,6 +72,7 @@ class BuyAndHold(Strategy):
 STRATEGIES: dict[str, type[Strategy]] = {
     "buy-and-hold": BuyAndHold,
     "snapback-v1": SnapbackBTC,
+    "snapback-v2": SnapbackBTCv2,
 }
 
 
@@ -154,6 +157,7 @@ def _prepare_snapback_data(
     start: datetime,
     end: datetime,
     params: StrategyParams,
+    with_regimes: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Pull 15m + 1h + funding; build indicator-augmented 15m DataFrame.
 
@@ -174,6 +178,14 @@ def _prepare_snapback_data(
         raise RuntimeError("Missing 15m or 1h klines for the requested window.")
 
     prepared = prepare_strategy_data(k15, k1h, fund, params)
+    # v2 needs regime columns; v1 doesn't and we skip the work.
+    if with_regimes:
+        prepared = attach_regimes(
+            prepared,
+            funding=prepared["Funding"],
+            ema_1h=prepared["EMA_1h"],
+            atr_1h=prepared["ATR_1h"],
+        )
     # prepare_strategy_data strips tz; slice bounds + funding must match.
     naive_start = start.replace(tzinfo=None) if start.tzinfo else start
     naive_end = end.replace(tzinfo=None) if end.tzinfo else end
@@ -237,8 +249,10 @@ def run_backtest(
     else:
         params = params_override or StrategyParams.from_yaml()
         if timeframe != "15m":
-            log.warning("snapback-v1 expects 15m entry timeframe; using 15m regardless.")
-        data, funding_in_span = _prepare_snapback_data(symbol, start, end, params)
+            log.warning("snapback-v1/v2 expect 15m entry timeframe; using 15m regardless.")
+        data, funding_in_span = _prepare_snapback_data(
+            symbol, start, end, params, with_regimes=(strategy_name == "snapback-v2"),
+        )
         _apply_params_to_class(STRATEGIES[strategy_name], params)
 
     eff_leverage = leverage or (params.leverage if params else 1)

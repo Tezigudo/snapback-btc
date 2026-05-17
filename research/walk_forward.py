@@ -104,12 +104,13 @@ def _evaluate_combo(
     start: datetime,
     end: datetime,
     symbol: str,
+    strategy_name: str = "snapback-v1",
 ) -> dict | None:
     """Run a single backtest. Returns the result dict, or None on failure."""
     try:
         params = make_params(combo, base)
         return run_backtest(
-            "snapback-v1", symbol, "15m", start, end,
+            strategy_name, symbol, "15m", start, end,
             quiet=True, params_override=params,
         )
     except Exception as e:
@@ -124,13 +125,14 @@ def best_combo_for_train(
     train_end: datetime,
     min_trades: int,
     symbol: str,
+    strategy_name: str = "snapback-v1",
 ) -> tuple[dict[str, Any], dict] | None:
     """Train-side sweep. Return (combo, result) for the deflated-Sharpe winner."""
     num_combos = len(combos)
     best: tuple[dict[str, Any], dict] | None = None
     best_score = -1e18
     for combo in combos:
-        r = _evaluate_combo(combo, base, train_start, train_end, symbol)
+        r = _evaluate_combo(combo, base, train_start, train_end, symbol, strategy_name)
         if r is None or r["trades"] < min_trades:
             continue
         score = deflated_sharpe(r["sharpe"], num_combos)
@@ -152,6 +154,7 @@ def run_walk_forward(
     min_trades_train: int = 10,
     symbol: str = "BTC/USDT:USDT",
     base: StrategyParams | None = None,
+    strategy_name: str = "snapback-v1",
 ) -> list[FoldResult]:
     """Run all folds; return the FoldResult list (may be empty)."""
     base = base or StrategyParams.from_yaml()
@@ -171,7 +174,7 @@ def run_walk_forward(
             "fold %d: train [%s → %s], test [%s → %s]",
             i, ts.date(), te.date(), vs.date(), ve.date(),
         )
-        winner = best_combo_for_train(combos, base, ts, te, min_trades_train, symbol)
+        winner = best_combo_for_train(combos, base, ts, te, min_trades_train, symbol, strategy_name)
         if winner is None:
             log.warning(
                 "fold %d: no combo met min_trades_train=%d on train window; skipping",
@@ -179,7 +182,7 @@ def run_walk_forward(
             )
             continue
         combo, train_r = winner
-        test_r = _evaluate_combo(combo, base, vs, ve, symbol)
+        test_r = _evaluate_combo(combo, base, vs, ve, symbol, strategy_name)
         if test_r is None:
             log.warning("fold %d: OOS evaluation failed; skipping", i)
             continue
@@ -397,6 +400,9 @@ def _main() -> int:
     p.add_argument("--test-days", type=int)
     p.add_argument("--step-days", type=int)
     p.add_argument("--symbol", default="BTC/USDT:USDT")
+    p.add_argument("--strategy", default="snapback-v1",
+                   choices=["snapback-v1", "snapback-v2"],
+                   help="which strategy class to evaluate")
     args = p.parse_args()
 
     sweep_cfg = yaml.safe_load(Path(args.sweep).read_text())
@@ -412,6 +418,7 @@ def _main() -> int:
     folds = run_walk_forward(
         start, end, train_days, test_days, step_days, grid,
         min_trades_train=min_trades, symbol=args.symbol,
+        strategy_name=args.strategy,
     )
     paths = write_reports(folds, grid, sweep_cfg)
     print()

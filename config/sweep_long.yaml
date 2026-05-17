@@ -1,0 +1,23 @@
+# Tight 12-combo sweep for long-history walk-forward (2022-2024 cross-regime).
+# RSI(14) already shown to lose to RSI(2) in P2.1 — dropped. Time-stop pinned
+# to 48. atr_sl pinned to 1.0 (the consistent winner). Focus on the live
+# free params: RSI threshold, volume filter, take-profit multiple.
+
+train_days: 60
+test_days: 20
+step_days: 30
+min_trades_train: 8
+
+promotion:
+  min_median_test_sharpe: 0.5
+  min_fold_stability: 0.5
+  max_train_test_drift_pct: 50
+
+# 2 * 2 * 3 = 12 combos
+grid:
+  rsi_period:           [2]
+  rsi_long_threshold:   [10, 20]
+  volume_multiple:      [1.0, 1.5]
+  atr_tp_multiple:      [1.0, 1.5, 2.0]
+  atr_sl_multiple:      [1.0]
+  time_stop_bars:       [48]
