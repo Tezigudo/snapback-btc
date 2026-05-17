@@ -72,10 +72,12 @@ class StrategyParams:
     # Donchian-specific (ignored by snapback strategies)
     donchian_period_entry: int = 20
     donchian_period_exit: int = 10
+    atr_trail_multiple: float = 0.0       # 0 = no trailing
     # Carry-specific (ignored by other strategies)
     funding_threshold: float = 0.0002
     funding_exit_threshold: float = 0.00005
     sl_pct: float = 0.01
+    max_24h_change_pct: float = 100.0     # 100 = disabled (no filter)
 
     @classmethod
     def from_yaml(cls, path: str | None = None) -> "StrategyParams":

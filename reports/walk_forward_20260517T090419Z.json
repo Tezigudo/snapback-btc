@@ -1,0 +1,833 @@
+{
+  "generated_at": "2026-05-17T09:04:19.507186+00:00",
+  "sweep_config": {
+    "train_days": 60,
+    "test_days": 20,
+    "step_days": 30,
+    "min_trades_train": 3,
+    "promotion": {
+      "min_median_test_sharpe": 0.5,
+      "min_fold_stability": 0.5,
+      "max_train_test_drift_pct": 50
+    },
+    "grid": {
+      "funding_threshold": [
+        0.0001,
+        0.0002,
+        0.0005
+      ],
+      "sl_pct": [
+        0.005,
+        0.01,
+        0.015
+      ],
+      "max_24h_change_pct": [
+        100.0,
+        5.0,
+        3.0
+      ],
+      "rsi_period": [
+        2
+      ],
+      "rsi_long_threshold": [
+        10
+      ],
+      "volume_multiple": [
+        1.0
+      ],
+      "atr_tp_multiple": [
+        1.5
+      ],
+      "atr_sl_multiple": [
+        1.0
+      ],
+      "time_stop_bars": [
+        48
+      ]
+    }
+  },
+  "grid": {
+    "funding_threshold": [
+      0.0001,
+      0.0002,
+      0.0005
+    ],
+    "sl_pct": [
+      0.005,
+      0.01,
+      0.015
+    ],
+    "max_24h_change_pct": [
+      100.0,
+      5.0,
+      3.0
+    ],
+    "rsi_period": [
+      2
+    ],
+    "rsi_long_threshold": [
+      10
+    ],
+    "volume_multiple": [
+      1.0
+    ],
+    "atr_tp_multiple": [
+      1.5
+    ],
+    "atr_sl_multiple": [
+      1.0
+    ],
+    "time_stop_bars": [
+      48
+    ]
+  },
+  "folds": [
+    {
+      "fold_index": 0,
+      "train_start": "2022-06-01T00:00:00+00:00",
+      "train_end": "2022-07-31T00:00:00+00:00",
+      "test_start": "2022-07-31T00:00:00+00:00",
+      "test_end": "2022-08-20T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -2.8618050401595316,
+      "test_sharpe": 2.170846704105094,
+      "test_return_pct": 10.973581062825025,
+      "test_after_funding_pct": 11.13106913212194,
+      "trades": 9,
+      "max_drawdown_pct": -5.3068464502228245
+    },
+    {
+      "fold_index": 1,
+      "train_start": "2022-07-01T00:00:00+00:00",
+      "train_end": "2022-08-30T00:00:00+00:00",
+      "test_start": "2022-08-30T00:00:00+00:00",
+      "test_end": "2022-09-19T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 5.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.01,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -0.4292965162717085,
+      "test_sharpe": -0.4443206356502192,
+      "test_return_pct": -2.3208435063000534,
+      "test_after_funding_pct": -2.2087130042267478,
+      "trades": 13,
+      "max_drawdown_pct": -24.08137214868319
+    },
+    {
+      "fold_index": 2,
+      "train_start": "2022-07-31T00:00:00+00:00",
+      "train_end": "2022-09-29T00:00:00+00:00",
+      "test_start": "2022-09-29T00:00:00+00:00",
+      "test_end": "2022-10-19T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 5.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.7366554378725076,
+      "test_sharpe": 0.8009705149682902,
+      "test_return_pct": 2.0845428555499876,
+      "test_after_funding_pct": 2.42188700447441,
+      "trades": 12,
+      "max_drawdown_pct": -10.262673721219306
+    },
+    {
+      "fold_index": 3,
+      "train_start": "2022-08-30T00:00:00+00:00",
+      "train_end": "2022-10-29T00:00:00+00:00",
+      "test_start": "2022-10-29T00:00:00+00:00",
+      "test_end": "2022-11-18T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 5.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.4023999838098324,
+      "test_sharpe": 1.087760206187057,
+      "test_return_pct": 5.502107301950012,
+      "test_after_funding_pct": 5.669834582870226,
+      "trades": 6,
+      "max_drawdown_pct": -12.45536983975476
+    },
+    {
+      "fold_index": 4,
+      "train_start": "2022-09-29T00:00:00+00:00",
+      "train_end": "2022-11-28T00:00:00+00:00",
+      "test_start": "2022-11-28T00:00:00+00:00",
+      "test_end": "2022-12-18T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 3.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.0155225751949164,
+      "test_sharpe": 0.5390307254110489,
+      "test_return_pct": 0.5450166195000056,
+      "test_after_funding_pct": 0.6317324141404068,
+      "trades": 5,
+      "max_drawdown_pct": -5.681203322762118
+    },
+    {
+      "fold_index": 5,
+      "train_start": "2022-10-29T00:00:00+00:00",
+      "train_end": "2022-12-28T00:00:00+00:00",
+      "test_start": "2022-12-28T00:00:00+00:00",
+      "test_end": "2023-01-17T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 3.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.62381661416796,
+      "test_sharpe": -11.33937224473289,
+      "test_return_pct": -5.65097550317503,
+      "test_after_funding_pct": -5.4089678282399305,
+      "trades": 6,
+      "max_drawdown_pct": -8.167495216333553
+    },
+    {
+      "fold_index": 6,
+      "train_start": "2022-11-28T00:00:00+00:00",
+      "train_end": "2023-01-27T00:00:00+00:00",
+      "test_start": "2023-01-27T00:00:00+00:00",
+      "test_end": "2023-02-16T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0002,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.005,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -2.9029914709102336,
+      "test_sharpe": NaN,
+      "test_return_pct": 0.0,
+      "test_after_funding_pct": 0.0,
+      "trades": 0,
+      "max_drawdown_pct": 0.0
+    },
+    {
+      "fold_index": 7,
+      "train_start": "2022-12-28T00:00:00+00:00",
+      "train_end": "2023-02-26T00:00:00+00:00",
+      "test_start": "2023-02-26T00:00:00+00:00",
+      "test_end": "2023-03-18T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0002,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.01,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -1.3452761978488943,
+      "test_sharpe": 1.4370726426800307,
+      "test_return_pct": 6.23738422999999,
+      "test_after_funding_pct": 6.406996502645201,
+      "trades": 1,
+      "max_drawdown_pct": -6.5019118680336385
+    },
+    {
+      "fold_index": 8,
+      "train_start": "2023-01-27T00:00:00+00:00",
+      "train_end": "2023-03-28T00:00:00+00:00",
+      "test_start": "2023-03-28T00:00:00+00:00",
+      "test_end": "2023-04-17T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 5.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.40100993775532,
+      "test_sharpe": -11.758372781006747,
+      "test_return_pct": -7.453576913149981,
+      "test_after_funding_pct": -7.3212528883219825,
+      "trades": 10,
+      "max_drawdown_pct": -10.556805193149998
+    },
+    {
+      "fold_index": 9,
+      "train_start": "2023-02-26T00:00:00+00:00",
+      "train_end": "2023-04-27T00:00:00+00:00",
+      "test_start": "2023-04-27T00:00:00+00:00",
+      "test_end": "2023-05-17T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 3.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.172948994587359,
+      "test_sharpe": 3.98388729631609,
+      "test_return_pct": 4.581465189999994,
+      "test_after_funding_pct": 4.651296764306112,
+      "trades": 3,
+      "max_drawdown_pct": -1.878798057789799
+    },
+    {
+      "fold_index": 10,
+      "train_start": "2023-03-28T00:00:00+00:00",
+      "train_end": "2023-05-27T00:00:00+00:00",
+      "test_start": "2023-05-27T00:00:00+00:00",
+      "test_end": "2023-06-16T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 3.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.4724422197672093,
+      "test_sharpe": 0.7229745743142113,
+      "test_return_pct": 1.855726849749987,
+      "test_after_funding_pct": 1.9904792221262957,
+      "trades": 9,
+      "max_drawdown_pct": -4.837504606156129
+    },
+    {
+      "fold_index": 11,
+      "train_start": "2023-04-27T00:00:00+00:00",
+      "train_end": "2023-06-26T00:00:00+00:00",
+      "test_start": "2023-06-26T00:00:00+00:00",
+      "test_end": "2023-07-16T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 5.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.3912424073931327,
+      "test_sharpe": 1.759873086488095,
+      "test_return_pct": 5.033605299674999,
+      "test_after_funding_pct": 5.396843700478593,
+      "trades": 5,
+      "max_drawdown_pct": -5.742514908614282
+    },
+    {
+      "fold_index": 12,
+      "train_start": "2023-05-27T00:00:00+00:00",
+      "train_end": "2023-07-26T00:00:00+00:00",
+      "test_start": "2023-07-26T00:00:00+00:00",
+      "test_end": "2023-08-15T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 5.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.382726784518468,
+      "test_sharpe": -3.192880964254332,
+      "test_return_pct": -4.836636355550005,
+      "test_after_funding_pct": -4.4394310304541,
+      "trades": 8,
+      "max_drawdown_pct": -6.742745215052559
+    },
+    {
+      "fold_index": 13,
+      "train_start": "2023-06-26T00:00:00+00:00",
+      "train_end": "2023-08-25T00:00:00+00:00",
+      "test_start": "2023-08-25T00:00:00+00:00",
+      "test_end": "2023-09-14T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.4195383699046957,
+      "test_sharpe": 1.7822371156968835,
+      "test_return_pct": 0.12931103999998886,
+      "test_after_funding_pct": 0.12284146799999007,
+      "trades": 1,
+      "max_drawdown_pct": -2.0604469994232266
+    },
+    {
+      "fold_index": 14,
+      "train_start": "2023-07-26T00:00:00+00:00",
+      "train_end": "2023-09-24T00:00:00+00:00",
+      "test_start": "2023-09-24T00:00:00+00:00",
+      "test_end": "2023-10-14T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.6717757743748827,
+      "test_sharpe": 4.007209255094788,
+      "test_return_pct": 0.16660146999999415,
+      "test_after_funding_pct": 0.1700918792188144,
+      "trades": 1,
+      "max_drawdown_pct": -0.7907666487496079
+    },
+    {
+      "fold_index": 15,
+      "train_start": "2023-08-25T00:00:00+00:00",
+      "train_end": "2023-10-24T00:00:00+00:00",
+      "test_start": "2023-10-24T00:00:00+00:00",
+      "test_end": "2023-11-13T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.197520569200324,
+      "test_sharpe": -25.761447931760664,
+      "test_return_pct": -14.170809628175048,
+      "test_after_funding_pct": -13.380257326939748,
+      "trades": 9,
+      "max_drawdown_pct": -16.54375550817505
+    },
+    {
+      "fold_index": 16,
+      "train_start": "2023-09-24T00:00:00+00:00",
+      "train_end": "2023-11-23T00:00:00+00:00",
+      "test_start": "2023-11-23T00:00:00+00:00",
+      "test_end": "2023-12-13T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0002,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.005,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -0.9014481326093887,
+      "test_sharpe": 0.9561881322795627,
+      "test_return_pct": 9.490697619475005,
+      "test_after_funding_pct": 10.047812746652607,
+      "trades": 6,
+      "max_drawdown_pct": -8.444302168639172
+    },
+    {
+      "fold_index": 17,
+      "train_start": "2023-10-24T00:00:00+00:00",
+      "train_end": "2023-12-23T00:00:00+00:00",
+      "test_start": "2023-12-23T00:00:00+00:00",
+      "test_end": "2024-01-12T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0002,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.005,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -1.0938061909217578,
+      "test_sharpe": -20.373803500995916,
+      "test_return_pct": -18.52122220179996,
+      "test_after_funding_pct": -15.44083340656427,
+      "trades": 12,
+      "max_drawdown_pct": -27.762600538905712
+    },
+    {
+      "fold_index": 18,
+      "train_start": "2023-11-23T00:00:00+00:00",
+      "train_end": "2024-01-22T00:00:00+00:00",
+      "test_start": "2024-01-22T00:00:00+00:00",
+      "test_end": "2024-02-11T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0002,
+        "max_24h_change_pct": 5.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -1.5499262133149474,
+      "test_sharpe": NaN,
+      "test_return_pct": 0.0,
+      "test_after_funding_pct": 0.0,
+      "trades": 0,
+      "max_drawdown_pct": 0.0
+    },
+    {
+      "fold_index": 19,
+      "train_start": "2023-12-23T00:00:00+00:00",
+      "train_end": "2024-02-21T00:00:00+00:00",
+      "test_start": "2024-02-21T00:00:00+00:00",
+      "test_end": "2024-03-12T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0002,
+        "max_24h_change_pct": 3.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -1.957929207838843,
+      "test_sharpe": -142.74886452705022,
+      "test_return_pct": -22.10855001859999,
+      "test_after_funding_pct": -20.446068415832496,
+      "trades": 12,
+      "max_drawdown_pct": -23.386014297689805
+    },
+    {
+      "fold_index": 20,
+      "train_start": "2024-01-22T00:00:00+00:00",
+      "train_end": "2024-03-22T00:00:00+00:00",
+      "test_start": "2024-03-22T00:00:00+00:00",
+      "test_end": "2024-04-11T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0005,
+        "max_24h_change_pct": 3.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -0.8845154618301772,
+      "test_sharpe": -0.8892310363823976,
+      "test_return_pct": -2.0523856049999947,
+      "test_after_funding_pct": -1.723727817046794,
+      "trades": 1,
+      "max_drawdown_pct": -11.99718981180623
+    },
+    {
+      "fold_index": 21,
+      "train_start": "2024-02-21T00:00:00+00:00",
+      "train_end": "2024-04-21T00:00:00+00:00",
+      "test_start": "2024-04-21T00:00:00+00:00",
+      "test_end": "2024-05-11T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0005,
+        "max_24h_change_pct": 3.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -0.8006237898143873,
+      "test_sharpe": NaN,
+      "test_return_pct": 0.0,
+      "test_after_funding_pct": 0.0,
+      "trades": 0,
+      "max_drawdown_pct": 0.0
+    },
+    {
+      "fold_index": 22,
+      "train_start": "2024-03-22T00:00:00+00:00",
+      "train_end": "2024-05-21T00:00:00+00:00",
+      "test_start": "2024-05-21T00:00:00+00:00",
+      "test_end": "2024-06-10T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0002,
+        "max_24h_change_pct": 3.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 0.7032079600206214,
+      "test_sharpe": NaN,
+      "test_return_pct": 0.0,
+      "test_after_funding_pct": 0.0,
+      "trades": 0,
+      "max_drawdown_pct": 0.0
+    },
+    {
+      "fold_index": 23,
+      "train_start": "2024-04-21T00:00:00+00:00",
+      "train_end": "2024-06-20T00:00:00+00:00",
+      "test_start": "2024-06-20T00:00:00+00:00",
+      "test_end": "2024-07-10T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.6309753698416865,
+      "test_sharpe": 1.4396247117517655,
+      "test_return_pct": 8.779116755500018,
+      "test_after_funding_pct": 9.283817714607023,
+      "trades": 6,
+      "max_drawdown_pct": -8.57397939328174
+    },
+    {
+      "fold_index": 24,
+      "train_start": "2024-05-21T00:00:00+00:00",
+      "train_end": "2024-07-20T00:00:00+00:00",
+      "test_start": "2024-07-20T00:00:00+00:00",
+      "test_end": "2024-08-09T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.4957345933781618,
+      "test_sharpe": 1.3465346158885334,
+      "test_return_pct": 20.355209995199996,
+      "test_after_funding_pct": 20.566777687139393,
+      "trades": 7,
+      "max_drawdown_pct": -9.381900931150245
+    },
+    {
+      "fold_index": 25,
+      "train_start": "2024-06-20T00:00:00+00:00",
+      "train_end": "2024-08-19T00:00:00+00:00",
+      "test_start": "2024-08-19T00:00:00+00:00",
+      "test_end": "2024-09-08T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.5681197358435746,
+      "test_sharpe": NaN,
+      "test_return_pct": 0.0,
+      "test_after_funding_pct": 0.0,
+      "trades": 0,
+      "max_drawdown_pct": 0.0
+    },
+    {
+      "fold_index": 26,
+      "train_start": "2024-07-20T00:00:00+00:00",
+      "train_end": "2024-09-18T00:00:00+00:00",
+      "test_start": "2024-09-18T00:00:00+00:00",
+      "test_end": "2024-10-08T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.787661502896752,
+      "test_sharpe": 0.8168880844743199,
+      "test_return_pct": 1.4200677212749842,
+      "test_after_funding_pct": 1.5514251246753874,
+      "trades": 3,
+      "max_drawdown_pct": -6.150655782494885
+    },
+    {
+      "fold_index": 27,
+      "train_start": "2024-08-19T00:00:00+00:00",
+      "train_end": "2024-10-18T00:00:00+00:00",
+      "test_start": "2024-10-18T00:00:00+00:00",
+      "test_end": "2024-11-07T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0001,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.01,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 0.29438859122797745,
+      "test_sharpe": -40.41460410651086,
+      "test_return_pct": -23.057969316999973,
+      "test_after_funding_pct": -22.135969134449475,
+      "trades": 18,
+      "max_drawdown_pct": -26.891691803562246
+    },
+    {
+      "fold_index": 28,
+      "train_start": "2024-09-18T00:00:00+00:00",
+      "train_end": "2024-11-17T00:00:00+00:00",
+      "test_start": "2024-11-17T00:00:00+00:00",
+      "test_end": "2024-12-07T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.0,
+        "atr_tp_multiple": 1.5,
+        "funding_threshold": 0.0002,
+        "max_24h_change_pct": 100.0,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "sl_pct": 0.015,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": -2.7606552787535197,
+      "test_sharpe": -3.784039757821636,
+      "test_return_pct": -6.298591794924974,
+      "test_after_funding_pct": -5.258360550114483,
+      "trades": 6,
+      "max_drawdown_pct": -14.156046977727199
+    }
+  ],
+  "researcher_commentary": "Folds evaluated: 29\nStability (test_sharpe > 0): 14/29 = 48%\nMedian OOS Sharpe:   +0.96\nOOS Sharpe range:    [-142.75, +4.01]\nMedian OOS return:   +0.00%\nMedian train\u2192test drift: +54%  (positive = test worse than train; large drift = overfit)\n\nWinning param values across folds:\n  atr_sl_multiple: 1.0\u00d729\n  atr_tp_multiple: 1.5\u00d729\n  funding_threshold: 0.0001\u00d719, 0.0002\u00d78, 0.0005\u00d72\n  max_24h_change_pct: 100.0\u00d714, 3.0\u00d78, 5.0\u00d77\n  rsi_long_threshold: 10\u00d729\n  rsi_period: 2\u00d729\n  sl_pct: 0.015\u00d723, 0.01\u00d73, 0.005\u00d73\n  time_stop_bars: 48\u00d729\n  volume_multiple: 1.0\u00d729",
+  "suggested_next_ranges": {
+    "atr_sl_multiple": [
+      1.0
+    ],
+    "atr_tp_multiple": [
+      1.5
+    ],
+    "funding_threshold": [
+      0.0001,
+      0.0002
+    ],
+    "max_24h_change_pct": [
+      100.0,
+      3.0
+    ],
+    "rsi_long_threshold": [
+      10
+    ],
+    "rsi_period": [
+      2
+    ],
+    "sl_pct": [
+      0.015,
+      0.01
+    ],
+    "time_stop_bars": [
+      48
+    ],
+    "volume_multiple": [
+      1.0
+    ]
+  },
+  "promotion": {
+    "passed": false,
+    "thresholds": {
+      "min_median_test_sharpe": 0.5,
+      "min_fold_stability": 0.5,
+      "max_train_test_drift_pct": 50
+    },
+    "measured": {
+      "median_test_sharpe": 0.9561881322795627,
+      "fold_stability": 0.5833333333333334,
+      "median_train_test_drift_pct": 53.87855889539491
+    },
+    "checks": {
+      "median_test_sharpe": true,
+      "fold_stability": true,
+      "train_test_drift": false
+    }
+  }
+}

@@ -1,0 +1,31 @@
+# Carry v2 walk-forward sweep — tighter SL grid + fast-move skip filter.
+#
+# v1 result: 50% stability, −0.13 median Sharpe, +0.55% median return,
+# almost zero drift. The carry harvest works in expectation; the tail
+# losses on rare fast-moves are what hold Sharpe back. v2 adds
+# `max_24h_change_pct`: when 24h price change exceeds this, refuse to
+# open NEW carry trades (existing positions still managed by SL +
+# funding-flip exits).
+
+train_days: 60
+test_days: 20
+step_days: 30
+min_trades_train: 3
+
+promotion:
+  min_median_test_sharpe: 0.5
+  min_fold_stability: 0.5
+  max_train_test_drift_pct: 50
+
+# 3 × 3 × 3 = 27 combos
+grid:
+  funding_threshold:   [0.0001, 0.0002, 0.0005]
+  sl_pct:              [0.005, 0.010, 0.015]
+  max_24h_change_pct:  [100.0, 5.0, 3.0]   # 100 = filter off (v1 baseline)
+  # carried (ignored by carry):
+  rsi_period:         [2]
+  rsi_long_threshold: [10]
+  volume_multiple:    [1.0]
+  atr_tp_multiple:    [1.5]
+  atr_sl_multiple:    [1.0]
+  time_stop_bars:     [48]

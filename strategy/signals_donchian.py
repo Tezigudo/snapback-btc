@@ -61,16 +61,28 @@ def attach_donchian(
 
 
 class DonchianBreakoutBTC(Strategy):
-    # Sweepable via the same params_override / class-attr injection used elsewhere.
+    """v1 + ATR trailing stop and high-water-mark exit.
+
+    The Donchian exit channel is *itself* a trailing mechanism, but it only
+    updates once per 1h bar and only reflects the lowest of the last M
+    closes. A separate ATR-distance trailing stop catches faster reversals
+    that happen within a 1h bar (or that don't quite breach the channel
+    but blow through the entry's risk envelope). Both exits coexist —
+    whichever fires first wins.
+    """
+
     donchian_period_entry = 20
     donchian_period_exit = 10
-    atr_sl_multiple = 2.0   # wider stop than snapback — trend-following needs room
+    atr_sl_multiple = 2.0      # initial stop distance
+    atr_trail_multiple = 0.0   # 0 = no trailing; >0 = trail SL at high - K*ATR
     risk_per_trade_pct = 2.0
     leverage = 3
     allow_shorts = True
 
     def init(self) -> None:
         self._entry_bar: int | None = None
+        self._high_water: float = 0.0   # for long trailing
+        self._low_water: float = 0.0    # for short trailing
 
     def _position_units(self, sl_distance: float, price: float) -> int:
         if sl_distance <= 0 or not np.isfinite(sl_distance) or price <= 0:
@@ -80,6 +92,20 @@ class DonchianBreakoutBTC(Strategy):
         max_btc = (self.equity * self.leverage * 0.95) / price
         return max(int(min(target_btc, max_btc)), 0)
 
+    def _maybe_trail(self, atr_v: float) -> None:
+        """Ratchet the trade SL toward high_water - K*ATR (long) or low_water + K*ATR (short)."""
+        if self.atr_trail_multiple <= 0 or not self.trades:
+            return
+        trade = self.trades[-1]
+        if trade.is_long:
+            new_sl = self._high_water - self.atr_trail_multiple * atr_v
+            if trade.sl is None or new_sl > trade.sl:
+                trade.sl = new_sl
+        else:
+            new_sl = self._low_water + self.atr_trail_multiple * atr_v
+            if trade.sl is None or new_sl < trade.sl:
+                trade.sl = new_sl
+
     def next(self) -> None:
         upper = self.data.DonchianUpper[-1]
         lower = self.data.DonchianLower[-1]
@@ -87,6 +113,8 @@ class DonchianBreakoutBTC(Strategy):
         exit_lower = self.data.DonchianExitLower[-1]
         atr_v = self.data.ATR_1h[-1]
         close_v = self.data.Close[-1]
+        high_v = self.data.High[-1]
+        low_v = self.data.Low[-1]
 
         if any(
             v is None or not np.isfinite(v)
@@ -94,8 +122,14 @@ class DonchianBreakoutBTC(Strategy):
         ):
             return
 
-        # Exit via opposite N-bar channel (Donchian/turtle classic).
         if self.position:
+            if self.position.is_long:
+                self._high_water = max(self._high_water, high_v)
+            else:
+                self._low_water = min(self._low_water if self._low_water > 0 else low_v, low_v)
+            self._maybe_trail(atr_v)
+
+            # Donchian channel exit
             if self.position.is_long and close_v < exit_lower:
                 self.position.close()
                 self._entry_bar = None
@@ -106,15 +140,25 @@ class DonchianBreakoutBTC(Strategy):
 
         sl_dist = self.atr_sl_multiple * atr_v
 
-        if close_v > upper:  # bullish breakout
+        if close_v > upper:
             sl = close_v - sl_dist
             units = self._position_units(sl_dist, close_v)
             if units > 0 and sl < close_v:
                 self.buy(size=units, sl=sl)
                 self._entry_bar = len(self.data)
-        elif self.allow_shorts and close_v < lower:  # bearish breakout
+                self._high_water = high_v
+                self._low_water = 0.0
+        elif self.allow_shorts and close_v < lower:
             sl = close_v + sl_dist
             units = self._position_units(sl_dist, close_v)
             if units > 0 and sl > close_v:
                 self.sell(size=units, sl=sl)
                 self._entry_bar = len(self.data)
+                self._high_water = 0.0
+                self._low_water = low_v
+
+
+class DonchianBreakoutBTCv2(DonchianBreakoutBTC):
+    """Same behaviour as v1 — separate class so the sweep machinery can mutate
+    class attributes without touching the v1 baseline. v2 enables ATR trailing
+    via the wider sweep grid in `config/sweep_donchian_v2.yaml`."""

@@ -19,6 +19,7 @@ data/historical/
 logs/*.jsonl
 logs/*.log
 reports/*.html
+reports/**/*.log
 
 # python
 __pycache__/

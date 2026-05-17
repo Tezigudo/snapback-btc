@@ -49,20 +49,24 @@ python -c "from exchange.env import get_env; print(get_env())"   # -> 'testnet'
 - [x] P2 — strategy v1 (RSI(2) + EMA(200) + volume + funding)
 - [x] P3 — walk-forward + OOS (deterministic researcher; LLM seam ready)
 - [x] P3.2 — strategy bake-off: snapback v1/v2 retired, Donchian + carry promising
-- [ ] P4 — live testnet (7-day soak)
+- [x] P3.3 — v2 refinements + ensemble: **carry-v2 leads** (2/3 promotion checks pass)
+- [ ] P4 — live testnet (7-day soak with carry-v2)
 - [ ] P5 — monitor + viz
 - [ ] P6 — mainnet gate
 
-## Strategy zoo (P3.2 — see `STRATEGY_NOTES.md` for full table)
+## Strategy zoo (P3.3 — see `STRATEGY_NOTES.md` for full table)
 
-All four ran on the same 2022–2024 walk-forward window with fees + slippage + funding.
+All ran on the same 2022-06 → 2024-12 walk-forward with fees + slippage + funding.
 
 | Strategy | Stability | Median OOS Sharpe | Median OOS return | Promotion |
 |---|---:|---:|---:|:---:|
 | snapback-v1 (RSI mean-rev) | 21% | −3.58 | −5.13% | ❌ retired |
 | snapback-v2 (+ regime) | 19% | −0.22 | −0.06% | ❌ retired |
-| **donchian-v1** (1h breakout) | **53%** | **+0.40** | **+1.35%** | ❌ close (Sharpe + drift) |
-| carry-v1 (funding harvest) | 50% | −0.13 | +0.55% | ❌ close (Sharpe only) |
+| donchian-v1 (1h breakout) | 53% | +0.40 | +1.35% | ❌ close (Sharpe + drift) |
+| donchian-v2 (+ ATR trail) | 59% | +0.47 | +2.37% | ❌ Sharpe + drift (slight gain) |
+| carry-v1 (funding harvest) | 50% | −0.13 | +0.55% | ❌ Sharpe only |
+| **carry-v2** (+ fast-move skip + tight SL) | **58%** | **+0.96** | 0.00% | ❌ **drift only — lead candidate** |
+| ensemble(d2 + c2) | 48% | −0.30 | −0.32% | ❌ hypothesis falsified |
 
 ## Research
 

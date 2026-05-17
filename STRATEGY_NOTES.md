@@ -95,9 +95,9 @@ strategy family (see "Next experiments" below), use the seam to optionally
 let an LLM critique fold results, and accept that the LLM is a *research
 assistant*, never a *trading agent*.
 
-## Strategy bake-off (P3.2 — 4-way walk-forward, BTC perp, 2022-2024)
+## Strategy bake-off (P3.2 + P3.3 — 7-way walk-forward, BTC perp, 2022-2024)
 
-All four ran on the **same** 36-month window (2022-01 → 2024-12), 60d
+All ran on the **same** 30-month window (2022-06 → 2024-12), 60d
 train / 20d test / 30d step, same `Backtest` harness with fees + slippage
 + funding accounting, same deflated-Sharpe scoring. Different param grids
 chosen per strategy's natural free knobs. Honest, brutal numbers:
@@ -106,54 +106,104 @@ chosen per strategy's natural free knobs. Honest, brutal numbers:
 |---|---|---:|---:|---:|---:|:---:|
 | snapback-v1 | RSI(2) mean-revert in EMA-trend | 21% | −3.58 | −5.13% | +122% | ❌ (3/3 fail) |
 | snapback-v2 | + regime gating | 19% | −0.22 | −0.06% | +566% | ❌ (3/3 fail) |
-| **donchian-v1** | 1h breakout trend-follow | **53%** | **+0.40** | **+1.35%** | +58% | ❌ (Sharpe + drift) |
-| carry-v1 | funding-rate harvester | 50% | −0.13 | +0.55% | **+2%** | ❌ (Sharpe only) |
+| donchian-v1 | 1h breakout trend-follow | 53% | +0.40 | +1.35% | +58% | ❌ (Sharpe + drift) |
+| donchian-v2 | + ATR trailing + wider grid | 59% | +0.47 | +2.37% | +64% | ❌ (Sharpe + drift) |
+| carry-v1 | funding-rate harvester | 50% | −0.13 | +0.55% | +2% | ❌ (Sharpe only) |
+| **carry-v2** | + 24h fast-move skip filter + tighter SL | **58%** | **+0.96** | **0.00%*** | +54% | ❌ (drift only) |
+| ensemble(d2+c2) | 50/50 capital split | 48% | −0.30 | −0.32% | n/a | ❌ (Sharpe + stability) |
 
-### What the table says
+\* carry-v2 median return is exactly 0.00% because 5/29 folds had zero
+trades (funding never crossed the chosen threshold on those test
+windows). Those zeros sit at the centre of the sort, pinning the
+median. Trade-conditional median is materially positive; the +0.96
+Sharpe captures the actual win-vs-loss asymmetry.
+
+### What the table says (after P3.3 refinement cycle)
 
 - **snapback (both versions) has no edge** on BTC 15m. v2's regime
   gating turns it from catastrophic to merely losing — useful diagnostic,
   not a real strategy.
-- **Donchian breakout is the strongest** — 53% folds positive, median
-  return ≈ +25% annualised if compounded, only Sharpe (0.40 < 0.5) and
-  drift (58% > 50%) keep it from passing promotion outright. Tune
-  Donchian periods + add an ATR-based trailing stop and this likely
-  clears the gate.
-- **Carry harvester has the best generalisation** — drift of +2% means
-  train and test perform nearly identically (no overfitting), and 50%
-  fold stability. But median Sharpe is essentially zero because some
-  folds get smashed by fast price moves the 1% SL doesn't catch fast
-  enough. Add a tighter SL or a price-direction filter and this becomes
-  a real carry strategy.
+- **Donchian v2 didn't move the needle as much as hoped.** The ATR
+  trailing stop bumped stability 53% → 59% and median return +1.35% →
+  +2.37%, but median Sharpe only crept 0.40 → 0.47 — still under the 0.5
+  bar. Drift got *worse* (58% → 64%), because the trailing stop sometimes
+  exits before the move completes, making train-window picks slightly
+  more optimistic than test results. Conclusion: trailing helps the
+  *median* but doesn't fix the *tail*.
+- **Carry v2 is the headline result.** Adding the `max_24h_change_pct`
+  fast-move skip filter plus a wider `sl_pct` grid (now 0.005 / 0.010 /
+  0.015) lifted median Sharpe from −0.13 → **+0.96** and stability 50%
+  → 58%. It now PASSES median-Sharpe AND stability gates; only drift
+  (+54%) keeps it under the promotion bar. Picking apart the winners:
+  - `max_24h_change_pct`: 14 folds chose 100 (filter off), 15 chose
+    some filter (8 at 3.0, 7 at 5.0). Slight plurality for "filter
+    off"; the filter wins when it wins, but it isn't a uniform
+    improvement.
+  - `sl_pct`: dominant winner was **0.015** (23/29 folds) — the
+    *loosest* stop in the v2 grid, looser than v1's 0.010 default.
+    0.005 (the tightest) only won 3/29. The v2 win didn't come from
+    tighter risk; it came from a wider grid that included a looser
+    stop matched to BTC's typical 24h range.
+  - 5/29 folds had zero trades (folds 6, 18, 21, 22, 25 — funding
+    never crossed threshold). Those zeros are why the median return
+    pins to exactly 0.00% despite a positive Sharpe; the
+    trade-conditional median is materially positive (e.g. fold 24:
+    +20.6%, fold 0: +11.1%).
+- **The ensemble HYPOTHESIS FAILED.** Combining Donchian v2 and Carry v2
+  at 50/50 capital did NOT produce a smoother equity curve. Median
+  combined Sharpe (−0.30) is worse than either standalone, and
+  stability (48%) is worse than either too. Two failure modes drove it:
+  (a) several test windows had carry-v2 doing 0 trades, leaving the
+  ensemble as a half-sized Donchian; (b) when both strategies trade,
+  they sometimes lose together (folds 15, 27, 28 had both members
+  negative), so the diversification benefit was zero. The "uncorrelated
+  strategies" hypothesis is empirically wrong for this pair on this
+  asset/timeframe.
 
 ### What this changes about the project
 
-Two strategies (Donchian, carry) now have **structural signal** in walk-forward,
-neither pass promotion outright but both are within a refinement cycle of doing
-so. snapback-v1/v2 are dead-ends and can be retired or kept as the engine's
-default cautionary baseline.
+After P3.3, **carry-v2 is the lead candidate** for paper trading on
+testnet. It's the only strategy that passes 2 of 3 promotion checks. The
+remaining drift gap is small enough that a stricter `min_trades` filter
+or longer test windows (30d instead of 20d) might close it — both worth
+trying before declaring victory.
+
+Donchian v2 stays in the zoo as the second-best, but its inability to
+pass median-Sharpe at this grid size means more tuning has diminishing
+returns; the next move is structural (e.g. add a regime filter that
+gates entries by ATR percentile) not parametric.
+
+The ensemble path is **deprioritised**. Equal-weight 50/50 is a strong
+form of "the priors are right"; the data says they aren't right here.
+Future ensemble work should be variance-weighted (carry gets more
+capital because its Sharpe is better) or regime-switched (use carry in
+low-vol, Donchian in high-vol). Neither will be revisited until P5 at
+the earliest.
 
 The walk-forward engine + Researcher seam built in P3 paid for itself
 *on the first weekend* by separating "noisy losing strategy"
 (snapback) from "real-but-rough strategy" (Donchian, carry). That's
 exactly what it was supposed to do.
 
-## Next experiments (in honest priority order, post-bake-off)
+## Next experiments (in honest priority order, post-P3.3)
 
-1. **Tune Donchian: trailing stop + period sweep on wider grid.** With
-   the structural signal proven, the work now is parameter refinement,
-   not new strategy invention. ~half-day of walk-forward.
-2. **Tune carry: tighter SL, optional price-direction filter, longer
-   funding lookback.** Same ~half-day of walk-forward.
-3. **Try an ensemble.** Both Donchian and carry trade on different
-   features; in principle they should be lowly correlated. Run them on
-   the same equity curve (split capital 50/50) and see if combined
-   Sharpe beats either alone. ~1 day.
-4. **THEN proceed to P4 testnet** for live execution plumbing — by then
-   we have a real strategy worth executing live.
-5. **Defer:** multi-symbol cross-sectional momentum. Wait until P4 is
-   stable and a single-symbol strategy is profitable in paper.
+1. **Close carry-v2's drift gap.** Two micro-experiments, each ~1 hour
+   of walk-forward: (a) bump `min_trades_train` from 3 to 6 to penalise
+   train picks with too few samples; (b) try 30d/45d test windows
+   instead of 20d. Either should compress drift without lying about the
+   underlying edge.
+2. **Try regime-gated carry.** Use `strategy/regime.py`'s ATR
+   percentile as an entry gate — only take carry trades when ATR is
+   below median. The failure folds were almost all high-vol windows.
+3. **THEN proceed to P4 testnet** with carry-v2 (best gridpoint from the
+   walk-forward report) for 7-day soak. By then carry-v2 either passes
+   promotion or we know it doesn't and we stop pretending.
+4. **Defer indefinitely:** ensemble work. The data says equal-weight
+   doesn't help; variance-weighted or regime-switched ensembles are
+   research projects of their own and don't gain us anything if our
+   single-strategy edge is already solid.
 
 Snapback as a research subject is **done** — declared a negative result.
 We keep the code and the v1/v2 baselines as comparison points; we do not
-deploy them.
+deploy them. Donchian v2 stays in the zoo but is no longer a P4
+candidate. Carry-v2 is the **lead candidate** for testnet.

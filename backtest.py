@@ -37,7 +37,12 @@ from strategy.signals import (
 )
 from strategy.regime import attach_regimes
 from strategy.signals_carry import CarryHarvester
-from strategy.signals_donchian import DonchianBreakoutBTC, attach_donchian
+from strategy.signals_carry_v2 import CarryHarvesterV2
+from strategy.signals_donchian import (
+    DonchianBreakoutBTC,
+    DonchianBreakoutBTCv2,
+    attach_donchian,
+)
 from strategy.signals_v2 import SnapbackBTCv2
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
@@ -76,13 +81,15 @@ STRATEGIES: dict[str, type[Strategy]] = {
     "snapback-v1": SnapbackBTC,
     "snapback-v2": SnapbackBTCv2,
     "donchian-v1": DonchianBreakoutBTC,
+    "donchian-v2": DonchianBreakoutBTCv2,
     "carry-v1": CarryHarvester,
+    "carry-v2": CarryHarvesterV2,
 }
 
 # Strategies that need regime columns layered on top of the snapback prep.
 _REGIME_STRATEGIES = {"snapback-v2"}
 # Strategies that need Donchian channel columns layered on top.
-_DONCHIAN_STRATEGIES = {"donchian-v1"}
+_DONCHIAN_STRATEGIES = {"donchian-v1", "donchian-v2"}
 
 
 # --- Funding accounting ------------------------------------------------------
@@ -230,8 +237,9 @@ def _apply_params_to_class(cls: type[Strategy], params: StrategyParams) -> None:
         "volume_multiple", "funding_long_max", "funding_short_min",
         "atr_tp_multiple", "atr_sl_multiple",
         "time_stop_bars", "risk_per_trade_pct",
-        "donchian_period_entry", "donchian_period_exit",
+        "donchian_period_entry", "donchian_period_exit", "atr_trail_multiple",
         "funding_threshold", "funding_exit_threshold", "sl_pct",
+        "max_24h_change_pct",
     ):
         if hasattr(cls, field):
             setattr(cls, field, getattr(params, field))
@@ -247,6 +255,7 @@ def run_backtest(
     leverage: int | None = None,
     quiet: bool = False,
     params_override: StrategyParams | None = None,
+    return_equity: bool = False,
 ) -> dict:
     """Run a backtest.
 
@@ -360,6 +369,16 @@ def run_backtest(
         "commission_per_side": COMMISSION_PER_SIDE,
         "leverage": eff_leverage,
     }
+
+    if return_equity:
+        eq = getattr(stats, "_equity_curve", None)
+        if eq is not None and "Equity" in eq.columns:
+            # Normalise to a returns series anchored at 1.0 so ensembling on
+            # different cash bases is meaningful.
+            equity = eq["Equity"].astype(float)
+            result["equity_series"] = equity
+            result["returns_series"] = equity / float(equity.iloc[0])
+            result["actual_cash"] = actual_cash
 
     if not quiet:
         _print_result(result)
