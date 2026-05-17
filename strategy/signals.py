@@ -88,6 +88,10 @@ class StrategyParams:
     momentum_threshold: float = 0.0002
     tp_pct: float = 0.02
     require_trend_align: bool = False
+    # Donchian-v3 regime-gate params
+    regime_ema_period: int = 120
+    regime_slope_window: int = 30
+    slope_trend_threshold_pct: float = 0.0   # 0 = gate OFF
 
     @classmethod
     def from_yaml(cls, path: str | None = None) -> "StrategyParams":

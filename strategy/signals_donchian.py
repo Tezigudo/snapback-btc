@@ -162,3 +162,104 @@ class DonchianBreakoutBTCv2(DonchianBreakoutBTC):
     """Same behaviour as v1 — separate class so the sweep machinery can mutate
     class attributes without touching the v1 baseline. v2 enables ATR trailing
     via the wider sweep grid in `config/sweep_donchian_v2.yaml`."""
+
+
+class DonchianBreakoutBTCv3(DonchianBreakoutBTC):
+    """v2 + DIRECTIONAL regime gate.
+
+    Uses signed EMA-slope: positive = uptrend, negative = downtrend.
+    Entry rules:
+      - LONG breakout requires slope >= +slope_trend_threshold_pct
+      - SHORT breakout requires slope <= -slope_trend_threshold_pct
+      - Chop (|slope| < threshold) = no entry in either direction
+
+    Two reasons this is better than the |slope| gate:
+      1. It refuses to short during an uptrend (and vice versa), which is
+         the most common Donchian failure in chop — a small downtick that
+         technically pierces the lower channel but is just a pullback in
+         a larger uptrend.
+      2. The |slope| gate's "high threshold blocks early-trend entries"
+         pathology is avoided — we don't gate on magnitude alone.
+
+    slope_trend_threshold_pct=0 disables the gate (v2 behaviour)."""
+
+    regime_ema_period: int = 120
+    regime_slope_window: int = 30
+    slope_trend_threshold_pct: float = 0.0   # 0 = gate OFF
+
+    def init(self) -> None:
+        super().init()
+        if self.slope_trend_threshold_pct > 0:
+            import pandas as pd_
+            from strategy.regime_classifier import ema_slope_signed
+            close = pd_.Series(self.data.Close)
+            self._regime_slope = ema_slope_signed(
+                close,
+                ema_period=self.regime_ema_period,
+                slope_window=self.regime_slope_window,
+            ).values
+        else:
+            self._regime_slope = None
+
+    def _slope_now(self) -> float | None:
+        if self._regime_slope is None:
+            return None
+        s = self._regime_slope[len(self.data) - 1]
+        import numpy as _np
+        return float(s) if _np.isfinite(s) else None
+
+    def next(self) -> None:
+        upper = self.data.DonchianUpper[-1]
+        lower = self.data.DonchianLower[-1]
+        exit_upper = self.data.DonchianExitUpper[-1]
+        exit_lower = self.data.DonchianExitLower[-1]
+        atr_v = self.data.ATR_1h[-1]
+        close_v = self.data.Close[-1]
+        high_v = self.data.High[-1]
+        low_v = self.data.Low[-1]
+
+        import numpy as _np
+        if any(
+            v is None or not _np.isfinite(v)
+            for v in (upper, lower, exit_upper, exit_lower, atr_v)
+        ):
+            return
+
+        if self.position:
+            if self.position.is_long:
+                self._high_water = max(self._high_water, high_v)
+            else:
+                self._low_water = min(self._low_water if self._low_water > 0 else low_v, low_v)
+            self._maybe_trail(atr_v)
+            if self.position.is_long and close_v < exit_lower:
+                self.position.close()
+                self._entry_bar = None
+            elif self.position.is_short and close_v > exit_upper:
+                self.position.close()
+                self._entry_bar = None
+            return
+
+        sl_dist = self.atr_sl_multiple * atr_v
+        slope = self._slope_now()
+        gate_on = self.slope_trend_threshold_pct > 0
+
+        if close_v > upper:
+            if gate_on and (slope is None or slope < self.slope_trend_threshold_pct):
+                return  # don't long unless in confirmed uptrend
+            sl = close_v - sl_dist
+            units = self._position_units(sl_dist, close_v)
+            if units > 0 and sl < close_v:
+                self.buy(size=units, sl=sl)
+                self._entry_bar = len(self.data)
+                self._high_water = high_v
+                self._low_water = 0.0
+        elif self.allow_shorts and close_v < lower:
+            if gate_on and (slope is None or slope > -self.slope_trend_threshold_pct):
+                return  # don't short unless in confirmed downtrend
+            sl = close_v + sl_dist
+            units = self._position_units(sl_dist, close_v)
+            if units > 0 and sl > close_v:
+                self.sell(size=units, sl=sl)
+                self._entry_bar = len(self.data)
+                self._high_water = 0.0
+                self._low_water = low_v

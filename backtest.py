@@ -45,12 +45,13 @@ from strategy.signals_funding_momentum import FundingMomentumBTC
 from strategy.signals_donchian import (
     DonchianBreakoutBTC,
     DonchianBreakoutBTCv2,
+    DonchianBreakoutBTCv3,
     attach_donchian,
 )
 from strategy.signals_v2 import SnapbackBTCv2
 
 # Carry + Donchian work on any single entry TF (snapback strictly needs 15m+1h).
-_TF_AGNOSTIC_STRATEGIES = {"carry-v1", "carry-v2", "carry-v3", "carry-v4", "fmom-v1", "donchian-v1", "donchian-v2"}
+_TF_AGNOSTIC_STRATEGIES = {"carry-v1", "carry-v2", "carry-v3", "carry-v4", "fmom-v1", "donchian-v1", "donchian-v2", "donchian-v3"}
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
 # an integer unit. Returns are scale-invariant so headline metrics are
@@ -89,6 +90,7 @@ STRATEGIES: dict[str, type[Strategy]] = {
     "snapback-v2": SnapbackBTCv2,
     "donchian-v1": DonchianBreakoutBTC,
     "donchian-v2": DonchianBreakoutBTCv2,
+    "donchian-v3": DonchianBreakoutBTCv3,
     "carry-v1": CarryHarvester,
     "carry-v2": CarryHarvesterV2,
     "carry-v3": CarryHarvesterV3,
@@ -99,7 +101,7 @@ STRATEGIES: dict[str, type[Strategy]] = {
 # Strategies that need regime columns layered on top of the snapback prep.
 _REGIME_STRATEGIES = {"snapback-v2"}
 # Strategies that need Donchian channel columns layered on top.
-_DONCHIAN_STRATEGIES = {"donchian-v1", "donchian-v2"}
+_DONCHIAN_STRATEGIES = {"donchian-v1", "donchian-v2", "donchian-v3"}
 
 
 # --- Funding accounting ------------------------------------------------------
@@ -313,6 +315,8 @@ def _apply_params_to_class(cls: type[Strategy], params: StrategyParams) -> None:
         "trend_ema_period",
         # fmom-v1
         "momentum_lookback_bars", "momentum_threshold", "tp_pct", "require_trend_align",
+        # donchian-v3 regime gate
+        "regime_ema_period", "regime_slope_window", "slope_trend_threshold_pct",
     ):
         if hasattr(cls, field):
             setattr(cls, field, getattr(params, field))

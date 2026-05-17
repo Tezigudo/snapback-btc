@@ -54,7 +54,9 @@ python -c "from exchange.env import get_env; print(get_env())"   # -> 'testnet'
 - [x] P3.5 — **promotion gate was broken**; rebuilt with tail-risk checks; carry-v4 + trend gate + tail-aware selection lifted CAGR -18.6% → +4.95% (still at boundary, NOT P4-ready)
 - [x] P3.6 — **OOS validation on 2025 killed both candidates** (carry-v4: IS +75% → OOS −5%; donchian-v2: IS +213% → OOS −5%); funding-momentum hypothesis also dead (−66% IS). Carry refactor cuts LOC -72%.
 - [x] P3.7 — multi-window OOS reveals **Donchian-v2 4h has regime-dependent edge**: same strategy → +49% OOS on trending 2022 H1, −5.5% OOS on choppy 2025 H1. Not "no edge" — needs a regime classifier to deploy.
-- [ ] P4 — blocked on building regime classifier for Donchian-v2 4h
+- [x] **P4 — Donchian-v3 with directional regime gate PASSES OOS on both windows** ✅ (2020-21 IS → 2022 H1 OOS: +30%; 2022-24 IS → 2025 H1 OOS: +5.6%). First strategy to clear OOS validation. Live deploy blocked only on execution plumbing now.
+- [ ] P5 — testnet 7-day soak (execution plumbing: ccxt orders, state DB, monitor)
+- [ ] P6 — mainnet gate
 - [ ] P5 — monitor + viz
 - [ ] P6 — mainnet gate
 

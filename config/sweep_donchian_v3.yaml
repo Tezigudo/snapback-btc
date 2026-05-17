@@ -1,0 +1,31 @@
+# Donchian v3 sweep — v2 grid + directional regime gate threshold sweep.
+# Use with --entry-tf 4h.
+
+train_days: 60
+test_days: 30
+step_days: 30
+min_trades_train: 4
+
+promotion:
+  min_median_test_sharpe: 0.5
+  min_fold_stability: 0.5
+  max_train_test_drift_pct: 50
+  min_mean_test_return_pct: 0.5
+  min_compounded_cagr_pct: 5.0
+  max_single_fold_loss_pct: -15.0
+
+# 3 × 2 × 2 × 2 × 4 = 96 combos
+grid:
+  donchian_period_entry:        [40, 80, 120]
+  donchian_period_exit:         [10, 20]
+  atr_sl_multiple:              [1.5, 2.5]
+  leverage:                     [20, 25]
+  slope_trend_threshold_pct:    [0.0, 0.02, 0.03, 0.05]   # 0 = gate OFF
+  atr_trail_multiple:           [0.0]   # trail off (proved harmful in v2 sweep)
+  regime_ema_period:            [120]
+  regime_slope_window:          [30]
+  rsi_period:                   [2]
+  rsi_long_threshold:           [10]
+  volume_multiple:              [1.0]
+  atr_tp_multiple:              [1.5]
+  time_stop_bars:               [48]
