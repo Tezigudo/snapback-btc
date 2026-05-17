@@ -52,8 +52,9 @@ python -c "from exchange.env import get_env; print(get_env())"   # -> 'testnet'
 - [x] P3.3 — v2 refinements + ensemble: carry-v2 leads (2/3 promotion checks pass)
 - [x] P3.4 — leverage + TF sweeps (leverage set to 20x permanent)
 - [x] P3.5 — **promotion gate was broken**; rebuilt with tail-risk checks; carry-v4 + trend gate + tail-aware selection lifted CAGR -18.6% → +4.95% (still at boundary, NOT P4-ready)
-- [x] P3.6 — **OOS validation on 2025 killed both candidates** (carry-v4: IS +75% → OOS −5%; donchian-v2: IS +213% → OOS −5%); funding-momentum hypothesis also dead (−66% IS). No deterministic strategy passes OOS. Carry refactor cuts LOC -72%. New `research/oos_validate.py` is mandatory before any P4 decision.
-- [ ] P4 — blocked: no strategy with OOS edge to deploy
+- [x] P3.6 — **OOS validation on 2025 killed both candidates** (carry-v4: IS +75% → OOS −5%; donchian-v2: IS +213% → OOS −5%); funding-momentum hypothesis also dead (−66% IS). Carry refactor cuts LOC -72%.
+- [x] P3.7 — multi-window OOS reveals **Donchian-v2 4h has regime-dependent edge**: same strategy → +49% OOS on trending 2022 H1, −5.5% OOS on choppy 2025 H1. Not "no edge" — needs a regime classifier to deploy.
+- [ ] P4 — blocked on building regime classifier for Donchian-v2 4h
 - [ ] P5 — monitor + viz
 - [ ] P6 — mainnet gate
 

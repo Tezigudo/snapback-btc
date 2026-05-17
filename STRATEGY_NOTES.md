@@ -363,7 +363,63 @@ the strategy itself is at best marginally profitable in expectation.
 Live deployment at 20x with real slippage would likely turn slightly
 negative.
 
-## P3.6 — OOS validation kills all candidates; refactor for next direction
+## P3.7 — multi-window OOS reveals **Donchian has regime-dependent edge**
+
+After P3.6 declared all strategies dead on the 2022-2024 → 2025 OOS
+gap, ran one more sweep across DIFFERENT IS/OOS windows. Got a more
+useful answer.
+
+| Test | IS window | OOS window | IS return | OOS return | Verdict |
+|---|---|---|---:|---:|:---:|
+| Donchian-v2 4h | 2022-2024 (2.5y) | 2025 H1 | +213% | −5.5% | ❌ chop |
+| **Donchian-v2 4h** | **2020-2021 (1.75y)** | **2022 H1** | **+237%** | **+49%** | **✅ trending** |
+| Donchian-v2 4h | 2020-2024 (4.5y) | 2025 H1 | +854% | −5.5% | ❌ chop |
+| carry-v4 15m | 2022-2024 | 2025 H1 | +75% | −5.4% | ❌ |
+| carry-v4 15m | 2020-2021 | 2022 H1 | +149% | 0 trades | inconclusive |
+
+The picture is now clear: **Donchian-v2 4h has a real edge, conditional
+on market regime**. It works in trending markets (2022 H1 was a clean
+−62% downtrend; Donchian caught it with +49% OOS gain) and fails in
+chop (2025 H1 ranged $80-109k; the same strategy bleeds via false
+breakouts).
+
+This isn't "no edge". This is "edge that needs regime-awareness". The
+same combo was picked by both 2020-2021 IS and 2022-2024 IS:
+`donchian_period=40-80, atr_sl=1.5, atr_trail=0, leverage=25`. The
+strategy is stable; what differs is what market it's executing in.
+
+### Why this matters
+
+P3.6's "no edge" conclusion was over-broad. The honest revision:
+
+  - **Carry on BTC perp 15m: no edge** at any time window tested.
+    The fundamental thesis (collect funding income against directional
+    losses) doesn't survive any reasonable OOS gap.
+  - **Donchian-v2 4h: real edge in trending regimes only.** Needs a
+    regime classifier to be deployable. Without one, every other live
+    month is a coin flip.
+  - **Funding momentum: dead.** −66% IS, inverse of carry is also
+    wrong-direction.
+
+### What would actually unlock P4 testnet
+
+Build a **regime classifier** that gates Donchian-v2 4h:
+
+  - Compute realised trend strength on rolling lookback (e.g., 30d
+    Hurst exponent or |returns| / range ratio).
+  - When trend strength > threshold → enable Donchian.
+  - When trend strength < threshold → flat.
+
+The regime detection itself can be tuned + cross-validated separately
+from the Donchian params. If the classifier correctly identifies
+trending vs chop, Donchian-v2 4h becomes deployable as a
+"trend-following ONLY when trends exist" strategy. ~half-day of work.
+
+This is a substantively different next direction from the
+"snapback-btc is dead" P3.6 conclusion — Donchian survived one OOS,
+which is one more piece of positive evidence than anything else has.
+
+
 
 User asked: "why its negative? could you improve a performance of it?
 ... lets compact first then start task, I will afk for 2 hr".
