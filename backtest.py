@@ -1,25 +1,19 @@
 """
 Backtest harness with realistic friction modeling.
 
-This module is the *research* backtester (Phase 1). It uses `backtesting.py`
-with a commission proxy that bundles taker fee + slippage, and computes
-funding-rate cost post-hoc against the equity curve so the headline number
-reflects everything a live perp position would actually pay.
-
-For P1 the only strategy registered is `buy-and-hold` — the sanity benchmark.
-P2 adds the real strategy (RSI(2) + EMA(200) + volume + funding).
+Phase 1 added a buy-and-hold benchmark with fees + slippage + funding.
+Phase 2 adds the real snapback-v1 strategy (RSI(2) + EMA(200) + volume +
+funding confluence, multi-timeframe).
 
 CLI:
-    python backtest.py --strategy buy-and-hold --tf 1h --start 2024-01-01 --end 2024-04-01
-    python backtest.py --strategy buy-and-hold --tf 15m --days 90
+    # benchmark
+    python backtest.py --strategy buy-and-hold --tf 1h --days 30
 
-Honest reporting:
-    - "Naive B&H"   : raw price change, zero friction
-    - "Backtest"    : after fees + slippage
-    - "After funding": also after funding payments
-    - Friction drag : the difference, in percentage points
+    # strategy v1
+    python backtest.py --strategy snapback-v1 --tf 15m --start 2024-01-01 --end 2025-01-01
 
-If "After funding" ever beats "Naive B&H" you have a bug.
+Honest reporting: naive B&H / after fees+slip / after funding shown
+separately, so friction is never hidden in a headline number.
 """
 
 from __future__ import annotations
@@ -29,15 +23,23 @@ import logging
 import sys
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 import pandas as pd
-from backtesting import Strategy
+from backtesting import Backtest, Strategy
 from backtesting.lib import FractionalBacktest
 
 from exchange.data import load_funding, load_klines
+from strategy.signals import (
+    FRACTIONAL_UNIT,
+    SnapbackBTC,
+    StrategyParams,
+    prepare_strategy_data,
+)
 
-# BTC trades at $40k+; with $10k cash we couldn't even afford a whole coin, so
-# `Backtest` rejects orders. `FractionalBacktest` lets the broker hold
-# fractional units (μBTC etc.), matching real futures sizing.
+# For snapback, use plain Backtest with large notional cash so 1 BTC fits as
+# an integer unit. Returns are scale-invariant so headline metrics are
+# unchanged vs running with $10k.
+SNAPBACK_DEFAULT_CASH = 1_000_000.0
 
 log = logging.getLogger(__name__)
 
@@ -52,12 +54,7 @@ COMMISSION_PER_SIDE = TAKER_FEE + SLIPPAGE_PROXY
 
 # --- Strategies --------------------------------------------------------------
 class BuyAndHold(Strategy):
-    """Sanity benchmark — buy on first bar, hold forever.
-
-    backtesting.py 0.6.x defaults to 100% equity sizing which cannot satisfy
-    commission. Use 0.95 to leave a buffer. Latch on _opened so the order is
-    submitted exactly once, even if the first fill is delayed by `trade_on_close=False`.
-    """
+    """Sanity benchmark — buy on first bar, hold forever."""
 
     def init(self) -> None:
         self._opened = False
@@ -72,6 +69,7 @@ class BuyAndHold(Strategy):
 
 STRATEGIES: dict[str, type[Strategy]] = {
     "buy-and-hold": BuyAndHold,
+    "snapback-v1": SnapbackBTC,
 }
 
 
@@ -82,14 +80,7 @@ def funding_cost_for_long_btc(
     initial_cash: float,
     commission: float,
 ) -> tuple[float, int]:
-    """
-    Sum funding payments for a long buy-and-hold position over `data`'s span.
-
-    For a perp long, you PAY when funding_rate > 0 and RECEIVE when < 0.
-    Total cost = sum over each funding event of (btc_position × price_at_event × rate).
-
-    Returns (total_usdt_paid, n_funding_events). Positive = net cost.
-    """
+    """Sum funding payments for a long buy-and-hold position over `data`'s span."""
     if funding.empty or data.empty:
         return 0.0, 0
 
@@ -108,8 +99,43 @@ def funding_cost_for_long_btc(
     return float(paid), len(span)
 
 
+def funding_cost_for_trades(
+    trades: pd.DataFrame, data: pd.DataFrame, funding: pd.DataFrame
+) -> tuple[float, int]:
+    """Sum funding payments across per-trade open intervals.
+
+    backtesting.py 0.6 Size is signed: + for long, - for short. Notional with
+    sign × funding rate gives the correct sign for cost (long pays positive
+    funding, short receives positive funding).
+    """
+    if trades is None or trades.empty or funding is None or funding.empty:
+        return 0.0, 0
+
+    total = 0.0
+    events = 0
+    closes = data["Close"]
+
+    for _, t in trades.iterrows():
+        entry_time = t["EntryTime"] if "EntryTime" in t else t.get("EntryTime")
+        exit_time = t["ExitTime"] if "ExitTime" in t else t.get("ExitTime")
+        size = float(t["Size"])  # signed
+        if entry_time is None or exit_time is None or pd.isna(entry_time) or pd.isna(exit_time):
+            continue
+        span = funding.loc[(funding.index >= entry_time) & (funding.index <= exit_time)]
+        if span.empty:
+            continue
+        prices = closes.reindex(span.index, method="ffill")
+        notional = size * prices  # carries sign
+        total += float((notional * span["funding_rate"]).sum())
+        events += len(span)
+
+    return total, events
+
+
 # --- Runner ------------------------------------------------------------------
-def _prepare_data(symbol: str, timeframe: str, start: datetime, end: datetime) -> pd.DataFrame:
+def _prepare_buy_and_hold_data(
+    symbol: str, timeframe: str, start: datetime, end: datetime
+) -> pd.DataFrame:
     days_back = max((end - start).days + 2, 2)
     raw = load_klines(symbol=symbol, timeframe=timeframe, days_back=days_back, end=end)
     df = raw.loc[start:end].copy()
@@ -118,10 +144,65 @@ def _prepare_data(symbol: str, timeframe: str, start: datetime, end: datetime) -
             f"No klines for {symbol} {timeframe} in {start.date()} → {end.date()}"
         )
     df.columns = [c.capitalize() for c in df.columns]
-    # backtesting.py rejects tz-aware indexes in some versions; normalise to naive UTC.
     if df.index.tz is not None:
         df.index = df.index.tz_convert("UTC").tz_localize(None)
     return df
+
+
+def _prepare_snapback_data(
+    symbol: str,
+    start: datetime,
+    end: datetime,
+    params: StrategyParams,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Pull 15m + 1h + funding; build indicator-augmented 15m DataFrame.
+
+    Returns (prepared_15m_df, funding_in_span_df). Adds a warm-up buffer so
+    indicators are valid by the start of the visible window.
+    """
+    # Warm-up needed: ema_period 1h bars to start the EMA = ema_period hours.
+    # Add 50% slack.
+    warmup = timedelta(hours=int(params.ema_period * 1.5))
+    pull_start = start - warmup
+    days_back = max((end - pull_start).days + 2, 2)
+
+    k15 = load_klines(symbol=symbol, timeframe="15m", days_back=days_back, end=end)
+    k1h = load_klines(symbol=symbol, timeframe="1h", days_back=days_back, end=end)
+    fund = load_funding(symbol=symbol, days_back=days_back, end=end)
+
+    if k15.empty or k1h.empty:
+        raise RuntimeError("Missing 15m or 1h klines for the requested window.")
+
+    prepared = prepare_strategy_data(k15, k1h, fund, params)
+    # prepare_strategy_data strips tz; slice bounds + funding must match.
+    naive_start = start.replace(tzinfo=None) if start.tzinfo else start
+    naive_end = end.replace(tzinfo=None) if end.tzinfo else end
+    visible = prepared.loc[naive_start:naive_end]
+    if visible.empty:
+        raise RuntimeError(f"No bars after warm-up in {start} → {end}")
+
+    if fund.index.tz is not None:
+        fund = fund.copy()
+        fund.index = fund.index.tz_convert("UTC").tz_localize(None)
+    fund_visible = fund.loc[visible.index[0]:visible.index[-1]]
+
+    return visible, fund_visible
+
+
+def _apply_params_to_class(cls: type[Strategy], params: StrategyParams) -> None:
+    """Inject YAML params as class attributes on a Strategy subclass."""
+    for field in (
+        "rsi_long_threshold",
+        "rsi_short_threshold",
+        "volume_multiple",
+        "funding_long_max",
+        "funding_short_min",
+        "atr_tp_multiple",
+        "atr_sl_multiple",
+        "time_stop_bars",
+        "risk_per_trade_pct",
+    ):
+        setattr(cls, field, getattr(params, field))
 
 
 def run_backtest(
@@ -131,35 +212,67 @@ def run_backtest(
     start: datetime,
     end: datetime,
     cash: float = 10_000.0,
+    leverage: int | None = None,
     quiet: bool = False,
 ) -> dict:
     if strategy_name not in STRATEGIES:
         raise ValueError(f"unknown strategy: {strategy_name}")
 
-    data = _prepare_data(symbol, timeframe, start, end)
-    funding = load_funding(symbol=symbol, days_back=max((end - start).days + 2, 2), end=end)
-    funding_in_span = funding.loc[start:end]
-    if funding_in_span.index.tz is not None:
-        funding_in_span = funding_in_span.copy()
-        funding_in_span.index = funding_in_span.index.tz_convert("UTC").tz_localize(None)
+    if strategy_name == "buy-and-hold":
+        data = _prepare_buy_and_hold_data(symbol, timeframe, start, end)
+        funding_in_span = load_funding(
+            symbol=symbol, days_back=max((end - start).days + 2, 2), end=end
+        ).loc[start:end]
+        if funding_in_span.index.tz is not None:
+            funding_in_span = funding_in_span.copy()
+            funding_in_span.index = funding_in_span.index.tz_convert("UTC").tz_localize(None)
+        params = None
+    else:
+        params = StrategyParams.from_yaml()
+        if timeframe != "15m":
+            log.warning("snapback-v1 expects 15m entry timeframe; using 15m regardless.")
+        data, funding_in_span = _prepare_snapback_data(symbol, start, end, params)
+        _apply_params_to_class(STRATEGIES[strategy_name], params)
 
-    bt = FractionalBacktest(
-        data,
-        STRATEGIES[strategy_name],
-        cash=cash,
-        commission=COMMISSION_PER_SIDE,
-        trade_on_close=False,
-        exclusive_orders=True,
-        fractional_unit=1e-6,  # 1 satoshi-equivalent precision
-        finalize_trades=True,  # mark-to-market any still-open positions at the last bar
-    )
+    eff_leverage = leverage or (params.leverage if params else 1)
+    margin = 1.0 / max(eff_leverage, 1)
+
+    if strategy_name == "buy-and-hold":
+        actual_cash = cash
+        bt = FractionalBacktest(
+            data,
+            STRATEGIES[strategy_name],
+            cash=actual_cash,
+            commission=COMMISSION_PER_SIDE,
+            margin=margin,
+            trade_on_close=False,
+            exclusive_orders=True,
+            fractional_unit=FRACTIONAL_UNIT,
+            finalize_trades=True,
+        )
+    else:
+        # Plain Backtest with $1M cash so 1 BTC ≈ 4% of equity and integer
+        # unit sizing works without FractionalBacktest's price scaling (which
+        # would silently desync custom indicator columns).
+        actual_cash = cash if cash != 10_000.0 else SNAPBACK_DEFAULT_CASH
+        STRATEGIES[strategy_name].leverage = eff_leverage  # type: ignore[attr-defined]
+        bt = Backtest(
+            data,
+            STRATEGIES[strategy_name],
+            cash=actual_cash,
+            commission=COMMISSION_PER_SIDE,
+            margin=margin,
+            trade_on_close=False,
+            exclusive_orders=True,
+            finalize_trades=True,
+        )
     stats = bt.run()
 
-    naive_return_pct = (float(data["Close"].iloc[-1]) / float(data["Open"].iloc[0]) - 1.0) * 100.0
+    naive_return_pct = (
+        float(data["Close"].iloc[-1]) / float(data["Open"].iloc[0]) - 1.0
+    ) * 100.0
     bt_return_pct = float(stats["Return [%]"])
 
-    # Funding only modeled accurately for buy-and-hold long here. P2 will track
-    # position direction over time for the real strategy.
     funding_cost_usdt: float | None = None
     funding_events = 0
     after_funding_pct: float | None = None
@@ -167,13 +280,20 @@ def run_backtest(
         funding_cost_usdt, funding_events = funding_cost_for_long_btc(
             data, funding_in_span, initial_cash=cash, commission=COMMISSION_PER_SIDE
         )
-        final_equity = cash * (1.0 + bt_return_pct / 100.0) - funding_cost_usdt
-        after_funding_pct = (final_equity / cash - 1.0) * 100.0
+    else:
+        trades_df = getattr(stats, "_trades", None)
+        funding_cost_usdt, funding_events = funding_cost_for_trades(
+            trades_df, data, funding_in_span
+        )
+
+    if funding_cost_usdt is not None:
+        final_equity = actual_cash * (1.0 + bt_return_pct / 100.0) - funding_cost_usdt
+        after_funding_pct = (final_equity / actual_cash - 1.0) * 100.0
 
     result = {
         "strategy": strategy_name,
         "symbol": symbol,
-        "timeframe": timeframe,
+        "timeframe": timeframe if strategy_name == "buy-and-hold" else "15m+1h",
         "start": data.index[0],
         "end": data.index[-1],
         "bars": len(data),
@@ -187,7 +307,9 @@ def run_backtest(
         "max_drawdown_pct": float(stats.get("Max. Drawdown [%]") or 0.0),
         "profit_factor": _safe_pf(stats),
         "win_rate_pct": float(stats.get("Win Rate [%]") or 0.0),
+        "avg_trade_pct": float(stats.get("Avg. Trade [%]") or 0.0),
         "commission_per_side": COMMISSION_PER_SIDE,
+        "leverage": eff_leverage,
     }
 
     if not quiet:
@@ -204,7 +326,7 @@ def _safe_pf(stats) -> float:
 
 def _print_result(r: dict) -> None:
     print()
-    print(f"=== {r['strategy']} | {r['symbol']} {r['timeframe']} ===")
+    print(f"=== {r['strategy']} | {r['symbol']} {r['timeframe']} | {r['leverage']}x ===")
     print(f"  period          : {r['start']} → {r['end']}  ({r['bars']} bars)")
     print(f"  commission/side : {r['commission_per_side']*100:.4f}%  "
           f"({TAKER_FEE*100:.4f}% fee + {SLIPPAGE_PROXY*100:.4f}% slip)")
@@ -220,22 +342,20 @@ def _print_result(r: dict) -> None:
     print(f"  Max DD          : {r['max_drawdown_pct']:.2f}%")
     print(f"  Profit factor   : {r['profit_factor']:.2f}")
     print(f"  Win rate        : {r['win_rate_pct']:.1f}%")
-
-    drag = r["naive_return_pct"] - r["backtest_return_pct"]
-    print()
-    print(f"  friction drag   : {drag:.2f} pp  (should be ~{r['commission_per_side']*2*100:.2f}% for a single round-trip)")
+    print(f"  Avg trade       : {r['avg_trade_pct']:+.3f}%")
 
 
 def _main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     p = argparse.ArgumentParser(description="Run a backtest on cached Binance Futures data.")
-    p.add_argument("--strategy", default="buy-and-hold", choices=list(STRATEGIES.keys()))
+    p.add_argument("--strategy", default="snapback-v1", choices=list(STRATEGIES.keys()))
     p.add_argument("--symbol", default="BTC/USDT:USDT")
-    p.add_argument("--tf", default="1h", help="timeframe: 15m, 1h, ...")
+    p.add_argument("--tf", default="15m", help="entry timeframe (ignored for snapback-v1 which is fixed 15m+1h)")
     p.add_argument("--start", help="YYYY-MM-DD (UTC)")
     p.add_argument("--end", help="YYYY-MM-DD (UTC)")
     p.add_argument("--days", type=int, help="lookback days (overrides --start)")
     p.add_argument("--cash", type=float, default=10_000.0)
+    p.add_argument("--leverage", type=int, help="override params.yaml leverage")
     args = p.parse_args()
 
     end = (
@@ -248,9 +368,12 @@ def _main() -> int:
     elif args.start:
         start = datetime.fromisoformat(args.start).replace(tzinfo=timezone.utc)
     else:
-        start = end - timedelta(days=365 * 3)
+        start = end - timedelta(days=365)
 
-    run_backtest(args.strategy, args.symbol, args.tf, start, end, cash=args.cash)
+    run_backtest(
+        args.strategy, args.symbol, args.tf, start, end,
+        cash=args.cash, leverage=args.leverage,
+    )
     return 0
 
 

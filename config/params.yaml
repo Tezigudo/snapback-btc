@@ -20,9 +20,12 @@ strategy:
   volume_ma_period: 20
   volume_multiple: 1.5          # current vol > 1.5 * SMA(20)
 
-  # Funding rate filter (per 8h, decimal)
-  funding_long_max: -0.0003     # only long when funding <= -0.03%
-  funding_short_min: 0.0003     # only short when funding >= +0.03%
+  # Funding rate filter (per 8h, decimal). The 2025-2026 regime has compressed
+  # funding to ±0.01% so the original ±0.03% gate triggered zero bars. We
+  # relax to ±0.005% ("funding not strongly against direction") and treat
+  # funding more as a cost than a hard gate. P3 walk-forward retunes per fold.
+  funding_long_max: 0.00005     # long allowed unless funding > +0.005%
+  funding_short_min: -0.00005   # short allowed unless funding < -0.005%
 
   # ATR-based exits on trend timeframe
   atr_period: 20
