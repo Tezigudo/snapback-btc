@@ -22,6 +22,10 @@ import socket
 import ssl
 from email.message import EmailMessage
 
+# Import order matters: exchange.env calls load_dotenv() at import time, which
+# populates os.environ from .env before we read SMTP_* below.
+from exchange import env as _env_module  # noqa: F401  (side-effect import)
+
 log = logging.getLogger(__name__)
 
 SMTP_TIMEOUT_S = 15
