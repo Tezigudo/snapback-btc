@@ -164,30 +164,57 @@ def load_klines(
     days_back: int = 1095,
     end: datetime | None = None,
 ) -> pd.DataFrame:
-    """Load klines from cache, fetching incrementally if stale or absent."""
+    """Load klines from cache, fetching forward AND backward gaps if absent.
+
+    Two-sided cache: if the requested window extends past either end of the
+    cache, fetch the missing piece and merge. Without the backward extension,
+    a first call with small days_back would pin the cache start; later calls
+    with larger days_back would silently return short slices.
+    """
     end = end or datetime.now(timezone.utc)
     start = end - timedelta(days=days_back)
     cache_path = _cache_path(symbol, timeframe)
 
-    if cache_path.exists():
-        cached = pd.read_parquet(cache_path)
-        cached_end = (
-            cached.index.max().to_pydatetime() if not cached.empty else start
-        )
-        if cached_end >= end - timedelta(hours=1):
-            return cached.loc[start:end]
-        new = fetch_klines(symbol, timeframe, cached_end + timedelta(milliseconds=1), end)
-        if not new.empty:
-            combined = pd.concat([cached, new]).sort_index()
-            combined = combined[~combined.index.duplicated(keep="last")]
-            combined.to_parquet(cache_path)
-            return combined.loc[start:end]
-        return cached.loc[start:end]
+    if not cache_path.exists():
+        fresh = fetch_klines(symbol, timeframe, start, end)
+        if not fresh.empty:
+            fresh.to_parquet(cache_path)
+        return fresh
 
-    fresh = fetch_klines(symbol, timeframe, start, end)
-    if not fresh.empty:
-        fresh.to_parquet(cache_path)
-    return fresh
+    cached = pd.read_parquet(cache_path)
+    if cached.empty:
+        fresh = fetch_klines(symbol, timeframe, start, end)
+        if not fresh.empty:
+            fresh.to_parquet(cache_path)
+        return fresh
+
+    cached_start = cached.index.min().to_pydatetime()
+    cached_end = cached.index.max().to_pydatetime()
+    chunks = [cached]
+    changed = False
+
+    # Extend backwards if we asked for history older than the cache.
+    if start < cached_start - timedelta(hours=1):
+        back = fetch_klines(symbol, timeframe, start, cached_start - timedelta(milliseconds=1))
+        if not back.empty:
+            chunks.insert(0, back)
+            changed = True
+
+    # Extend forwards if the cache hasn't reached the requested end.
+    if end > cached_end + timedelta(hours=1):
+        fwd = fetch_klines(symbol, timeframe, cached_end + timedelta(milliseconds=1), end)
+        if not fwd.empty:
+            chunks.append(fwd)
+            changed = True
+
+    if changed:
+        combined = pd.concat(chunks).sort_index()
+        combined = combined[~combined.index.duplicated(keep="last")]
+        combined.to_parquet(cache_path)
+    else:
+        combined = cached
+
+    return combined.loc[start:end]
 
 
 def load_funding(
@@ -195,28 +222,47 @@ def load_funding(
     days_back: int = 1095,
     end: datetime | None = None,
 ) -> pd.DataFrame:
-    """Load funding history from cache, fetching incrementally if stale or absent."""
+    """Load funding history from cache, fetching forward AND backward gaps."""
     end = end or datetime.now(timezone.utc)
     start = end - timedelta(days=days_back)
     cache_path = _cache_path(symbol, "funding")
-    if cache_path.exists():
-        cached = pd.read_parquet(cache_path)
-        cached_end = (
-            cached.index.max().to_pydatetime() if not cached.empty else start
-        )
-        if cached_end >= end - timedelta(hours=8):
-            return cached.loc[start:end]
-        new = fetch_funding(symbol, cached_end + timedelta(milliseconds=1), end)
-        if not new.empty:
-            combined = pd.concat([cached, new]).sort_index()
-            combined = combined[~combined.index.duplicated(keep="last")]
-            combined.to_parquet(cache_path)
-            return combined.loc[start:end]
-        return cached.loc[start:end]
-    fresh = fetch_funding(symbol, start, end)
-    if not fresh.empty:
-        fresh.to_parquet(cache_path)
-    return fresh
+
+    if not cache_path.exists():
+        fresh = fetch_funding(symbol, start, end)
+        if not fresh.empty:
+            fresh.to_parquet(cache_path)
+        return fresh
+
+    cached = pd.read_parquet(cache_path)
+    if cached.empty:
+        fresh = fetch_funding(symbol, start, end)
+        if not fresh.empty:
+            fresh.to_parquet(cache_path)
+        return fresh
+
+    cached_start = cached.index.min().to_pydatetime()
+    cached_end = cached.index.max().to_pydatetime()
+    chunks = [cached]
+    changed = False
+
+    if start < cached_start - timedelta(hours=8):
+        back = fetch_funding(symbol, start, cached_start - timedelta(milliseconds=1))
+        if not back.empty:
+            chunks.insert(0, back)
+            changed = True
+    if end > cached_end + timedelta(hours=8):
+        fwd = fetch_funding(symbol, cached_end + timedelta(milliseconds=1), end)
+        if not fwd.empty:
+            chunks.append(fwd)
+            changed = True
+
+    if changed:
+        combined = pd.concat(chunks).sort_index()
+        combined = combined[~combined.index.duplicated(keep="last")]
+        combined.to_parquet(cache_path)
+    else:
+        combined = cached
+    return combined.loc[start:end]
 
 
 def _main() -> int:

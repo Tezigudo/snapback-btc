@@ -214,7 +214,14 @@ def run_backtest(
     cash: float = 10_000.0,
     leverage: int | None = None,
     quiet: bool = False,
+    params_override: StrategyParams | None = None,
 ) -> dict:
+    """Run a backtest.
+
+    `params_override` lets walk-forward / sweep harnesses inject specific
+    StrategyParams without touching config/params.yaml. When None, params
+    come from the yaml as usual. Ignored for buy-and-hold.
+    """
     if strategy_name not in STRATEGIES:
         raise ValueError(f"unknown strategy: {strategy_name}")
 
@@ -228,7 +235,7 @@ def run_backtest(
             funding_in_span.index = funding_in_span.index.tz_convert("UTC").tz_localize(None)
         params = None
     else:
-        params = StrategyParams.from_yaml()
+        params = params_override or StrategyParams.from_yaml()
         if timeframe != "15m":
             log.warning("snapback-v1 expects 15m entry timeframe; using 15m regardless.")
         data, funding_in_span = _prepare_snapback_data(symbol, start, end, params)

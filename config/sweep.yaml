@@ -1,0 +1,32 @@
+# Walk-forward parameter sweep grid + promotion thresholds.
+# Consumed by `python -m research.walk_forward`. Default values aim for a
+# manageable runtime (~6 min / fold on cached parquet) — scale grid up
+# once you've seen the first run produce sane output.
+#
+# Promotion thresholds are reported as a PASS/FAIL gate at the bottom of
+# every run's markdown report. They are NEVER auto-applied to
+# config/params.yaml — adopting a winner is always a manual decision after
+# you've read the fold table yourself.
+
+train_days: 90       # length of each training window
+test_days: 30        # length of each out-of-sample window
+step_days: 30        # step size between consecutive folds
+min_trades_train: 10 # combos with fewer trades on train are excluded
+
+promotion:
+  min_median_test_sharpe: 0.5   # median OOS Sharpe across folds must clear this
+  min_fold_stability: 0.5       # at least half of folds must have test_sharpe > 0
+  max_train_test_drift_pct: 50  # median (train_sharpe - test_sharpe) / train_sharpe
+
+# Parameter grid. Cartesian product = total combos per train window.
+# Default: 2*3*2*3*2 = 72 combos.
+#
+# rsi_long_threshold mirrors to rsi_short_threshold = 100 - long unless
+# rsi_short_threshold is also listed here.
+grid:
+  rsi_period:           [2, 14]
+  rsi_long_threshold:   [10, 20, 30]
+  volume_multiple:      [1.0, 1.5]
+  atr_tp_multiple:      [1.0, 1.5, 2.0]
+  atr_sl_multiple:      [0.75, 1.0]
+  time_stop_bars:       [48]
