@@ -7,7 +7,7 @@ Checks:
   - new ERROR/Traceback lines in today's log
   - position reconciliation vs state.db
 
-Posts to Telegram. NO LLM calls — keeps the per-minute cost at $0.
+Sends email via alerts.send_alert(). NO LLM calls — per-minute cost is $0.
 """
 
 from __future__ import annotations

@@ -36,6 +36,6 @@ This repo runs a deterministic Binance Futures BTC/USDT perpetual bot. You (Clau
 - Heartbeat: `data/heartbeat` mtime updated every loop tick (~5s). Stale >90s = bot down.
 
 ## Stack reference
-Python 3.11+, `ccxt`, `pandas`, `pandas-ta`, `backtesting.py` (research), `freqtrade` (live later), `plotly`, `structlog`, `python-telegram-bot`.
+Python 3.11+, `ccxt`, `pandas`, `pandas-ta`, `backtesting.py` (research), `freqtrade` (live later), `plotly`, `structlog`. Alerts via `alerts.py` (stdlib `smtplib`, Gmail-friendly).
 
 See `../btc-bot-ultraplan.md` for the full strategy + phase plan.

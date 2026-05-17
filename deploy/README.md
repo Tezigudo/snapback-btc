@@ -34,7 +34,12 @@ sudo systemctl enable snapback-btc
 - IP whitelist: the VPS static IP only
 - Read + Trade permissions only — never Withdraw
 
-## Cron monitor
+## Cron monitor (sends email alerts)
 ```cron
 */5 * * * * /opt/snapback-btc/.venv/bin/python /opt/snapback-btc/monitor.py
 ```
+
+Email alerts: configure SMTP_* env vars in `/etc/snapback-btc/.env` (see
+`.env.example`). For Gmail, generate an app password at
+https://myaccount.google.com/apppasswords (2FA required first). Test the
+wiring before going live: `python alerts.py "deploy test" "smoke"`.

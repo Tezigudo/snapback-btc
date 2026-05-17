@@ -10,7 +10,7 @@ Deterministic Binance Futures BTC/USDT perpetual bot. RSI(2) extreme + EMA(200) 
 - `pandas`, `pandas-ta` (indicators)
 - `backtesting.py` (research), `freqtrade` (live, later)
 - `plotly` (HTML reports)
-- SQLite (state), Telegram bot (alerts)
+- SQLite (state), SMTP email (alerts — Gmail app password works)
 
 ## Quickstart (testnet)
 ```bash
