@@ -401,8 +401,9 @@ def _main() -> int:
     p.add_argument("--step-days", type=int)
     p.add_argument("--symbol", default="BTC/USDT:USDT")
     p.add_argument("--strategy", default="snapback-v1",
-                   choices=["snapback-v1", "snapback-v2"],
-                   help="which strategy class to evaluate")
+                   help="which strategy class to evaluate (any name in "
+                        "backtest.STRATEGIES — currently snapback-v1, "
+                        "snapback-v2, donchian-v1, carry-v1)")
     args = p.parse_args()
 
     sweep_cfg = yaml.safe_load(Path(args.sweep).read_text())

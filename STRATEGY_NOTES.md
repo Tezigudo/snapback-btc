@@ -95,18 +95,65 @@ strategy family (see "Next experiments" below), use the seam to optionally
 let an LLM critique fold results, and accept that the LLM is a *research
 assistant*, never a *trading agent*.
 
-## Next experiments (in honest priority order)
+## Strategy bake-off (P3.2 — 4-way walk-forward, BTC perp, 2022-2024)
 
-1. **Different timeframe family.** Move from 15m mean-reversion to 1h or
-   4h trend-following. 15m on BTC has a brutal signal-to-noise ratio,
-   confirmed by both v1 walk-forwards.
-2. **Different signal family.** Bollinger band squeeze + breakout instead
-   of RSI extreme. Donchian channel breakouts. Volume Profile POC reversion.
-3. **Asset rotation.** Multi-symbol portfolio (BTC + ETH + 2-3 alt perps)
-   with cross-sectional momentum. Spreads single-strategy risk.
-4. **Accept the result.** If three more redesigns also fail OOS, the
-   honest conclusion is that retail-accessible BTC perp does not have
-   easy edge for a deterministic mean-reverter, and we should EITHER
-   shift focus to capturing funding (a carry trade, not an alpha trade)
-   OR retire the project as "operationally complete, financially
-   inconclusive". The walk-forward engine has done its job in that case.
+All four ran on the **same** 36-month window (2022-01 → 2024-12), 60d
+train / 20d test / 30d step, same `Backtest` harness with fees + slippage
++ funding accounting, same deflated-Sharpe scoring. Different param grids
+chosen per strategy's natural free knobs. Honest, brutal numbers:
+
+| Strategy | Hypothesis | Stability | Median OOS Sharpe | Median OOS return | Drift | Promotion |
+|---|---|---:|---:|---:|---:|:---:|
+| snapback-v1 | RSI(2) mean-revert in EMA-trend | 21% | −3.58 | −5.13% | +122% | ❌ (3/3 fail) |
+| snapback-v2 | + regime gating | 19% | −0.22 | −0.06% | +566% | ❌ (3/3 fail) |
+| **donchian-v1** | 1h breakout trend-follow | **53%** | **+0.40** | **+1.35%** | +58% | ❌ (Sharpe + drift) |
+| carry-v1 | funding-rate harvester | 50% | −0.13 | +0.55% | **+2%** | ❌ (Sharpe only) |
+
+### What the table says
+
+- **snapback (both versions) has no edge** on BTC 15m. v2's regime
+  gating turns it from catastrophic to merely losing — useful diagnostic,
+  not a real strategy.
+- **Donchian breakout is the strongest** — 53% folds positive, median
+  return ≈ +25% annualised if compounded, only Sharpe (0.40 < 0.5) and
+  drift (58% > 50%) keep it from passing promotion outright. Tune
+  Donchian periods + add an ATR-based trailing stop and this likely
+  clears the gate.
+- **Carry harvester has the best generalisation** — drift of +2% means
+  train and test perform nearly identically (no overfitting), and 50%
+  fold stability. But median Sharpe is essentially zero because some
+  folds get smashed by fast price moves the 1% SL doesn't catch fast
+  enough. Add a tighter SL or a price-direction filter and this becomes
+  a real carry strategy.
+
+### What this changes about the project
+
+Two strategies (Donchian, carry) now have **structural signal** in walk-forward,
+neither pass promotion outright but both are within a refinement cycle of doing
+so. snapback-v1/v2 are dead-ends and can be retired or kept as the engine's
+default cautionary baseline.
+
+The walk-forward engine + Researcher seam built in P3 paid for itself
+*on the first weekend* by separating "noisy losing strategy"
+(snapback) from "real-but-rough strategy" (Donchian, carry). That's
+exactly what it was supposed to do.
+
+## Next experiments (in honest priority order, post-bake-off)
+
+1. **Tune Donchian: trailing stop + period sweep on wider grid.** With
+   the structural signal proven, the work now is parameter refinement,
+   not new strategy invention. ~half-day of walk-forward.
+2. **Tune carry: tighter SL, optional price-direction filter, longer
+   funding lookback.** Same ~half-day of walk-forward.
+3. **Try an ensemble.** Both Donchian and carry trade on different
+   features; in principle they should be lowly correlated. Run them on
+   the same equity curve (split capital 50/50) and see if combined
+   Sharpe beats either alone. ~1 day.
+4. **THEN proceed to P4 testnet** for live execution plumbing — by then
+   we have a real strategy worth executing live.
+5. **Defer:** multi-symbol cross-sectional momentum. Wait until P4 is
+   stable and a single-symbol strategy is profitable in paper.
+
+Snapback as a research subject is **done** — declared a negative result.
+We keep the code and the v1/v2 baselines as comparison points; we do not
+deploy them.

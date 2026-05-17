@@ -48,9 +48,21 @@ python -c "from exchange.env import get_env; print(get_env())"   # -> 'testnet'
 - [x] P1 — data + backtester (honest fees/slippage/funding)
 - [x] P2 — strategy v1 (RSI(2) + EMA(200) + volume + funding)
 - [x] P3 — walk-forward + OOS (deterministic researcher; LLM seam ready)
+- [x] P3.2 — strategy bake-off: snapback v1/v2 retired, Donchian + carry promising
 - [ ] P4 — live testnet (7-day soak)
 - [ ] P5 — monitor + viz
 - [ ] P6 — mainnet gate
+
+## Strategy zoo (P3.2 — see `STRATEGY_NOTES.md` for full table)
+
+All four ran on the same 2022–2024 walk-forward window with fees + slippage + funding.
+
+| Strategy | Stability | Median OOS Sharpe | Median OOS return | Promotion |
+|---|---:|---:|---:|:---:|
+| snapback-v1 (RSI mean-rev) | 21% | −3.58 | −5.13% | ❌ retired |
+| snapback-v2 (+ regime) | 19% | −0.22 | −0.06% | ❌ retired |
+| **donchian-v1** (1h breakout) | **53%** | **+0.40** | **+1.35%** | ❌ close (Sharpe + drift) |
+| carry-v1 (funding harvest) | 50% | −0.13 | +0.55% | ❌ close (Sharpe only) |
 
 ## Research
 

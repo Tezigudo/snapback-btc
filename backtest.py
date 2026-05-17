@@ -36,6 +36,8 @@ from strategy.signals import (
     prepare_strategy_data,
 )
 from strategy.regime import attach_regimes
+from strategy.signals_carry import CarryHarvester
+from strategy.signals_donchian import DonchianBreakoutBTC, attach_donchian
 from strategy.signals_v2 import SnapbackBTCv2
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
@@ -73,7 +75,14 @@ STRATEGIES: dict[str, type[Strategy]] = {
     "buy-and-hold": BuyAndHold,
     "snapback-v1": SnapbackBTC,
     "snapback-v2": SnapbackBTCv2,
+    "donchian-v1": DonchianBreakoutBTC,
+    "carry-v1": CarryHarvester,
 }
+
+# Strategies that need regime columns layered on top of the snapback prep.
+_REGIME_STRATEGIES = {"snapback-v2"}
+# Strategies that need Donchian channel columns layered on top.
+_DONCHIAN_STRATEGIES = {"donchian-v1"}
 
 
 # --- Funding accounting ------------------------------------------------------
@@ -158,6 +167,9 @@ def _prepare_snapback_data(
     end: datetime,
     params: StrategyParams,
     with_regimes: bool = False,
+    with_donchian: bool = False,
+    donchian_entry: int = 20,
+    donchian_exit: int = 10,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Pull 15m + 1h + funding; build indicator-augmented 15m DataFrame.
 
@@ -186,6 +198,12 @@ def _prepare_snapback_data(
             ema_1h=prepared["EMA_1h"],
             atr_1h=prepared["ATR_1h"],
         )
+    if with_donchian:
+        prepared = attach_donchian(
+            prepared, k1h,
+            period_entry=donchian_entry, period_exit=donchian_exit,
+            atr_period=params.atr_period,
+        )
     # prepare_strategy_data strips tz; slice bounds + funding must match.
     naive_start = start.replace(tzinfo=None) if start.tzinfo else start
     naive_end = end.replace(tzinfo=None) if end.tzinfo else end
@@ -202,19 +220,21 @@ def _prepare_snapback_data(
 
 
 def _apply_params_to_class(cls: type[Strategy], params: StrategyParams) -> None:
-    """Inject YAML params as class attributes on a Strategy subclass."""
+    """Inject swept params as class attributes on a Strategy subclass.
+
+    Only sets attributes that already exist on the class — so snapback params
+    don't pollute Donchian, Donchian params don't pollute carry, etc.
+    """
     for field in (
-        "rsi_long_threshold",
-        "rsi_short_threshold",
-        "volume_multiple",
-        "funding_long_max",
-        "funding_short_min",
-        "atr_tp_multiple",
-        "atr_sl_multiple",
-        "time_stop_bars",
-        "risk_per_trade_pct",
+        "rsi_long_threshold", "rsi_short_threshold",
+        "volume_multiple", "funding_long_max", "funding_short_min",
+        "atr_tp_multiple", "atr_sl_multiple",
+        "time_stop_bars", "risk_per_trade_pct",
+        "donchian_period_entry", "donchian_period_exit",
+        "funding_threshold", "funding_exit_threshold", "sl_pct",
     ):
-        setattr(cls, field, getattr(params, field))
+        if hasattr(cls, field):
+            setattr(cls, field, getattr(params, field))
 
 
 def run_backtest(
@@ -249,9 +269,17 @@ def run_backtest(
     else:
         params = params_override or StrategyParams.from_yaml()
         if timeframe != "15m":
-            log.warning("snapback-v1/v2 expect 15m entry timeframe; using 15m regardless.")
+            log.warning("strategies expect 15m entry timeframe; using 15m regardless.")
+        # Pull donchian periods from class attrs (overridden by sweep / params_override).
+        cls = STRATEGIES[strategy_name]
+        donchian_entry = getattr(cls, "donchian_period_entry", 20)
+        donchian_exit = getattr(cls, "donchian_period_exit", 10)
         data, funding_in_span = _prepare_snapback_data(
-            symbol, start, end, params, with_regimes=(strategy_name == "snapback-v2"),
+            symbol, start, end, params,
+            with_regimes=(strategy_name in _REGIME_STRATEGIES),
+            with_donchian=(strategy_name in _DONCHIAN_STRATEGIES),
+            donchian_entry=donchian_entry,
+            donchian_exit=donchian_exit,
         )
         _apply_params_to_class(STRATEGIES[strategy_name], params)
 

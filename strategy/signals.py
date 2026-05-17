@@ -69,6 +69,13 @@ class StrategyParams:
     time_stop_bars: int = 48
     risk_per_trade_pct: float = 2.0
     leverage: int = 3
+    # Donchian-specific (ignored by snapback strategies)
+    donchian_period_entry: int = 20
+    donchian_period_exit: int = 10
+    # Carry-specific (ignored by other strategies)
+    funding_threshold: float = 0.0002
+    funding_exit_threshold: float = 0.00005
+    sl_pct: float = 0.01
 
     @classmethod
     def from_yaml(cls, path: str | None = None) -> "StrategyParams":
