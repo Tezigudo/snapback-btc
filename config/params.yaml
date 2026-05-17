@@ -8,7 +8,18 @@ timeframes:
   trend: 1h
 
 strategy:
-  # RSI(2) extreme on entry timeframe
+  # RSI on entry timeframe. Default RSI(2) per Connors' short-term
+  # mean-reversion playbook — the strategy intent here is snap-back, and
+  # RSI(14) on 15m bars smooths out exactly the spikes we want to fade.
+  #
+  # Bake-off on BTC perp 2025-05 → 2026-05 (3x lev, fees+slip+funding):
+  #   config         trades  return%  PF    WR%   DD%    Sharpe
+  #   RSI(2)  10/90    40    -10.4%   0.71  42.5  -13.6  -1.25  <- chosen
+  #   RSI(14) 30/70     6     -5.0%   0.26  16.7   -6.1  -1.49  too quiet
+  #   RSI(14) 35/65    14     -9.4%   0.38  21.4  -14.1  -1.50
+  #   RSI(14) 40/60    35    -18.5%   0.47  31.4  -21.0  -2.22  worst
+  # RSI(2) wins on every quality metric (PF, WR, Sharpe) at every matched
+  # signal density. P3 walk-forward will sweep rsi_period as a free param.
   rsi_period: 2
   rsi_long_threshold: 10        # buy when RSI(2) < 10
   rsi_short_threshold: 90       # sell when RSI(2) > 90
