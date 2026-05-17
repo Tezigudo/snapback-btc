@@ -1,0 +1,875 @@
+{
+  "generated_at": "2026-05-17T09:38:11.946343+00:00",
+  "sweep_config": {
+    "train_days": 60,
+    "test_days": 30,
+    "step_days": 30,
+    "min_trades_train": 5,
+    "promotion": {
+      "min_median_test_sharpe": 0.5,
+      "min_fold_stability": 0.5,
+      "max_train_test_drift_pct": 50
+    },
+    "grid": {
+      "donchian_period_entry": [
+        20,
+        40,
+        80
+      ],
+      "donchian_period_exit": [
+        10,
+        20
+      ],
+      "atr_sl_multiple": [
+        1.5,
+        2.5
+      ],
+      "atr_trail_multiple": [
+        0.0,
+        1.5,
+        3.0
+      ],
+      "leverage": [
+        20,
+        25
+      ],
+      "rsi_period": [
+        2
+      ],
+      "rsi_long_threshold": [
+        10
+      ],
+      "volume_multiple": [
+        1.0
+      ],
+      "atr_tp_multiple": [
+        1.5
+      ],
+      "time_stop_bars": [
+        48
+      ]
+    }
+  },
+  "grid": {
+    "donchian_period_entry": [
+      20,
+      40,
+      80
+    ],
+    "donchian_period_exit": [
+      10,
+      20
+    ],
+    "atr_sl_multiple": [
+      1.5,
+      2.5
+    ],
+    "atr_trail_multiple": [
+      0.0,
+      1.5,
+      3.0
+    ],
+    "leverage": [
+      20,
+      25
+    ],
+    "rsi_period": [
+      2
+    ],
+    "rsi_long_threshold": [
+      10
+    ],
+    "volume_multiple": [
+      1.0
+    ],
+    "atr_tp_multiple": [
+      1.5
+    ],
+    "time_stop_bars": [
+      48
+    ]
+  },
+  "folds": [
+    {
+      "fold_index": 0,
+      "train_start": "2022-06-01T00:00:00+00:00",
+      "train_end": "2022-07-31T00:00:00+00:00",
+      "test_start": "2022-07-31T00:00:00+00:00",
+      "test_end": "2022-08-30T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 40,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 3.2103960301955783,
+      "test_sharpe": 2.034867130469218,
+      "test_return_pct": 2.7789060793625655,
+      "test_after_funding_pct": 2.741580289872081,
+      "trades": 5,
+      "max_drawdown_pct": -1.225376594999994
+    },
+    {
+      "fold_index": 1,
+      "train_start": "2022-07-01T00:00:00+00:00",
+      "train_end": "2022-08-30T00:00:00+00:00",
+      "test_start": "2022-08-30T00:00:00+00:00",
+      "test_end": "2022-09-29T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 0.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.783310723297346,
+      "test_sharpe": -5.270451455534055,
+      "test_return_pct": -5.493031007035321,
+      "test_after_funding_pct": -5.5559460454868255,
+      "trades": 4,
+      "max_drawdown_pct": -7.646222136845305
+    },
+    {
+      "fold_index": 2,
+      "train_start": "2022-07-31T00:00:00+00:00",
+      "train_end": "2022-09-29T00:00:00+00:00",
+      "test_start": "2022-09-29T00:00:00+00:00",
+      "test_end": "2022-10-29T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 40,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.55495080888605,
+      "test_sharpe": -9.751271226157261,
+      "test_return_pct": -3.8623571900726295,
+      "test_after_funding_pct": -3.8852168521227304,
+      "trades": 6,
+      "max_drawdown_pct": -3.8623571900726295
+    },
+    {
+      "fold_index": 3,
+      "train_start": "2022-08-30T00:00:00+00:00",
+      "train_end": "2022-10-29T00:00:00+00:00",
+      "test_start": "2022-10-29T00:00:00+00:00",
+      "test_end": "2022-11-28T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 3.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 20,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 0.5873396920353473,
+      "test_sharpe": -3.590178235105253,
+      "test_return_pct": -6.4974650390961095,
+      "test_after_funding_pct": -6.657128157814906,
+      "trades": 6,
+      "max_drawdown_pct": -7.009779732920974
+    },
+    {
+      "fold_index": 4,
+      "train_start": "2022-09-29T00:00:00+00:00",
+      "train_end": "2022-11-28T00:00:00+00:00",
+      "test_start": "2022-11-28T00:00:00+00:00",
+      "test_end": "2022-12-28T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 0.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 0.9027568824065044,
+      "test_sharpe": -2.73636656653788,
+      "test_return_pct": -3.295964554477343,
+      "test_after_funding_pct": -3.398484425333126,
+      "trades": 3,
+      "max_drawdown_pct": -6.626197555735736
+    },
+    {
+      "fold_index": 5,
+      "train_start": "2022-10-29T00:00:00+00:00",
+      "train_end": "2022-12-28T00:00:00+00:00",
+      "test_start": "2022-12-28T00:00:00+00:00",
+      "test_end": "2023-01-27T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 20,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.4840268894135054,
+      "test_sharpe": 3.480881155700347,
+      "test_return_pct": 14.63096766026516,
+      "test_after_funding_pct": 14.515714034935678,
+      "trades": 10,
+      "max_drawdown_pct": -2.298870280429599
+    },
+    {
+      "fold_index": 6,
+      "train_start": "2022-11-28T00:00:00+00:00",
+      "train_end": "2023-01-27T00:00:00+00:00",
+      "test_start": "2023-01-27T00:00:00+00:00",
+      "test_end": "2023-02-26T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 20,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 3.4896553048553147,
+      "test_sharpe": -2.935823429171526,
+      "test_return_pct": -1.203982244671881,
+      "test_after_funding_pct": -1.2056590651492782,
+      "trades": 6,
+      "max_drawdown_pct": -2.3587858607094114
+    },
+    {
+      "fold_index": 7,
+      "train_start": "2022-12-28T00:00:00+00:00",
+      "train_end": "2023-02-26T00:00:00+00:00",
+      "test_start": "2023-02-26T00:00:00+00:00",
+      "test_end": "2023-03-28T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 20,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 3.0554695621920955,
+      "test_sharpe": 2.084407725404647,
+      "test_return_pct": 4.744783606801333,
+      "test_after_funding_pct": 4.730767964594729,
+      "trades": 8,
+      "max_drawdown_pct": -2.9747612605817597
+    },
+    {
+      "fold_index": 8,
+      "train_start": "2023-01-27T00:00:00+00:00",
+      "train_end": "2023-03-28T00:00:00+00:00",
+      "test_start": "2023-03-28T00:00:00+00:00",
+      "test_end": "2023-04-27T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 3.0,
+        "donchian_period_entry": 40,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.1236566483791686,
+      "test_sharpe": -0.8909658841868172,
+      "test_return_pct": -0.903189924710011,
+      "test_after_funding_pct": -0.9695703329943073,
+      "trades": 3,
+      "max_drawdown_pct": -3.724832529607547
+    },
+    {
+      "fold_index": 9,
+      "train_start": "2023-02-26T00:00:00+00:00",
+      "train_end": "2023-04-27T00:00:00+00:00",
+      "test_start": "2023-04-27T00:00:00+00:00",
+      "test_end": "2023-05-27T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 3.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 20,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.180743255160548,
+      "test_sharpe": -6.3039245297210265,
+      "test_return_pct": -2.0865540427497007,
+      "test_after_funding_pct": -2.0300270750501004,
+      "trades": 3,
+      "max_drawdown_pct": -2.62017109253434
+    },
+    {
+      "fold_index": 10,
+      "train_start": "2023-03-28T00:00:00+00:00",
+      "train_end": "2023-05-27T00:00:00+00:00",
+      "test_start": "2023-05-27T00:00:00+00:00",
+      "test_end": "2023-06-26T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.7283093857092156,
+      "test_sharpe": 2.7360417664534027,
+      "test_return_pct": 7.64541458578473,
+      "test_after_funding_pct": 7.6256524983164375,
+      "trades": 6,
+      "max_drawdown_pct": -1.7905515265404737
+    },
+    {
+      "fold_index": 11,
+      "train_start": "2023-04-27T00:00:00+00:00",
+      "train_end": "2023-06-26T00:00:00+00:00",
+      "test_start": "2023-06-26T00:00:00+00:00",
+      "test_end": "2023-07-26T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 40,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.480484107348693,
+      "test_sharpe": -6.315802525377068,
+      "test_return_pct": -2.9125298872458285,
+      "test_after_funding_pct": -2.8918136331458233,
+      "trades": 7,
+      "max_drawdown_pct": -4.23253592095053
+    },
+    {
+      "fold_index": 12,
+      "train_start": "2023-05-27T00:00:00+00:00",
+      "train_end": "2023-07-26T00:00:00+00:00",
+      "test_start": "2023-07-26T00:00:00+00:00",
+      "test_end": "2023-08-25T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 20,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.4685727536855682,
+      "test_sharpe": 1.4025412341135535,
+      "test_return_pct": 4.85046656386553,
+      "test_after_funding_pct": 4.883880138180441,
+      "trades": 8,
+      "max_drawdown_pct": -2.000223808480095
+    },
+    {
+      "fold_index": 13,
+      "train_start": "2023-06-26T00:00:00+00:00",
+      "train_end": "2023-08-25T00:00:00+00:00",
+      "test_start": "2023-08-25T00:00:00+00:00",
+      "test_end": "2023-09-24T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 1.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 0.0,
+        "donchian_period_entry": 80,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 0.8150166324184387,
+      "test_sharpe": -5.331104830144123,
+      "test_return_pct": -5.089723506990145,
+      "test_after_funding_pct": -5.061219761276547,
+      "trades": 4,
+      "max_drawdown_pct": -6.239280706990136
+    },
+    {
+      "fold_index": 14,
+      "train_start": "2023-07-26T00:00:00+00:00",
+      "train_end": "2023-09-24T00:00:00+00:00",
+      "test_start": "2023-09-24T00:00:00+00:00",
+      "test_end": "2023-10-24T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 20,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.3877893836282267,
+      "test_sharpe": 3.12424595628649,
+      "test_return_pct": 6.231296915115905,
+      "test_after_funding_pct": 6.225970051694718,
+      "trades": 9,
+      "max_drawdown_pct": -2.212795038609505
+    },
+    {
+      "fold_index": 15,
+      "train_start": "2023-08-25T00:00:00+00:00",
+      "train_end": "2023-10-24T00:00:00+00:00",
+      "test_start": "2023-10-24T00:00:00+00:00",
+      "test_end": "2023-11-23T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 40,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.7978540051266783,
+      "test_sharpe": 0.16926484549581755,
+      "test_return_pct": -0.7466884738604654,
+      "test_after_funding_pct": -0.8267968222286703,
+      "trades": 6,
+      "max_drawdown_pct": -2.137710600296616
+    },
+    {
+      "fold_index": 16,
+      "train_start": "2023-09-24T00:00:00+00:00",
+      "train_end": "2023-11-23T00:00:00+00:00",
+      "test_start": "2023-11-23T00:00:00+00:00",
+      "test_end": "2023-12-23T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 40,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.083676948961332,
+      "test_sharpe": 2.9832328076372154,
+      "test_return_pct": 4.573155988776462,
+      "test_after_funding_pct": 4.458704359648258,
+      "trades": 7,
+      "max_drawdown_pct": -1.2188161543815412
+    },
+    {
+      "fold_index": 17,
+      "train_start": "2023-10-24T00:00:00+00:00",
+      "train_end": "2023-12-23T00:00:00+00:00",
+      "test_start": "2023-12-23T00:00:00+00:00",
+      "test_end": "2024-01-22T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 3.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 20,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.0825955450988043,
+      "test_sharpe": -8.208363353260431,
+      "test_return_pct": -4.778307005087438,
+      "test_after_funding_pct": -4.86359934040893,
+      "trades": 5,
+      "max_drawdown_pct": -6.756541028228524
+    },
+    {
+      "fold_index": 18,
+      "train_start": "2023-11-23T00:00:00+00:00",
+      "train_end": "2024-01-22T00:00:00+00:00",
+      "test_start": "2024-01-22T00:00:00+00:00",
+      "test_end": "2024-02-21T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 20,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.2916562889039223,
+      "test_sharpe": 2.938488137575309,
+      "test_return_pct": 5.771163713754481,
+      "test_after_funding_pct": 5.643308350251863,
+      "trades": 8,
+      "max_drawdown_pct": -2.401777077649414
+    },
+    {
+      "fold_index": 19,
+      "train_start": "2023-12-23T00:00:00+00:00",
+      "train_end": "2024-02-21T00:00:00+00:00",
+      "test_start": "2024-02-21T00:00:00+00:00",
+      "test_end": "2024-03-22T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.6302130988096684,
+      "test_sharpe": 2.595785978875094,
+      "test_return_pct": 8.024758216413343,
+      "test_after_funding_pct": 7.393729270493243,
+      "trades": 11,
+      "max_drawdown_pct": -3.406419041873432
+    },
+    {
+      "fold_index": 20,
+      "train_start": "2024-01-22T00:00:00+00:00",
+      "train_end": "2024-03-22T00:00:00+00:00",
+      "test_start": "2024-03-22T00:00:00+00:00",
+      "test_end": "2024-04-21T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 1.5,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 20,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.7129772202075046,
+      "test_sharpe": -11.038945991522576,
+      "test_return_pct": -3.9230591725063975,
+      "test_after_funding_pct": -4.002167908722399,
+      "trades": 7,
+      "max_drawdown_pct": -3.9230591725063935
+    },
+    {
+      "fold_index": 21,
+      "train_start": "2024-02-21T00:00:00+00:00",
+      "train_end": "2024-04-21T00:00:00+00:00",
+      "test_start": "2024-04-21T00:00:00+00:00",
+      "test_end": "2024-05-21T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 3.0,
+        "donchian_period_entry": 40,
+        "donchian_period_exit": 20,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.8722944800853805,
+      "test_sharpe": 2.2624163124916294,
+      "test_return_pct": 5.3536108946045164,
+      "test_after_funding_pct": 5.333930620198113,
+      "trades": 2,
+      "max_drawdown_pct": -2.544644587731193
+    },
+    {
+      "fold_index": 22,
+      "train_start": "2024-03-22T00:00:00+00:00",
+      "train_end": "2024-05-21T00:00:00+00:00",
+      "test_start": "2024-05-21T00:00:00+00:00",
+      "test_end": "2024-06-20T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 3.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 20,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.7110346370444383,
+      "test_sharpe": -7.470245934976976,
+      "test_return_pct": -2.882150203391258,
+      "test_after_funding_pct": -2.8733801532536574,
+      "trades": 4,
+      "max_drawdown_pct": -4.420684361429206
+    },
+    {
+      "fold_index": 23,
+      "train_start": "2024-04-21T00:00:00+00:00",
+      "train_end": "2024-06-20T00:00:00+00:00",
+      "test_start": "2024-06-20T00:00:00+00:00",
+      "test_end": "2024-07-20T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 3.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 20,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 0.23545575038161312,
+      "test_sharpe": 4.291916782330872,
+      "test_return_pct": 8.86486219096817,
+      "test_after_funding_pct": 8.933145941992148,
+      "trades": 3,
+      "max_drawdown_pct": -2.2055471165740803
+    },
+    {
+      "fold_index": 24,
+      "train_start": "2024-05-21T00:00:00+00:00",
+      "train_end": "2024-07-20T00:00:00+00:00",
+      "test_start": "2024-07-20T00:00:00+00:00",
+      "test_end": "2024-08-19T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 3.0,
+        "donchian_period_entry": 40,
+        "donchian_period_exit": 20,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.156101666447958,
+      "test_sharpe": 0.8701649667889768,
+      "test_return_pct": 1.1336868267309852,
+      "test_after_funding_pct": 1.1214420858901786,
+      "trades": 4,
+      "max_drawdown_pct": -5.059594684219237
+    },
+    {
+      "fold_index": 25,
+      "train_start": "2024-06-20T00:00:00+00:00",
+      "train_end": "2024-08-19T00:00:00+00:00",
+      "test_start": "2024-08-19T00:00:00+00:00",
+      "test_end": "2024-09-18T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 3.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 20,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.9515240603301445,
+      "test_sharpe": -5.831026974475729,
+      "test_return_pct": -4.657119665364502,
+      "test_after_funding_pct": -4.666420808795202,
+      "trades": 6,
+      "max_drawdown_pct": -5.461228058537948
+    },
+    {
+      "fold_index": 26,
+      "train_start": "2024-07-20T00:00:00+00:00",
+      "train_end": "2024-09-18T00:00:00+00:00",
+      "test_start": "2024-09-18T00:00:00+00:00",
+      "test_end": "2024-10-18T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 0.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 20,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 1.780006889111474,
+      "test_sharpe": 1.2286663119431755,
+      "test_return_pct": 1.619954548610188,
+      "test_after_funding_pct": 1.474373058825873,
+      "trades": 4,
+      "max_drawdown_pct": -4.989617828722914
+    },
+    {
+      "fold_index": 27,
+      "train_start": "2024-08-19T00:00:00+00:00",
+      "train_end": "2024-10-18T00:00:00+00:00",
+      "test_start": "2024-10-18T00:00:00+00:00",
+      "test_end": "2024-11-17T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 0.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 20,
+        "leverage": 25,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.4113254584806354,
+      "test_sharpe": 2.247170094273467,
+      "test_return_pct": 12.06602592499999,
+      "test_after_funding_pct": 11.587302768238384,
+      "trades": 3,
+      "max_drawdown_pct": -4.365516685348181
+    },
+    {
+      "fold_index": 28,
+      "train_start": "2024-09-18T00:00:00+00:00",
+      "train_end": "2024-11-17T00:00:00+00:00",
+      "test_start": "2024-11-17T00:00:00+00:00",
+      "test_end": "2024-12-17T00:00:00+00:00",
+      "chosen_params": {
+        "atr_sl_multiple": 2.5,
+        "atr_tp_multiple": 1.5,
+        "atr_trail_multiple": 0.0,
+        "donchian_period_entry": 20,
+        "donchian_period_exit": 10,
+        "leverage": 20,
+        "rsi_long_threshold": 10,
+        "rsi_period": 2,
+        "time_stop_bars": 48,
+        "volume_multiple": 1.0
+      },
+      "train_sharpe": 2.214144513201299,
+      "test_sharpe": 0.6712127133705016,
+      "test_return_pct": 0.6052238290381617,
+      "test_after_funding_pct": 0.4595166935073669,
+      "trades": 3,
+      "max_drawdown_pct": -3.0417067191184866
+    }
+  ],
+  "researcher_commentary": "Folds evaluated: 29\nStability (test_sharpe > 0): 16/29 = 55%\nMedian OOS Sharpe:   +0.67\nOOS Sharpe range:    [-11.04, +4.29]\nMedian OOS return:   +0.46%\nMedian train\u2192test drift: +70%  (positive = test worse than train; large drift = overfit)\n\nWinning param values across folds:\n  atr_sl_multiple: 2.5\u00d727, 1.5\u00d72\n  atr_tp_multiple: 1.5\u00d729\n  atr_trail_multiple: 1.5\u00d714, 3.0\u00d79, 0.0\u00d76\n  donchian_period_entry: 20\u00d720, 40\u00d78, 80\u00d71\n  donchian_period_exit: 10\u00d720, 20\u00d79\n  leverage: 25\u00d720, 20\u00d79\n  rsi_long_threshold: 10\u00d729\n  rsi_period: 2\u00d729\n  time_stop_bars: 48\u00d729\n  volume_multiple: 1.0\u00d729",
+  "suggested_next_ranges": {
+    "atr_sl_multiple": [
+      2.5,
+      1.5
+    ],
+    "atr_tp_multiple": [
+      1.5
+    ],
+    "atr_trail_multiple": [
+      1.5,
+      3.0
+    ],
+    "donchian_period_entry": [
+      20,
+      40
+    ],
+    "donchian_period_exit": [
+      10,
+      20
+    ],
+    "leverage": [
+      25,
+      20
+    ],
+    "rsi_long_threshold": [
+      10
+    ],
+    "rsi_period": [
+      2
+    ],
+    "time_stop_bars": [
+      48
+    ],
+    "volume_multiple": [
+      1.0
+    ]
+  },
+  "promotion": {
+    "passed": false,
+    "thresholds": {
+      "min_median_test_sharpe": 0.5,
+      "min_fold_stability": 0.5,
+      "max_train_test_drift_pct": 50
+    },
+    "measured": {
+      "median_test_sharpe": 0.6712127133705016,
+      "fold_stability": 0.5517241379310345,
+      "median_train_test_drift_pct": 69.68523466428869
+    },
+    "checks": {
+      "median_test_sharpe": true,
+      "fold_stability": true,
+      "train_test_drift": false
+    }
+  }
+}

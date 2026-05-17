@@ -49,24 +49,31 @@ python -c "from exchange.env import get_env; print(get_env())"   # -> 'testnet'
 - [x] P2 — strategy v1 (RSI(2) + EMA(200) + volume + funding)
 - [x] P3 — walk-forward + OOS (deterministic researcher; LLM seam ready)
 - [x] P3.2 — strategy bake-off: snapback v1/v2 retired, Donchian + carry promising
-- [x] P3.3 — v2 refinements + ensemble: **carry-v2 leads** (2/3 promotion checks pass)
-- [ ] P4 — live testnet (7-day soak with carry-v2)
+- [x] P3.3 — v2 refinements + ensemble: carry-v2 leads (2/3 promotion checks pass)
+- [x] P3.4 — leverage + TF sweeps: **carry-v2 PROMOTES at 15m, 3x** (leverage proved cosmetic)
+- [ ] P4 — live testnet (7-day soak with carry-v2 at 3x)
 - [ ] P5 — monitor + viz
 - [ ] P6 — mainnet gate
 
-## Strategy zoo (P3.3 — see `STRATEGY_NOTES.md` for full table)
+## Strategy zoo (P3.4 — see `STRATEGY_NOTES.md` for full table)
 
 All ran on the same 2022-06 → 2024-12 walk-forward with fees + slippage + funding.
 
-| Strategy | Stability | Median OOS Sharpe | Median OOS return | Promotion |
-|---|---:|---:|---:|:---:|
-| snapback-v1 (RSI mean-rev) | 21% | −3.58 | −5.13% | ❌ retired |
-| snapback-v2 (+ regime) | 19% | −0.22 | −0.06% | ❌ retired |
-| donchian-v1 (1h breakout) | 53% | +0.40 | +1.35% | ❌ close (Sharpe + drift) |
-| donchian-v2 (+ ATR trail) | 59% | +0.47 | +2.37% | ❌ Sharpe + drift (slight gain) |
-| carry-v1 (funding harvest) | 50% | −0.13 | +0.55% | ❌ Sharpe only |
-| **carry-v2** (+ fast-move skip + tight SL) | **58%** | **+0.96** | 0.00% | ❌ **drift only — lead candidate** |
-| ensemble(d2 + c2) | 48% | −0.30 | −0.32% | ❌ hypothesis falsified |
+| Strategy | TF | Stability | Sharpe | Drift | Promotion |
+|---|---|---:|---:|---:|:---:|
+| snapback-v1 / v2 | 15m | 19-21% | −3.58 / −0.22 | huge | ❌ retired |
+| donchian-v1 | 15m | 53% | +0.40 | +58% | ❌ |
+| donchian-v2 | 15m | 59% | +0.47 | +64% | ❌ |
+| donchian-v2 | 4h | 55% | +0.67 | +70% | ❌ drift only |
+| carry-v1 | 15m | 50% | −0.13 | +2% | ❌ Sharpe |
+| carry-v2 (P3.3) | 15m | 58% | +0.96 | +54% | ❌ drift only |
+| **carry-v2 (P3.4 phaseC)** | **15m** | **60%** | **+0.70** | **+40%** | **✅ PASS at 3x** |
+| ensemble(d2 + c2) | 15m | 48% | −0.30 | n/a | ❌ falsified |
+
+P3.4 leverage ablation: phase C pass at 20x and at 3x produced *identical*
+numbers (Sharpe +0.70, stability 60%, drift +40%). The pass came from
+`test_days=30 + min_trades=6`, NOT from leverage. Carry-v2 graduates at
+the safe 3x. Live bot needs no `RISK_REVIEW` override.
 
 ## Research
 

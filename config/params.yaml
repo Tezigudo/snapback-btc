@@ -47,6 +47,8 @@ strategy:
 sizing:
   risk_per_trade_pct: 2.0       # 2% of equity per trade (fixed-fractional)
   leverage: 3                   # request leverage; risk.py caps at MAX_LEVERAGE
+                                # P3.4 ablation proved 20x adds no edge for
+                                # carry-v2; 3x is the right answer.
 
 execution:
   order_type: market            # market | limit

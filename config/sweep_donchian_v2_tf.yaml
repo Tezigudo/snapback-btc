@@ -1,0 +1,30 @@
+# Donchian v2 TF sweep — wider grid for fair comparison vs 15m baseline.
+# Use with --entry-tf 1h or --entry-tf 4h. donchian_period is in BARS so
+# the same value [20] means different real time at each TF:
+#   15m: 20 bars = 5h    1h: 20 bars = 20h    4h: 20 bars = 3.3d
+# The grid below lets the walk-forward pick whichever length works on
+# whichever TF without us biasing.
+
+train_days: 60
+test_days: 30
+step_days: 30
+min_trades_train: 5
+
+promotion:
+  min_median_test_sharpe: 0.5
+  min_fold_stability: 0.5
+  max_train_test_drift_pct: 50
+
+# 3 × 2 × 2 × 3 × 2 = 72 combos
+grid:
+  donchian_period_entry: [20, 40, 80]
+  donchian_period_exit:  [10, 20]
+  atr_sl_multiple:       [1.5, 2.5]
+  atr_trail_multiple:    [0.0, 1.5, 3.0]
+  leverage:              [20, 25]
+  # carried (ignored by donchian):
+  rsi_period:         [2]
+  rsi_long_threshold: [10]
+  volume_multiple:    [1.0]
+  atr_tp_multiple:    [1.5]
+  time_stop_bars:     [48]

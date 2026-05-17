@@ -36,6 +36,7 @@ from strategy.signals import (
     prepare_strategy_data,
 )
 from strategy.regime import attach_regimes
+from strategy.prep_tf import prepare_simple_data
 from strategy.signals_carry import CarryHarvester
 from strategy.signals_carry_v2 import CarryHarvesterV2
 from strategy.signals_donchian import (
@@ -44,6 +45,9 @@ from strategy.signals_donchian import (
     attach_donchian,
 )
 from strategy.signals_v2 import SnapbackBTCv2
+
+# Carry + Donchian work on any single entry TF (snapback strictly needs 15m+1h).
+_TF_AGNOSTIC_STRATEGIES = {"carry-v1", "carry-v2", "donchian-v1", "donchian-v2"}
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
 # an integer unit. Returns are scale-invariant so headline metrics are
@@ -226,6 +230,63 @@ def _prepare_snapback_data(
     return visible, fund_visible
 
 
+def _prepare_tf_agnostic_data(
+    symbol: str,
+    entry_tf: str,
+    start: datetime,
+    end: datetime,
+    with_donchian: bool = False,
+    donchian_entry: int = 20,
+    donchian_exit: int = 10,
+    atr_period: int = 20,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Pull klines at entry_tf + funding; attach Donchian channels (computed
+    on the SAME entry_tf — single-TF Donchian, not multi-TF) if requested.
+
+    Returns (prepared_df, funding_in_span). Used for carry + donchian
+    backtests when entry_tf != 15m, where snapback's 15m+1h prep doesn't
+    apply.
+    """
+    # Warm-up buffer: enough bars for the longest indicator window.
+    # donchian_entry bars at entry_tf is the binding constraint.
+    warmup_bars = max(donchian_entry, atr_period) * 3
+    tf_minutes = {"1m": 1, "5m": 5, "15m": 15, "30m": 30,
+                  "1h": 60, "2h": 120, "4h": 240, "1d": 1440}.get(entry_tf, 15)
+    warmup = timedelta(minutes=warmup_bars * tf_minutes)
+    pull_start = start - warmup
+    days_back = max((end - pull_start).days + 2, 2)
+
+    klines = load_klines(symbol=symbol, timeframe=entry_tf, days_back=days_back, end=end)
+    fund = load_funding(symbol=symbol, days_back=days_back, end=end)
+    if klines.empty:
+        raise RuntimeError(f"Missing {entry_tf} klines for the requested window.")
+
+    prepared = prepare_simple_data(klines, fund)
+    if with_donchian:
+        # Use the same klines as both entry and channel source — single-TF Donchian.
+        # `attach_donchian` expects already-capitalised, tz-naive df_15m + a 1h-shaped
+        # klines arg. For our single-TF use, pass the entry klines (raw, lowercase) as
+        # the second arg; it re-caps internally.
+        prepared = attach_donchian(
+            prepared, klines,
+            period_entry=donchian_entry,
+            period_exit=donchian_exit,
+            atr_period=atr_period,
+        )
+
+    naive_start = start.replace(tzinfo=None) if start.tzinfo else start
+    naive_end = end.replace(tzinfo=None) if end.tzinfo else end
+    visible = prepared.loc[naive_start:naive_end]
+    if visible.empty:
+        raise RuntimeError(f"No bars after warm-up in {start} → {end}")
+
+    if fund.index.tz is not None:
+        fund = fund.copy()
+        fund.index = fund.index.tz_convert("UTC").tz_localize(None)
+    fund_visible = fund.loc[visible.index[0]:visible.index[-1]]
+    return visible, fund_visible
+
+
 def _apply_params_to_class(cls: type[Strategy], params: StrategyParams) -> None:
     """Inject swept params as class attributes on a Strategy subclass.
 
@@ -266,6 +327,9 @@ def run_backtest(
     if strategy_name not in STRATEGIES:
         raise ValueError(f"unknown strategy: {strategy_name}")
 
+    # Result timeframe label (will be overwritten if strategy uses a single TF).
+    _result_tf_label = timeframe
+
     if strategy_name == "buy-and-hold":
         data = _prepare_buy_and_hold_data(symbol, timeframe, start, end)
         funding_in_span = load_funding(
@@ -277,19 +341,30 @@ def run_backtest(
         params = None
     else:
         params = params_override or StrategyParams.from_yaml()
-        if timeframe != "15m":
-            log.warning("strategies expect 15m entry timeframe; using 15m regardless.")
-        # Pull donchian periods from class attrs (overridden by sweep / params_override).
         cls = STRATEGIES[strategy_name]
         donchian_entry = getattr(cls, "donchian_period_entry", 20)
         donchian_exit = getattr(cls, "donchian_period_exit", 10)
-        data, funding_in_span = _prepare_snapback_data(
-            symbol, start, end, params,
-            with_regimes=(strategy_name in _REGIME_STRATEGIES),
-            with_donchian=(strategy_name in _DONCHIAN_STRATEGIES),
-            donchian_entry=donchian_entry,
-            donchian_exit=donchian_exit,
-        )
+
+        if timeframe != "15m" and strategy_name in _TF_AGNOSTIC_STRATEGIES:
+            # Single-TF prep: carry / donchian on arbitrary entry timeframe.
+            data, funding_in_span = _prepare_tf_agnostic_data(
+                symbol, timeframe, start, end,
+                with_donchian=(strategy_name in _DONCHIAN_STRATEGIES),
+                donchian_entry=donchian_entry,
+                donchian_exit=donchian_exit,
+                atr_period=params.atr_period,
+            )
+        else:
+            if timeframe != "15m":
+                log.warning("strategy %s requires 15m entry; ignoring tf=%s",
+                            strategy_name, timeframe)
+            data, funding_in_span = _prepare_snapback_data(
+                symbol, start, end, params,
+                with_regimes=(strategy_name in _REGIME_STRATEGIES),
+                with_donchian=(strategy_name in _DONCHIAN_STRATEGIES),
+                donchian_entry=donchian_entry,
+                donchian_exit=donchian_exit,
+            )
         _apply_params_to_class(STRATEGIES[strategy_name], params)
 
     eff_leverage = leverage or (params.leverage if params else 1)
@@ -351,7 +426,11 @@ def run_backtest(
     result = {
         "strategy": strategy_name,
         "symbol": symbol,
-        "timeframe": timeframe if strategy_name == "buy-and-hold" else "15m+1h",
+        "timeframe": (
+            timeframe if strategy_name == "buy-and-hold"
+            else (timeframe if strategy_name in _TF_AGNOSTIC_STRATEGIES and timeframe != "15m"
+                  else "15m+1h")
+        ),
         "start": data.index[0],
         "end": data.index[-1],
         "bars": len(data),

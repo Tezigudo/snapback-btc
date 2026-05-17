@@ -185,25 +185,108 @@ The walk-forward engine + Researcher seam built in P3 paid for itself
 (snapback) from "real-but-rough strategy" (Donchian, carry). That's
 exactly what it was supposed to do.
 
-## Next experiments (in honest priority order, post-P3.3)
+## P3.4 — leverage and timeframe sweeps
 
-1. **Close carry-v2's drift gap.** Two micro-experiments, each ~1 hour
-   of walk-forward: (a) bump `min_trades_train` from 3 to 6 to penalise
-   train picks with too few samples; (b) try 30d/45d test windows
-   instead of 20d. Either should compress drift without lying about the
-   underlying edge.
-2. **Try regime-gated carry.** Use `strategy/regime.py`'s ATR
-   percentile as an entry gate — only take carry trades when ATR is
-   below median. The failure folds were almost all high-vol windows.
-3. **THEN proceed to P4 testnet** with carry-v2 (best gridpoint from the
-   walk-forward report) for 7-day soak. By then carry-v2 either passes
-   promotion or we know it doesn't and we stop pretending.
-4. **Defer indefinitely:** ensemble work. The data says equal-weight
-   doesn't help; variance-weighted or regime-switched ensembles are
-   research projects of their own and don't gain us anything if our
-   single-strategy edge is already solid.
+User asked: "give leverage to x20-x36? then tune again then maybe can goto
+timeframe 15m 30m 1hr 2hr 4hr 1d 1m". Did C-then-A from the prior plan
+at leverage [20, 25] across timeframes 15m / 1h / 4h. Skipped 1m
+(funding only updates every 8h, 1m entry is wasted noise for carry;
+1m donchian would whipsaw fatally) and 1d (~20 test-bars per fold,
+statistically meaningless). 30m and 2h skipped to keep compute bounded;
+1h and 4h are the natural extensions of 15m.
 
-Snapback as a research subject is **done** — declared a negative result.
-We keep the code and the v1/v2 baselines as comparison points; we do not
-deploy them. Donchian v2 stays in the zoo but is no longer a P4
-candidate. Carry-v2 is the **lead candidate** for testnet.
+### Phase C — close carry-v2's drift gap
+
+Goal: take carry-v2 from 2-of-3 promotion checks to 3-of-3. Changes from
+P3.3 sweep: `test_days 20→30`, `min_trades_train 3→6`, and added
+`leverage: [20, 25]` to the grid.
+
+**Headline result: carry-v2 PASSES PROMOTION ✅** — first strategy to do
+so. Sharpe +0.70 (was +0.96 at noisier 20d windows), stability 60%,
+drift +40%. The +0.96 from P3.3 was inflated by short test windows;
++0.70 is the honest number on 30d samples.
+
+**But leverage did nothing.** The 28/28 winning folds all picked 20x
+(never 25x). Then I ran an ablation at `leverage: [3]` only — same
+sweep otherwise — and got *exactly* the same numbers: Sharpe +0.70,
+stability 60%, drift +40%. Same to the decimal. Why: the winning combos
+use `sl_pct=0.015`, where target_btc = 0.02·equity/sl_dist ≈ 22 BTC at
+$60k BTC, well under the 3x cap of 47 BTC. **The 3x cap never binds for
+the winning configs.** Phase C's pass came entirely from
+`test_days=30` (less per-fold noise) and `min_trades_train=6`
+(rejects thin train picks). Leverage was cosmetic.
+
+This is **good news**: carry-v2 promotes at the safe 3x leverage. Live
+bot doesn't need a `RISK_REVIEW=1` override; runtime cap stays at 3.
+
+### Phase A — timeframe sweep at 20-25x
+
+Ran carry-v2 and donchian-v2 walk-forwards at 1h and 4h entry timeframes
+(15m baseline already covered by phase C). Same sweep grids as P3.3 v2
+configs, with leverage added.
+
+| Strategy | TF | Sharpe | Stability | Drift | Promotion |
+|---|---|---:|---:|---:|:---:|
+| carry-v2 | **15m** | **+0.70** | **60%** | **+40%** | **✅ PASS** |
+| carry-v2 | 1h | −0.71 | 38% | +155% | ❌ 3/3 fail |
+| carry-v2 | 4h | +0.78 | 41% | +173% | ❌ stability + drift |
+| donchian-v2 | 15m | +0.47 | 59% | +64% | ❌ Sharpe + drift |
+| donchian-v2 | 1h | −0.28 | 45% | +136% | ❌ 3/3 fail |
+| donchian-v2 | 4h | +0.67 | 55% | +70% | ❌ drift only |
+
+**Carry hates higher TFs.** Funding cycles are 8h; you need to enter
+soon after the threshold is crossed and exit when it normalises.
+At 1h/4h, the strategy misses the window. 15m is the right TF and
+already in production-candidate state.
+
+**Donchian likes 4h but still doesn't pass.** Sharpe jumped +0.47 → +0.67
+at 4h, but drift got worse. Worth keeping in the zoo as a second-tier
+candidate, but not P4 material.
+
+**Leverage choice across TF sweeps tells the same story as phase C:**
+- Carry: 100% picked 20x (never 25x). 20x is enough; never binding for winning combos.
+- Donchian 1h/4h: 75-83% picked 25x. **This is an overfitting signal** —
+  train-side selection drifts toward higher leverage in regimes that
+  then fail OOS. The sweep is finding noise that benefits from
+  amplification rather than real signal. Deflated-Sharpe scoring
+  doesn't penalise leverage-amplified train noise enough; future work
+  should add a leverage-magnitude penalty.
+
+### Live-bot risk note
+
+Even though phase C passes at 3x and live bot stays at 3x, two things to
+remember before any P4 testnet or P6 mainnet decision:
+
+1. **The backtest assumes SL fills at the limit price.** Real BTC has
+   2-3% wicks in seconds during liquidation cascades. At 3x with 1.5%
+   SL, you have ~30% margin buffer to liquidation — safe. At 20x the
+   buffer is ~5% — one bad wick and you're out. The 20x backtest
+   numbers above are *idealised*; they don't model liquidation cascades.
+2. **The runtime cap in `risk.py` stays at MAX_LEVERAGE=3.** The bot
+   refuses to deploy any strategy at >3x without `RISK_REVIEW=1` and a
+   manual edit. Carry-v2 needs no override; the strategy works at 3x.
+
+## Next experiments (in honest priority order, post-P3.4)
+
+1. **Revert backtest leverage default to 3x.** The 20x default we set
+   for the P3.4 leverage sweep is now misleading; phase C ablation
+   proves carry-v2 doesn't need it. Will revert
+   `config/params.yaml: leverage: 20 → 3` and class attrs before P4.
+2. **Proceed to P4 testnet with carry-v2** using the best phaseC
+   gridpoint (funding_threshold=0.0001, sl_pct=0.015, max_24h=100.0,
+   leverage=3). 7-day soak on Binance testnet. Compare live fill
+   results to the backtest.
+3. **Donchian v2 at 4h stays in the zoo** as second-tier. Not P4
+   material until drift closes. Worth one more pass with regime gating
+   (skip entries when ATR percentile > 80) — a half-day experiment.
+4. **Deflated-Sharpe needs a leverage penalty.** The donchian TF sweeps
+   showed train-side selection drifting toward 25x in losing OOS
+   regimes — classic over-fit-on-amplified-noise. Add a leverage term
+   to `research/scoring.py: deflated_sharpe()` before the next sweep
+   that includes leverage as a swept knob.
+5. **Defer indefinitely:** ensemble work, multi-symbol expansion. Both
+   blocked on demonstrating live edge with a single strategy first.
+
+Snapback (v1/v2): **dead-end**, kept as baseline. Donchian (v1/v2):
+**zoo resident**, best at 4h but never promotes. Ensemble: **falsified**.
+Carry-v2 at 15m, 3x: **lead candidate for P4 testnet**.
