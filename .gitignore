@@ -1,0 +1,48 @@
+# secrets + env
+.env
+.env.local
+.env.*.local
+
+# mainnet gate — must be created manually, never committed
+confirm_mainnet.lock
+
+# runtime state — never commit
+data/state.db
+data/state.db-journal
+data/state.db-wal
+data/state.db-shm
+data/heartbeat
+data/HALT
+data/historical/
+
+# logs + generated reports
+logs/*.jsonl
+logs/*.log
+reports/*.html
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# uv
+uv.lock

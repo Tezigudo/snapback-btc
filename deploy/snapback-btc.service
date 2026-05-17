@@ -1,0 +1,26 @@
+[Unit]
+Description=snapback-btc Binance Futures BTC perp bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=snapback
+Group=snapback
+WorkingDirectory=/opt/snapback-btc
+EnvironmentFile=/etc/snapback-btc/.env
+ExecStart=/opt/snapback-btc/.venv/bin/python /opt/snapback-btc/bot.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/snapback-btc/stdout.log
+StandardError=append:/var/log/snapback-btc/stderr.log
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/snapback-btc/data /opt/snapback-btc/logs /opt/snapback-btc/reports /var/log/snapback-btc
+
+[Install]
+WantedBy=multi-user.target
