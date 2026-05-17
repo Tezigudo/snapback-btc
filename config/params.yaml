@@ -46,9 +46,12 @@ strategy:
 
 sizing:
   risk_per_trade_pct: 2.0       # 2% of equity per trade (fixed-fractional)
-  leverage: 3                   # request leverage; risk.py caps at MAX_LEVERAGE
-                                # P3.4 ablation proved 20x adds no edge for
-                                # carry-v2; 3x is the right answer.
+  leverage: 20                  # Persistent user override (P3.4+). risk.py
+                                # ceiling also at 20. Backtest ablation showed
+                                # leverage doesn't change carry-v2 returns
+                                # (cap doesn't bind for sl_pct=0.015 winners)
+                                # but live tail risk is real — flash crash
+                                # past SL at 20x = liquidation.
 
 execution:
   order_type: market            # market | limit

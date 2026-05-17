@@ -27,7 +27,7 @@ class CarryHarvesterV2(Strategy):
     funding_exit_threshold = 0.00005
     sl_pct = 0.01
     risk_per_trade_pct = 2.0
-    leverage = 3
+    leverage = 20
     allow_shorts = True
     max_24h_change_pct = 100.0  # 100 = disabled (matches v1 behaviour)
 

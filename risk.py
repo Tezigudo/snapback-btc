@@ -18,7 +18,11 @@ class RiskCeilings:
     MAX_NOTIONAL_USD: float = 500.0
 
     # Hard leverage cap. Bot may request less, never more.
-    MAX_LEVERAGE: int = 3
+    # Raised 3→20 per explicit user override (P3.4+). At 20x liquidation
+    # ≈ 5% adverse move; flash crashes can gap past SLs. This ceiling
+    # is now load-bearing for tail-risk control — DO NOT raise further
+    # without a separate RISK_REVIEW.
+    MAX_LEVERAGE: int = 20
 
     # If equity drawdown today exceeds this %, flatten + HALT for 24h.
     MAX_DAILY_LOSS_PCT: float = 2.0

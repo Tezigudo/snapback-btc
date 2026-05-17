@@ -76,7 +76,7 @@ class DonchianBreakoutBTC(Strategy):
     atr_sl_multiple = 2.0      # initial stop distance
     atr_trail_multiple = 0.0   # 0 = no trailing; >0 = trail SL at high - K*ATR
     risk_per_trade_pct = 2.0
-    leverage = 3
+    leverage = 20
     allow_shorts = True
 
     def init(self) -> None:

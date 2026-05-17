@@ -12,6 +12,10 @@ This repo runs a deterministic Binance Futures BTC/USDT perpetual bot. You (Clau
 ## Hard rules
 - No order placement from Claude Code, ever.
 - No edits to `risk.py` (git pre-commit hook will reject anyway unless `RISK_REVIEW=1`).
+- **Leverage ceiling is 20x** (raised from 3x in P3.4 per explicit user decision).
+  Do NOT lower it back to 3x without the user explicitly asking. The user
+  prefers 20x as the permanent default; backtests showed it doesn't change
+  carry-v2 returns but the user wants the capital efficiency for live deploy.
 - No changing `BINANCE_ENV` from testnet to mainnet without the full `/promote-mainnet` checklist.
 - If `data/HALT` exists, do NOT remove it without explicit user ask. Bot polls every 5s and exits.
 - Mainnet requires `confirm_mainnet.lock` to exist. If user asks you to create it, run `verify_identity(action_type="bot_mainnet")` first.

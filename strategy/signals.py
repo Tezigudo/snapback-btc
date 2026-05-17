@@ -68,7 +68,7 @@ class StrategyParams:
     atr_sl_multiple: float = 1.0
     time_stop_bars: int = 48
     risk_per_trade_pct: float = 2.0
-    leverage: int = 3
+    leverage: int = 20
     # Donchian-specific (ignored by snapback strategies)
     donchian_period_entry: int = 20
     donchian_period_exit: int = 10
@@ -180,7 +180,7 @@ class SnapbackBTC(Strategy):
     atr_sl_multiple = 1.0
     time_stop_bars = 48
     risk_per_trade_pct = 2.0
-    leverage = 3
+    leverage = 20
     allow_shorts = True
 
     def init(self) -> None:

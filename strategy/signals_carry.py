@@ -37,7 +37,7 @@ class CarryHarvester(Strategy):
     funding_exit_threshold = 0.00005  # quit when funding settles below this
     sl_pct = 0.01                     # 1% stop loss caps the price-risk per cycle
     risk_per_trade_pct = 2.0
-    leverage = 3
+    leverage = 20
     allow_shorts = True
 
     def init(self) -> None:
