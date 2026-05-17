@@ -1,0 +1,39 @@
+# Multifactor day-trade sweep (user spec: RSI(14) OVS<40 OVB>70 + volume + trend + funding-sentiment)
+# 15m timeframe, max 14-day hold.
+
+train_days: 60
+test_days: 30
+step_days: 30
+min_trades_train: 6
+
+promotion:
+  min_median_test_sharpe: 0.5
+  min_fold_stability: 0.5
+  max_train_test_drift_pct: 50
+  min_mean_test_return_pct: 0.5
+  min_compounded_cagr_pct: 5.0
+  max_single_fold_loss_pct: -15.0
+
+# Sweep volume_multiple, sl_pct, tp_pct, leverage. Other multifactor knobs fixed.
+# 3 × 2 × 2 × 2 = 24 combos
+grid:
+  volume_multiple:               [1.8, 2.0, 2.3]
+  sl_pct:                        [0.010, 0.015]
+  tp_pct:                        [0.025, 0.03]
+  leverage:                      [20]
+  # fixed multifactor toggles (sweet spot from sensitivity test)
+  require_candlestick:           [false]    # too rare on 15m
+  require_macd:                  [false]    # too restrictive combined
+  require_trend:                 [true]
+  require_funding_not_extreme:   [true]
+  rsi_period:                    [14]
+  rsi_long_threshold:            [40.0]
+  rsi_short_threshold:           [70.0]
+  volume_ma_period:              [20]
+  mf_trend_ema_period:           [200]
+  max_hold_bars:                 [1344]
+  funding_extreme_threshold:     [0.0005]
+  # carried (ignored)
+  atr_sl_multiple:               [1.0]
+  atr_tp_multiple:               [1.5]
+  time_stop_bars:                [48]

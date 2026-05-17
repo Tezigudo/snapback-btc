@@ -92,6 +92,19 @@ class StrategyParams:
     regime_ema_period: int = 120
     regime_slope_window: int = 30
     slope_trend_threshold_pct: float = 0.0   # 0 = gate OFF
+    # DayTradeMultiFactorBTC (multifactor-v1) params
+    # NOTE: trend_ema_period above defaults to 0 for carry-v4 compat.
+    # multifactor uses mf_trend_ema_period instead so it can keep a non-zero default.
+    mf_trend_ema_period: int = 200
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    require_candlestick: bool = True
+    require_macd: bool = True
+    require_trend: bool = True
+    require_funding_not_extreme: bool = True
+    funding_extreme_threshold: float = 0.0005
+    max_hold_bars: int = 1344
 
     @classmethod
     def from_yaml(cls, path: str | None = None) -> "StrategyParams":

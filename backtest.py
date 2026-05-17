@@ -42,6 +42,7 @@ from strategy.signals_carry_v2 import CarryHarvesterV2
 from strategy.signals_carry_v3 import CarryHarvesterV3
 from strategy.signals_carry_v4 import CarryHarvesterV4
 from strategy.signals_funding_momentum import FundingMomentumBTC
+from strategy.signals_multifactor import DayTradeMultiFactorBTC
 from strategy.signals_donchian import (
     DonchianBreakoutBTC,
     DonchianBreakoutBTCv2,
@@ -51,7 +52,7 @@ from strategy.signals_donchian import (
 from strategy.signals_v2 import SnapbackBTCv2
 
 # Carry + Donchian work on any single entry TF (snapback strictly needs 15m+1h).
-_TF_AGNOSTIC_STRATEGIES = {"carry-v1", "carry-v2", "carry-v3", "carry-v4", "fmom-v1", "donchian-v1", "donchian-v2", "donchian-v3"}
+_TF_AGNOSTIC_STRATEGIES = {"carry-v1", "carry-v2", "carry-v3", "carry-v4", "fmom-v1", "multifactor-v1", "donchian-v1", "donchian-v2", "donchian-v3"}
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
 # an integer unit. Returns are scale-invariant so headline metrics are
@@ -96,6 +97,7 @@ STRATEGIES: dict[str, type[Strategy]] = {
     "carry-v3": CarryHarvesterV3,
     "carry-v4": CarryHarvesterV4,
     "fmom-v1": FundingMomentumBTC,
+    "multifactor-v1": DayTradeMultiFactorBTC,
 }
 
 # Strategies that need regime columns layered on top of the snapback prep.
@@ -317,6 +319,11 @@ def _apply_params_to_class(cls: type[Strategy], params: StrategyParams) -> None:
         "momentum_lookback_bars", "momentum_threshold", "tp_pct", "require_trend_align",
         # donchian-v3 regime gate
         "regime_ema_period", "regime_slope_window", "slope_trend_threshold_pct",
+        # multifactor-v1
+        "mf_trend_ema_period", "macd_fast", "macd_slow", "macd_signal",
+        "require_candlestick", "require_macd", "require_trend",
+        "require_funding_not_extreme", "funding_extreme_threshold", "max_hold_bars",
+        # volume_ma_period already in StrategyParams default 20
     ):
         if hasattr(cls, field):
             setattr(cls, field, getattr(params, field))
