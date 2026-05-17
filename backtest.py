@@ -358,8 +358,16 @@ def run_backtest(
     else:
         params = params_override or StrategyParams.from_yaml()
         cls = STRATEGIES[strategy_name]
-        donchian_entry = getattr(cls, "donchian_period_entry", 20)
-        donchian_exit = getattr(cls, "donchian_period_exit", 10)
+        # CRITICAL: read donchian periods from `params` (the source of truth for
+        # this run), NOT from the class attr (which is sticky from the prior
+        # backtest in the same process). The prior-bug version read class attrs
+        # before _apply_params_to_class was called, so the data prep used STALE
+        # channel periods while the strategy ran with NEW ones — producing
+        # mismatched Donchian bands and bogus "OOS passing" results.
+        donchian_entry = getattr(params, "donchian_period_entry",
+                                 getattr(cls, "donchian_period_entry", 20))
+        donchian_exit = getattr(params, "donchian_period_exit",
+                                getattr(cls, "donchian_period_exit", 10))
 
         if timeframe != "15m" and strategy_name in _TF_AGNOSTIC_STRATEGIES:
             # Single-TF prep: carry / donchian on arbitrary entry timeframe.

@@ -1,0 +1,296 @@
+{
+  "label": "Donchian-v3 2025 H1 (FAILING)",
+  "total_pct": -0.2629549232448917,
+  "trades": [
+    {
+      "n": 1,
+      "side": "LONG",
+      "entry_time": "2025-01-02 20:00",
+      "exit_time": "2025-01-05 12:00",
+      "entry_price": 97292.7,
+      "exit_price": 97609.5,
+      "pnl_pct": 0.22545257763429707,
+      "hold_hours": 64.0
+    },
+    {
+      "n": 2,
+      "side": "LONG",
+      "entry_time": "2025-01-06 04:00",
+      "exit_time": "2025-01-07 12:00",
+      "entry_price": 99005.0,
+      "exit_price": 97546.44066246935,
+      "pnl_pct": -1.5724812462621953,
+      "hold_hours": 32.0
+    },
+    {
+      "n": 3,
+      "side": "SHORT",
+      "entry_time": "2025-01-08 20:00",
+      "exit_time": "2025-01-10 12:00",
+      "entry_price": 94217.1,
+      "exit_price": 95030.5,
+      "pnl_pct": -0.9637568976332185,
+      "hold_hours": 40.0
+    },
+    {
+      "n": 4,
+      "side": "SHORT",
+      "entry_time": "2025-01-13 12:00",
+      "exit_time": "2025-01-13 12:00",
+      "entry_price": 90827.5,
+      "exit_price": 92721.42780212084,
+      "pnl_pct": -2.1862346382118933,
+      "hold_hours": 0.0
+    },
+    {
+      "n": 5,
+      "side": "LONG",
+      "entry_time": "2025-01-15 00:00",
+      "exit_time": "2025-01-20 00:00",
+      "entry_price": 96514.9,
+      "exit_price": 101311.5,
+      "pnl_pct": 4.867317688771375,
+      "hold_hours": 120.0
+    },
+    {
+      "n": 6,
+      "side": "LONG",
+      "entry_time": "2025-01-20 08:00",
+      "exit_time": "2025-01-20 16:00",
+      "entry_price": 107178.8,
+      "exit_price": 104391.98229570092,
+      "pnl_pct": -2.6988575123503287,
+      "hold_hours": 8.0
+    },
+    {
+      "n": 7,
+      "side": "SHORT",
+      "entry_time": "2025-01-27 04:00",
+      "exit_time": "2025-01-28 12:00",
+      "entry_price": 101349.1,
+      "exit_price": 103696.75883089748,
+      "pnl_pct": -2.417566372383094,
+      "hold_hours": 32.0
+    },
+    {
+      "n": 8,
+      "side": "SHORT",
+      "entry_time": "2025-02-02 20:00",
+      "exit_time": "2025-02-03 16:00",
+      "entry_price": 98232.0,
+      "exit_price": 100376.13928424074,
+      "pnl_pct": -2.283821314727225,
+      "hold_hours": 20.0
+    },
+    {
+      "n": 9,
+      "side": "SHORT",
+      "entry_time": "2025-02-11 20:00",
+      "exit_time": "2025-02-12 16:00",
+      "entry_price": 94988.0,
+      "exit_price": 96810.96544630516,
+      "pnl_pct": -2.0201129921972387,
+      "hold_hours": 20.0
+    },
+    {
+      "n": 10,
+      "side": "SHORT",
+      "entry_time": "2025-02-18 20:00",
+      "exit_time": "2025-02-18 20:00",
+      "entry_price": 94062.2,
+      "exit_price": 95493.08838149396,
+      "pnl_pct": -1.6219756987235188,
+      "hold_hours": 0.0
+    },
+    {
+      "n": 11,
+      "side": "LONG",
+      "entry_time": "2025-02-20 20:00",
+      "exit_time": "2025-02-21 16:00",
+      "entry_price": 98369.9,
+      "exit_price": 96866.05451239628,
+      "pnl_pct": -1.6280015175982825,
+      "hold_hours": 20.0
+    },
+    {
+      "n": 12,
+      "side": "SHORT",
+      "entry_time": "2025-02-24 20:00",
+      "exit_time": "2025-03-01 20:00",
+      "entry_price": 93917.4,
+      "exit_price": 85431.1,
+      "pnl_pct": 8.940436756128245,
+      "hold_hours": 120.0
+    },
+    {
+      "n": 13,
+      "side": "SHORT",
+      "entry_time": "2025-03-09 20:00",
+      "exit_time": "2025-03-13 00:00",
+      "entry_price": 82605.0,
+      "exit_price": 83640.7,
+      "pnl_pct": -1.3544250953332182,
+      "hold_hours": 76.0
+    },
+    {
+      "n": 14,
+      "side": "LONG",
+      "entry_time": "2025-03-19 16:00",
+      "exit_time": "2025-03-21 08:00",
+      "entry_price": 84693.3,
+      "exit_price": 83889.5,
+      "pnl_pct": -1.0485969964566335,
+      "hold_hours": 40.0
+    },
+    {
+      "n": 15,
+      "side": "LONG",
+      "entry_time": "2025-03-24 08:00",
+      "exit_time": "2025-03-28 04:00",
+      "entry_price": 86827.5,
+      "exit_price": 85435.54354118022,
+      "pnl_pct": -1.7023270053731565,
+      "hold_hours": 92.0
+    },
+    {
+      "n": 16,
+      "side": "SHORT",
+      "entry_time": "2025-03-28 20:00",
+      "exit_time": "2025-03-31 16:00",
+      "entry_price": 83760.7,
+      "exit_price": 83373.3,
+      "pnl_pct": 0.36273932763216676,
+      "hold_hours": 68.0
+    },
+    {
+      "n": 17,
+      "side": "SHORT",
+      "entry_time": "2025-04-06 20:00",
+      "exit_time": "2025-04-08 12:00",
+      "entry_price": 79572.6,
+      "exit_price": 79949.7,
+      "pnl_pct": -0.574143800755528,
+      "hold_hours": 40.0
+    },
+    {
+      "n": 18,
+      "side": "SHORT",
+      "entry_time": "2025-04-09 04:00",
+      "exit_time": "2025-04-09 04:00",
+      "entry_price": 75039.9,
+      "exit_price": 77663.76985611177,
+      "pnl_pct": -3.5983812492285256,
+      "hold_hours": 0.0
+    },
+    {
+      "n": 19,
+      "side": "LONG",
+      "entry_time": "2025-04-11 20:00",
+      "exit_time": "2025-04-15 20:00",
+      "entry_price": 83809.5,
+      "exit_price": 83954.5,
+      "pnl_pct": 0.07292490708094466,
+      "hold_hours": 96.0
+    },
+    {
+      "n": 20,
+      "side": "LONG",
+      "entry_time": "2025-04-21 04:00",
+      "exit_time": "2025-04-27 08:00",
+      "entry_price": 87166.6,
+      "exit_price": 94027.7,
+      "pnl_pct": 7.76731322547856,
+      "hold_hours": 148.0
+    },
+    {
+      "n": 21,
+      "side": "LONG",
+      "entry_time": "2025-04-28 12:00",
+      "exit_time": "2025-04-28 12:00",
+      "entry_price": 95276.1,
+      "exit_price": 93811.10916254627,
+      "pnl_pct": -1.6368579759614497,
+      "hold_hours": 0.0
+    },
+    {
+      "n": 22,
+      "side": "LONG",
+      "entry_time": "2025-05-01 12:00",
+      "exit_time": "2025-05-03 08:00",
+      "entry_price": 96130.0,
+      "exit_price": 96290.8,
+      "pnl_pct": 0.06718984708208109,
+      "hold_hours": 44.0
+    },
+    {
+      "n": 23,
+      "side": "SHORT",
+      "entry_time": "2025-05-05 16:00",
+      "exit_time": "2025-05-05 20:00",
+      "entry_price": 93726.0,
+      "exit_price": 95039.97854594435,
+      "pnl_pct": -1.5026369792985055,
+      "hold_hours": 4.0
+    },
+    {
+      "n": 24,
+      "side": "LONG",
+      "entry_time": "2025-05-08 04:00",
+      "exit_time": "2025-05-12 16:00",
+      "entry_price": 99098.0,
+      "exit_price": 102481.8,
+      "pnl_pct": 3.3128923893519535,
+      "hold_hours": 108.0
+    },
+    {
+      "n": 25,
+      "side": "LONG",
+      "entry_time": "2025-05-18 16:00",
+      "exit_time": "2025-05-18 16:00",
+      "entry_price": 105484.2,
+      "exit_price": 104079.40440287003,
+      "pnl_pct": -1.4310933763837606,
+      "hold_hours": 0.0
+    },
+    {
+      "n": 26,
+      "side": "LONG",
+      "entry_time": "2025-05-19 00:00",
+      "exit_time": "2025-05-19 00:00",
+      "entry_price": 106407.5,
+      "exit_price": 104831.9667235902,
+      "pnl_pct": -1.5799196577041918,
+      "hold_hours": 0.0
+    },
+    {
+      "n": 27,
+      "side": "LONG",
+      "entry_time": "2025-05-20 20:00",
+      "exit_time": "2025-05-23 16:00",
+      "entry_price": 106972.3,
+      "exit_price": 108892.5,
+      "pnl_pct": 1.6941466155257063,
+      "hold_hours": 68.0
+    },
+    {
+      "n": 28,
+      "side": "SHORT",
+      "entry_time": "2025-05-28 20:00",
+      "exit_time": "2025-05-29 08:00",
+      "entry_price": 106894.0,
+      "exit_price": 108840.44059637877,
+      "pnl_pct": -1.9218177041526785,
+      "hold_hours": 12.0
+    },
+    {
+      "n": 29,
+      "side": "SHORT",
+      "entry_time": "2025-05-29 20:00",
+      "exit_time": "2025-05-31 00:00",
+      "entry_price": 105699.1,
+      "exit_price": 103949.9,
+      "pnl_pct": 1.555713814024912,
+      "hold_hours": 28.0
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "strategy": "donchian-v3",
+  "entry_tf": "4h",
+  "is_window": [
+    "2022-06-01",
+    "2024-12-31"
+  ],
+  "oos_window": [
+    "2025-01-01",
+    "2025-05-31"
+  ],
+  "best_combo": {
+    "atr_sl_multiple": 1.5,
+    "atr_tp_multiple": 1.5,
+    "atr_trail_multiple": 0.0,
+    "donchian_period_entry": 40,
+    "donchian_period_exit": 10,
+    "leverage": 20,
+    "regime_ema_period": 120,
+    "regime_slope_window": 30,
+    "rsi_long_threshold": 10,
+    "rsi_period": 2,
+    "slope_trend_threshold_pct": 0.0,
+    "time_stop_bars": 48,
+    "volume_multiple": 1.0
+  },
+  "in_sample_result": {
+    "strategy": "donchian-v3",
+    "symbol": "BTC/USDT:USDT",
+    "timeframe": "4h",
+    "start": "2022-06-01 00:00:00",
+    "end": "2024-12-31 00:00:00",
+    "bars": 5665,
+    "trades": 172,
+    "naive_return_pct": 190.84153356039235,
+    "backtest_return_pct": 228.36212145579015,
+    "after_funding_pct": 213.47313210141687,
+    "funding_cost_usdt": 148889.89354373293,
+    "funding_events": 1263,
+    "sharpe": 0.9325990645119927,
+    "max_drawdown_pct": -22.200717317412266,
+    "profit_factor": 1.4839162687471967,
+    "win_rate_pct": 34.30232558139535,
+    "avg_trade_pct": 0.4596843279170093,
+    "commission_per_side": 0.0005,
+    "leverage": 20
+  },
+  "oos_result": {
+    "strategy": "donchian-v3",
+    "symbol": "BTC/USDT:USDT",
+    "timeframe": "4h",
+    "start": "2025-01-01 00:00:00",
+    "end": "2025-05-31 00:00:00",
+    "bars": 901,
+    "trades": 29,
+    "naive_return_pct": 10.787204111650816,
+    "backtest_return_pct": -0.2629549232448917,
+    "after_funding_pct": -0.4940839415333964,
+    "funding_cost_usdt": 2311.2901828850004,
+    "funding_events": 171,
+    "sharpe": -0.01973314940261658,
+    "max_drawdown_pct": -15.835872292026176,
+    "profit_factor": 0.8554698834916458,
+    "win_rate_pct": 34.48275862068966,
+    "avg_trade_pct": -0.20953154166617471,
+    "commission_per_side": 0.0005,
+    "leverage": 20
+  }
+}

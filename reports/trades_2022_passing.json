@@ -1,0 +1,156 @@
+{
+  "label": "Donchian-v3 2022 H1 (PASSING)",
+  "total_pct": 23.286096146676083,
+  "trades": [
+    {
+      "n": 1,
+      "side": "SHORT",
+      "entry_time": "2022-01-07 04:00",
+      "exit_time": "2022-01-11 20:00",
+      "entry_price": 41789.97,
+      "exit_price": 42938.55,
+      "pnl_pct": -2.849832770877794,
+      "hold_hours": 112.0
+    },
+    {
+      "n": 2,
+      "side": "SHORT",
+      "entry_time": "2022-01-21 00:00",
+      "exit_time": "2022-01-25 20:00",
+      "entry_price": 40662.06,
+      "exit_price": 37039.99,
+      "pnl_pct": 8.81219243442167,
+      "hold_hours": 116.0
+    },
+    {
+      "n": 3,
+      "side": "LONG",
+      "entry_time": "2022-02-07 16:00",
+      "exit_time": "2022-02-11 00:00",
+      "entry_price": 43805.26,
+      "exit_price": 42639.87359253036,
+      "pnl_pct": -2.75904988183133,
+      "hold_hours": 80.0
+    },
+    {
+      "n": 4,
+      "side": "SHORT",
+      "entry_time": "2022-02-21 12:00",
+      "exit_time": "2022-02-21 12:00",
+      "entry_price": 37550.0,
+      "exit_price": 38681.2219741777,
+      "pnl_pct": -3.114081451836988,
+      "hold_hours": 0.0
+    },
+    {
+      "n": 5,
+      "side": "SHORT",
+      "entry_time": "2022-02-22 00:00",
+      "exit_time": "2022-02-22 20:00",
+      "entry_price": 36986.4,
+      "exit_price": 38365.406771360605,
+      "pnl_pct": -3.8302799806044554,
+      "hold_hours": 20.0
+    },
+    {
+      "n": 6,
+      "side": "SHORT",
+      "entry_time": "2022-02-24 04:00",
+      "exit_time": "2022-02-24 16:00",
+      "entry_price": 34907.8,
+      "exit_price": 36308.48707219134,
+      "pnl_pct": -4.114539488960732,
+      "hold_hours": 12.0
+    },
+    {
+      "n": 7,
+      "side": "LONG",
+      "entry_time": "2022-03-22 12:00",
+      "exit_time": "2022-03-23 00:00",
+      "entry_price": 42976.9,
+      "exit_price": 41864.493639631975,
+      "pnl_pct": -2.6870878476294044,
+      "hold_hours": 12.0
+    },
+    {
+      "n": 8,
+      "side": "LONG",
+      "entry_time": "2022-03-24 08:00",
+      "exit_time": "2022-03-31 16:00",
+      "entry_price": 43060.9,
+      "exit_price": 46450.1,
+      "pnl_pct": 7.7667779818814635,
+      "hold_hours": 176.0
+    },
+    {
+      "n": 9,
+      "side": "SHORT",
+      "entry_time": "2022-04-11 00:00",
+      "exit_time": "2022-04-18 20:00",
+      "entry_price": 42140.3,
+      "exit_price": 40670.4,
+      "pnl_pct": 3.389854011480701,
+      "hold_hours": 188.0
+    },
+    {
+      "n": 10,
+      "side": "SHORT",
+      "entry_time": "2022-04-25 08:00",
+      "exit_time": "2022-04-25 12:00",
+      "entry_price": 38437.2,
+      "exit_price": 39333.381929879775,
+      "pnl_pct": -2.4327141957393263,
+      "hold_hours": 4.0
+    },
+    {
+      "n": 11,
+      "side": "SHORT",
+      "entry_time": "2022-04-26 20:00",
+      "exit_time": "2022-04-27 12:00",
+      "entry_price": 38250.6,
+      "exit_price": 39332.27855383591,
+      "pnl_pct": -2.929287365721914,
+      "hold_hours": 16.0
+    },
+    {
+      "n": 12,
+      "side": "SHORT",
+      "entry_time": "2022-05-01 00:00",
+      "exit_time": "2022-05-01 12:00",
+      "entry_price": 37614.4,
+      "exit_price": 38573.2367358328,
+      "pnl_pct": -2.6503960031283578,
+      "hold_hours": 12.0
+    },
+    {
+      "n": 13,
+      "side": "SHORT",
+      "entry_time": "2022-05-05 16:00",
+      "exit_time": "2022-05-16 00:00",
+      "entry_price": 36886.5,
+      "exit_price": 31324.3,
+      "pnl_pct": 14.98676914318247,
+      "hold_hours": 248.0
+    },
+    {
+      "n": 14,
+      "side": "SHORT",
+      "entry_time": "2022-05-28 00:00",
+      "exit_time": "2022-05-29 20:00",
+      "entry_price": 28623.3,
+      "exit_price": 29560.92131844746,
+      "pnl_pct": -3.3773653949987694,
+      "hold_hours": 44.0
+    },
+    {
+      "n": 15,
+      "side": "SHORT",
+      "entry_time": "2022-06-12 04:00",
+      "exit_time": "2022-06-21 08:00",
+      "entry_price": 27538.2,
+      "exit_price": 21107.8,
+      "pnl_pct": 23.262511711005086,
+      "hold_hours": 220.0
+    }
+  ]
+}

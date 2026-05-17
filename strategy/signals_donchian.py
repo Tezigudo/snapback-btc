@@ -78,6 +78,10 @@ class DonchianBreakoutBTC(Strategy):
     risk_per_trade_pct = 2.0
     leverage = 20
     allow_shorts = True
+    # Max hold time. At 4h entry: 180 bars = 30 days = 1 month.
+    # At 15m entry: would be 2880 bars. Default 180 = right for our 4h use.
+    # Set 0 to disable.
+    time_stop_bars = 180
 
     def init(self) -> None:
         self._entry_bar: int | None = None
@@ -128,6 +132,15 @@ class DonchianBreakoutBTC(Strategy):
             else:
                 self._low_water = min(self._low_water if self._low_water > 0 else low_v, low_v)
             self._maybe_trail(atr_v)
+
+            # Time stop — max-hold safety. Prevents indefinite positions when
+            # the Donchian exit channel never fires (e.g. a sustained micro-trend
+            # that doesn't pierce the opposite N-bar channel for weeks).
+            if self.time_stop_bars > 0 and self._entry_bar is not None:
+                if (len(self.data) - self._entry_bar) >= self.time_stop_bars:
+                    self.position.close()
+                    self._entry_bar = None
+                    return
 
             # Donchian channel exit
             if self.position.is_long and close_v < exit_lower:

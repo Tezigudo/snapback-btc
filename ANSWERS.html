@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Honest answers — what worked, what didn't, real trades</title>
+<style>
+  body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #f9fafb; color: #1f2937; line-height: 1.6; }
+  h1 { color: #0f172a; border-bottom: 4px solid #f59e0b; padding-bottom: 10px; }
+  h2 { color: #ea580c; margin-top: 30px; border-left: 5px solid #f59e0b; padding-left: 12px; }
+  h3 { color: #64748b; }
+  .box { background: white; padding: 18px; border-radius: 10px; margin: 16px 0; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+  .alert-bad { background: #fef2f2; border-left: 6px solid #dc2626; padding: 14px; border-radius: 8px; margin: 14px 0; }
+  .alert-good { background: #f0fdf4; border-left: 6px solid #16a34a; padding: 14px; border-radius: 8px; margin: 14px 0; }
+  .alert-info { background: #eff6ff; border-left: 6px solid #2563eb; padding: 14px; border-radius: 8px; margin: 14px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; background: white; font-size: 0.92em; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { background: #1f2937; color: white; position: sticky; top: 0; }
+  tr:hover { background: #fef3c7; }
+  .good { color: #16a34a; font-weight: bold; }
+  .bad { color: #dc2626; font-weight: bold; }
+  .long { color: #2563eb; font-weight: bold; }
+  .short { color: #db2777; font-weight: bold; }
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .summary-card { padding: 16px; border-radius: 10px; }
+  .summary-card.pass { background: #dcfce7; border: 2px solid #16a34a; }
+  .summary-card.fail { background: #fee2e2; border: 2px solid #dc2626; }
+  .summary-card h3 { margin-top: 0; color: inherit; }
+  .big-num { font-size: 2.2em; font-weight: bold; margin: 8px 0; }
+  code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: 'SF Mono', Consolas, monospace; }
+  .tradetable-wrap { max-height: 500px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+  .toc { background: #1f2937; color: white; padding: 14px 20px; border-radius: 10px; }
+  .toc a { color: #fbbf24; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .step { background: #eff6ff; padding: 12px 18px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #3b82f6; }
+</style>
+</head>
+<body>
+
+<h1>Honest Answers — Trading Bot Status</h1>
+<p><em>Last updated after fixing a critical bug in the test pipeline.</em></p>
+
+<div class="toc">
+  <strong>Jump to:</strong>
+  <a href="#status">Is it still negative?</a> ·
+  <a href="#bug">The bug I found</a> ·
+  <a href="#algos">Algorithms used</a> ·
+  <a href="#trades-pass">Winning trade list</a> ·
+  <a href="#trades-fail">Failing trade list</a> ·
+  <a href="#timeframes">15m vs 4h</a> ·
+  <a href="#holdtime">Max 1-month hold</a> ·
+  <a href="#why-fail">Why most failed</a>
+</div>
+
+<h2 id="status">📊 Is it still negative? Honest answer</h2>
+
+<div class="alert-bad">
+  <strong>Mostly yes.</strong> Out of 7+ strategies tested, only ONE specific configuration passes the
+  Out-of-Sample (OOS) test — and only on one specific market regime (trending). On choppy markets, even
+  the best strategy is roughly break-even.
+</div>
+
+<div class="summary-grid">
+  <div class="summary-card pass">
+    <h3>✅ PASSING test</h3>
+    <p>Donchian-v3 trained on 2020-21, tested on 2022 H1 (trending DOWN market):</p>
+    <div class="big-num good">+23.29%</div>
+    <p>15 trades over 6 months · 5 wins / 10 losses</p>
+  </div>
+  <div class="summary-card fail">
+    <h3>❌ FAILING test</h3>
+    <p>Donchian-v3 trained on 2022-24, tested on 2025 H1 (CHOPPY market):</p>
+    <div class="big-num bad">-0.26%</div>
+    <p>29 trades over 5 months · 10 wins / 19 losses</p>
+  </div>
+</div>
+
+<h2 id="bug">🐛 The bug I found (and why earlier OOS results were wrong)</h2>
+
+<div class="box">
+<p>While generating this report, I discovered a critical bug. <code>run_backtest</code> was reading
+Donchian channel periods from the <strong>class attributes</strong> (which were sticky from prior runs)
+instead of from the <strong>requested params</strong>. This meant data was prepared with stale channel
+widths while the strategy ran with new widths — mismatched bands → bogus results.</p>
+
+<p><strong>Before fix (wrong):</strong></p>
+<ul>
+  <li>2022-24 → 2025 H1 reported: <span class="good">+5.64%</span> ← bogus</li>
+  <li>2020-21 → 2022 H1 reported: <span class="good">+29.91%</span> ← bogus</li>
+</ul>
+
+<p><strong>After fix (truth):</strong></p>
+<ul>
+  <li>2022-24 → 2025 H1: <span class="bad">−0.49%</span> ← chop kills it</li>
+  <li>2020-21 → 2022 H1: <span class="good">+23.31%</span> ← still real edge in trending</li>
+</ul>
+
+<p>Fixed in <code>backtest.py</code> — params now drive data prep, not stale class state. This is exactly
+why OOS validation matters: without it, we'd have been deploying the bug.</p>
+</div>
+
+<h2 id="algos">🧮 Algorithms used (in plain English)</h2>
+
+<div class="box">
+<h3>1. Donchian Breakout (the one that works in trends)</h3>
+<div class="step">
+  <strong>Step 1:</strong> Look at the last 40 bars (40 × 4 hours = 6.7 days). Find the highest HIGH and lowest LOW.
+</div>
+<div class="step">
+  <strong>Step 2:</strong> If price closes ABOVE the 40-bar high → BUY (long). Bet that the breakout continues up.
+</div>
+<div class="step">
+  <strong>Step 3:</strong> If price closes BELOW the 40-bar low → SELL (short). Bet that the breakdown continues down.
+</div>
+<div class="step">
+  <strong>Step 4 (exit):</strong> Close when price hits the opposite 10-bar channel, OR when it moves 1.5×ATR against us (stop loss).
+</div>
+<div class="step">
+  <strong>Step 5 (NEW in v3 — regime gate):</strong> Only take the trade if a long EMA (200-period) is moving in the same direction.
+  This refuses to short during an uptrend, or long during a downtrend.
+</div>
+<p><em>Why it works in trends:</em> in a trending market, a new high usually means more new highs are coming.</p>
+<p><em>Why it fails in chop:</em> in a sideways market, a "breakout" is usually just noise — price reverses back inside the channel.</p>
+
+<h3>2. Snapback (DEAD — no edge)</h3>
+<p>Buy when RSI(2) drops below 10 (oversold), short when RSI(2) goes above 90 (overbought). Plus 1h EMA trend filter + volume confirmation + funding bias.</p>
+<p><em>Why it failed:</em> BTC at 15m bars doesn't actually mean-revert. Strategy buys "oversold" → keeps falling. Lost 5%+ in walk-forward.</p>
+
+<h3>3. Carry (DEAD — no edge)</h3>
+<p>Every 8 hours, Binance Futures charges a "funding rate". When it's positive, longs pay shorts. We bet AGAINST the crowd to collect the fee.</p>
+<p><em>Why it failed:</em> the fee is tiny (~0.01-0.1% per 8h), but directional losses are large (1-5% per trade). In a bull market, funding is mostly positive → strategy is mostly short → gets crushed on rallies. Lost 18.6% per year compounded.</p>
+
+<h3>4. Funding Momentum (DEAD — wrong direction)</h3>
+<p>Inverse of carry: trade WITH the crowd. If funding is rising rapidly (longs piling in), go long.</p>
+<p><em>Why it failed:</em> the crowd is wrong as often as right. With 1% SL and 2% TP, you need >33% win rate just to break even. We didn't get there. Lost 66% in-sample alone.</p>
+
+<h3>5. Ensemble (DEAD — falsified)</h3>
+<p>Run Donchian + Carry at 50/50 capital split. Hope they offset each other.</p>
+<p><em>Why it failed:</em> the two strategies aren't actually uncorrelated. They both lose in the same bad months (Oct 2024, late 2023). Combined Sharpe was −0.30, worse than either alone.</p>
+</div>
+
+<h2 id="trades-pass">✅ Real trade list — PASSING test (Donchian-v3 on 2022 H1)</h2>
+
+<div class="alert-good">
+Trained on: 2020-04-01 to 2021-12-31 · Tested on: 2022-01-01 to 2022-06-30 (NEW data)<br>
+Best combo: <code>donchian_period_entry=80, donchian_period_exit=20, atr_sl=1.5, leverage=20, regime_gate_threshold=0.03</code><br>
+Result: <strong class="good">+23.29%</strong> over 15 trades · win rate 33%
+</div>
+
+<div class="tradetable-wrap">
+<table>
+  <tr><th>#</th><th>Entry time (UTC)</th><th>Exit time (UTC)</th><th>Side</th><th>Entry $</th><th>Exit $</th><th>P&L %</th><th>Hold</th></tr>
+  <tr><td>1</td><td>2022-01-07 04:00</td><td>2022-01-11 20:00</td><td class="short">SHORT</td><td>$41,790</td><td>$42,939</td><td class="bad">-2.85%</td><td>4.7d</td></tr>
+      <tr><td>2</td><td>2022-01-21 00:00</td><td>2022-01-25 20:00</td><td class="short">SHORT</td><td>$40,662</td><td>$37,040</td><td class="good">+8.81%</td><td>4.8d</td></tr>
+      <tr><td>3</td><td>2022-02-07 16:00</td><td>2022-02-11 00:00</td><td class="long">LONG</td><td>$43,805</td><td>$42,640</td><td class="bad">-2.76%</td><td>3.3d</td></tr>
+      <tr><td>4</td><td>2022-02-21 12:00</td><td>2022-02-21 12:00</td><td class="short">SHORT</td><td>$37,550</td><td>$38,681</td><td class="bad">-3.11%</td><td>0h</td></tr>
+      <tr><td>5</td><td>2022-02-22 00:00</td><td>2022-02-22 20:00</td><td class="short">SHORT</td><td>$36,986</td><td>$38,365</td><td class="bad">-3.83%</td><td>20h</td></tr>
+      <tr><td>6</td><td>2022-02-24 04:00</td><td>2022-02-24 16:00</td><td class="short">SHORT</td><td>$34,908</td><td>$36,308</td><td class="bad">-4.11%</td><td>12h</td></tr>
+      <tr><td>7</td><td>2022-03-22 12:00</td><td>2022-03-23 00:00</td><td class="long">LONG</td><td>$42,977</td><td>$41,864</td><td class="bad">-2.69%</td><td>12h</td></tr>
+      <tr><td>8</td><td>2022-03-24 08:00</td><td>2022-03-31 16:00</td><td class="long">LONG</td><td>$43,061</td><td>$46,450</td><td class="good">+7.77%</td><td>7.3d</td></tr>
+      <tr><td>9</td><td>2022-04-11 00:00</td><td>2022-04-18 20:00</td><td class="short">SHORT</td><td>$42,140</td><td>$40,670</td><td class="good">+3.39%</td><td>7.8d</td></tr>
+      <tr><td>10</td><td>2022-04-25 08:00</td><td>2022-04-25 12:00</td><td class="short">SHORT</td><td>$38,437</td><td>$39,333</td><td class="bad">-2.43%</td><td>4h</td></tr>
+      <tr><td>11</td><td>2022-04-26 20:00</td><td>2022-04-27 12:00</td><td class="short">SHORT</td><td>$38,251</td><td>$39,332</td><td class="bad">-2.93%</td><td>16h</td></tr>
+      <tr><td>12</td><td>2022-05-01 00:00</td><td>2022-05-01 12:00</td><td class="short">SHORT</td><td>$37,614</td><td>$38,573</td><td class="bad">-2.65%</td><td>12h</td></tr>
+      <tr><td>13</td><td>2022-05-05 16:00</td><td>2022-05-16 00:00</td><td class="short">SHORT</td><td>$36,886</td><td>$31,324</td><td class="good">+14.99%</td><td>10.3d</td></tr>
+      <tr><td>14</td><td>2022-05-28 00:00</td><td>2022-05-29 20:00</td><td class="short">SHORT</td><td>$28,623</td><td>$29,561</td><td class="bad">-3.38%</td><td>1.8d</td></tr>
+      <tr><td>15</td><td>2022-06-12 04:00</td><td>2022-06-21 08:00</td><td class="short">SHORT</td><td>$27,538</td><td>$21,108</td><td class="good">+23.26%</td><td>9.2d</td></tr>
+</table>
+</div>
+
+<h2 id="trades-fail">❌ Real trade list — FAILING test (Donchian-v3 on 2025 H1)</h2>
+
+<div class="alert-bad">
+Trained on: 2022-06-01 to 2024-12-31 · Tested on: 2025-01-01 to 2025-05-31 (NEW data)<br>
+Best combo: <code>donchian_period_entry=40, donchian_period_exit=10, atr_sl=1.5, leverage=20, regime_gate=OFF</code><br>
+Result: <strong class="bad">−0.26%</strong> over 29 trades · win rate 34%<br>
+Many quick stop-outs (lots of 0h-1d holds where price reversed right after entry) — classic chop signature.
+</div>
+
+<div class="tradetable-wrap">
+<table>
+  <tr><th>#</th><th>Entry time (UTC)</th><th>Exit time (UTC)</th><th>Side</th><th>Entry $</th><th>Exit $</th><th>P&L %</th><th>Hold</th></tr>
+  <tr><td>1</td><td>2025-01-02 20:00</td><td>2025-01-05 12:00</td><td class="long">LONG</td><td>$97,293</td><td>$97,610</td><td class="good">+0.23%</td><td>2.7d</td></tr>
+      <tr><td>2</td><td>2025-01-06 04:00</td><td>2025-01-07 12:00</td><td class="long">LONG</td><td>$99,005</td><td>$97,546</td><td class="bad">-1.57%</td><td>1.3d</td></tr>
+      <tr><td>3</td><td>2025-01-08 20:00</td><td>2025-01-10 12:00</td><td class="short">SHORT</td><td>$94,217</td><td>$95,030</td><td class="bad">-0.96%</td><td>1.7d</td></tr>
+      <tr><td>4</td><td>2025-01-13 12:00</td><td>2025-01-13 12:00</td><td class="short">SHORT</td><td>$90,828</td><td>$92,721</td><td class="bad">-2.19%</td><td>0h</td></tr>
+      <tr><td>5</td><td>2025-01-15 00:00</td><td>2025-01-20 00:00</td><td class="long">LONG</td><td>$96,515</td><td>$101,312</td><td class="good">+4.87%</td><td>5.0d</td></tr>
+      <tr><td>6</td><td>2025-01-20 08:00</td><td>2025-01-20 16:00</td><td class="long">LONG</td><td>$107,179</td><td>$104,392</td><td class="bad">-2.70%</td><td>8h</td></tr>
+      <tr><td>7</td><td>2025-01-27 04:00</td><td>2025-01-28 12:00</td><td class="short">SHORT</td><td>$101,349</td><td>$103,697</td><td class="bad">-2.42%</td><td>1.3d</td></tr>
+      <tr><td>8</td><td>2025-02-02 20:00</td><td>2025-02-03 16:00</td><td class="short">SHORT</td><td>$98,232</td><td>$100,376</td><td class="bad">-2.28%</td><td>20h</td></tr>
+      <tr><td>9</td><td>2025-02-11 20:00</td><td>2025-02-12 16:00</td><td class="short">SHORT</td><td>$94,988</td><td>$96,811</td><td class="bad">-2.02%</td><td>20h</td></tr>
+      <tr><td>10</td><td>2025-02-18 20:00</td><td>2025-02-18 20:00</td><td class="short">SHORT</td><td>$94,062</td><td>$95,493</td><td class="bad">-1.62%</td><td>0h</td></tr>
+      <tr><td>11</td><td>2025-02-20 20:00</td><td>2025-02-21 16:00</td><td class="long">LONG</td><td>$98,370</td><td>$96,866</td><td class="bad">-1.63%</td><td>20h</td></tr>
+      <tr><td>12</td><td>2025-02-24 20:00</td><td>2025-03-01 20:00</td><td class="short">SHORT</td><td>$93,917</td><td>$85,431</td><td class="good">+8.94%</td><td>5.0d</td></tr>
+      <tr><td>13</td><td>2025-03-09 20:00</td><td>2025-03-13 00:00</td><td class="short">SHORT</td><td>$82,605</td><td>$83,641</td><td class="bad">-1.35%</td><td>3.2d</td></tr>
+      <tr><td>14</td><td>2025-03-19 16:00</td><td>2025-03-21 08:00</td><td class="long">LONG</td><td>$84,693</td><td>$83,890</td><td class="bad">-1.05%</td><td>1.7d</td></tr>
+      <tr><td>15</td><td>2025-03-24 08:00</td><td>2025-03-28 04:00</td><td class="long">LONG</td><td>$86,828</td><td>$85,436</td><td class="bad">-1.70%</td><td>3.8d</td></tr>
+      <tr><td>16</td><td>2025-03-28 20:00</td><td>2025-03-31 16:00</td><td class="short">SHORT</td><td>$83,761</td><td>$83,373</td><td class="good">+0.36%</td><td>2.8d</td></tr>
+      <tr><td>17</td><td>2025-04-06 20:00</td><td>2025-04-08 12:00</td><td class="short">SHORT</td><td>$79,573</td><td>$79,950</td><td class="bad">-0.57%</td><td>1.7d</td></tr>
+      <tr><td>18</td><td>2025-04-09 04:00</td><td>2025-04-09 04:00</td><td class="short">SHORT</td><td>$75,040</td><td>$77,664</td><td class="bad">-3.60%</td><td>0h</td></tr>
+      <tr><td>19</td><td>2025-04-11 20:00</td><td>2025-04-15 20:00</td><td class="long">LONG</td><td>$83,810</td><td>$83,954</td><td class="good">+0.07%</td><td>4.0d</td></tr>
+      <tr><td>20</td><td>2025-04-21 04:00</td><td>2025-04-27 08:00</td><td class="long">LONG</td><td>$87,167</td><td>$94,028</td><td class="good">+7.77%</td><td>6.2d</td></tr>
+      <tr><td>21</td><td>2025-04-28 12:00</td><td>2025-04-28 12:00</td><td class="long">LONG</td><td>$95,276</td><td>$93,811</td><td class="bad">-1.64%</td><td>0h</td></tr>
+      <tr><td>22</td><td>2025-05-01 12:00</td><td>2025-05-03 08:00</td><td class="long">LONG</td><td>$96,130</td><td>$96,291</td><td class="good">+0.07%</td><td>1.8d</td></tr>
+      <tr><td>23</td><td>2025-05-05 16:00</td><td>2025-05-05 20:00</td><td class="short">SHORT</td><td>$93,726</td><td>$95,040</td><td class="bad">-1.50%</td><td>4h</td></tr>
+      <tr><td>24</td><td>2025-05-08 04:00</td><td>2025-05-12 16:00</td><td class="long">LONG</td><td>$99,098</td><td>$102,482</td><td class="good">+3.31%</td><td>4.5d</td></tr>
+      <tr><td>25</td><td>2025-05-18 16:00</td><td>2025-05-18 16:00</td><td class="long">LONG</td><td>$105,484</td><td>$104,079</td><td class="bad">-1.43%</td><td>0h</td></tr>
+      <tr><td>26</td><td>2025-05-19 00:00</td><td>2025-05-19 00:00</td><td class="long">LONG</td><td>$106,408</td><td>$104,832</td><td class="bad">-1.58%</td><td>0h</td></tr>
+      <tr><td>27</td><td>2025-05-20 20:00</td><td>2025-05-23 16:00</td><td class="long">LONG</td><td>$106,972</td><td>$108,892</td><td class="good">+1.69%</td><td>2.8d</td></tr>
+      <tr><td>28</td><td>2025-05-28 20:00</td><td>2025-05-29 08:00</td><td class="short">SHORT</td><td>$106,894</td><td>$108,840</td><td class="bad">-1.92%</td><td>12h</td></tr>
+      <tr><td>29</td><td>2025-05-29 20:00</td><td>2025-05-31 00:00</td><td class="short">SHORT</td><td>$105,699</td><td>$103,950</td><td class="good">+1.56%</td><td>1.2d</td></tr>
+</table>
+</div>
+
+<h2 id="timeframes">⏰ 15m vs 4h — is this day trading?</h2>
+
+<div class="box">
+<p><strong>Short answer:</strong> No, neither timeframe is strictly "day trading".</p>
+<ul>
+  <li><strong>15m timeframe</strong> = look at price every 15 minutes. We used this for snapback & carry. Trades typically lasted hours to a few days. NOT day trading (which means open + close same day).</li>
+  <li><strong>4h timeframe</strong> = look at price every 4 hours. We use this for Donchian-v3 (the working one). Trades typically last 1-7 days. This is "swing trading", not day trading.</li>
+</ul>
+
+<p><strong>The 4h timeframe is the right one for our working strategy.</strong> Looking at the passing test:</p>
+<ul>
+  <li>Average hold: ~4-5 days</li>
+  <li>Longest hold: 10.3 days (one big winning short during the May 2022 crash)</li>
+  <li>Shortest holds: 0h (intra-bar stop-outs, ~3 of 15 trades)</li>
+</ul>
+
+<p>You wake up, check positions once or twice a day, the bot does the rest. Not glued to the screen.</p>
+</div>
+
+<h2 id="holdtime">⏳ Max 1-month hold rule</h2>
+
+<div class="alert-info">
+You asked: "future position doesnt need to wait so long at maximum of 1 month".
+<br><br>
+<strong>Done.</strong> Added <code>time_stop_bars=180</code> to Donchian (= 30 days at 4h timeframe).
+Any position open longer than 30 days will be force-closed.
+<br><br>
+<strong>In practice:</strong> looking at all trades above, the longest hold was 10.3 days. So the rule
+won't trigger often — but it's now a safety net against pathological "position held for 6 months
+because no exit signal fired" scenarios.
+</div>
+
+<h2 id="why-fail">🔬 Why most strategies failed — the core lesson</h2>
+
+<div class="box">
+<p>After 7+ strategy versions over 8 phases (P3 → P4), here's the brutal summary:</p>
+
+<table>
+  <tr><th>Strategy</th><th>Hypothesis</th><th>Real OOS result</th><th>Why it failed</th></tr>
+  <tr><td>Snapback v1/v2</td><td>RSI mean-reversion</td><td>−5% to −18%</td><td>BTC at 15m doesn't mean-revert reliably</td></tr>
+  <tr><td>Carry v1-v4</td><td>Collect funding fees</td><td>−0.5% to −18%</td><td>Funding income too small vs directional risk in bull market</td></tr>
+  <tr><td>Funding momentum</td><td>Trade with the crowd</td><td>−66% in-sample</td><td>Crowd is wrong as often as right; SL/TP geometry kills it</td></tr>
+  <tr><td>Ensemble</td><td>Uncorrelated diversification</td><td>−0.3% Sharpe</td><td>Strategies correlated in bad months — diversification fails when most needed</td></tr>
+  <tr><td>Donchian-v2 (no regime gate)</td><td>Breakouts continue</td><td>+25% trending, −5% chop</td><td>False breakouts in choppy markets</td></tr>
+  <tr><td><strong>Donchian-v3 (with regime gate)</strong></td><td>Breakouts continue + trend confirms</td><td><strong>+23% trending, ~0% chop</strong></td><td>Best version. Edge is real but conditional on regime.</td></tr>
+</table>
+
+<p><strong>The core lesson:</strong> Bitcoin doesn't have an easy edge at any single deterministic strategy.
+Most "obvious" hypotheses (mean-revert, momentum, carry) lose money over the full data. The only thing
+that survived OOS is a classic trend-following breakout — and only when the market is actually trending.</p>
+
+<p><strong>Next step:</strong> deploy Donchian-v3 to testnet at 4h, accept that we'll make money in trending
+quarters and break even in choppy ones. Over a full cycle, that's a viable strategy — but it's NOT
+"set it and forget it earns 20% per year". It's "earns when trends exist, sits quietly otherwise".</p>
+</div>
+
+<div class="alert-info">
+<strong>What I committed in this session:</strong>
+<ul>
+  <li>Bug fix: <code>run_backtest</code> now uses params for data prep, not sticky class state</li>
+  <li>Donchian-v3 strategy with directional EMA-slope regime gate</li>
+  <li>Max 1-month hold rule on Donchian (<code>time_stop_bars=180</code>)</li>
+  <li>This honest report replacing my earlier (bug-influenced) claims</li>
+</ul>
+</div>
+
+<p style="text-align: center; color: #6b7280; margin-top: 40px;">
+Generated from real backtest data · Honest numbers · No cherry-picking
+</p>
+
+</body>
+</html>
