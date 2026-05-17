@@ -52,7 +52,8 @@ python -c "from exchange.env import get_env; print(get_env())"   # -> 'testnet'
 - [x] P3.3 — v2 refinements + ensemble: carry-v2 leads (2/3 promotion checks pass)
 - [x] P3.4 — leverage + TF sweeps (leverage set to 20x permanent)
 - [x] P3.5 — **promotion gate was broken**; rebuilt with tail-risk checks; carry-v4 + trend gate + tail-aware selection lifted CAGR -18.6% → +4.95% (still at boundary, NOT P4-ready)
-- [ ] P4 — blocked on OOS validation of carry-v4 on 2025 data
+- [x] P3.6 — **OOS validation on 2025 killed both candidates** (carry-v4: IS +75% → OOS −5%; donchian-v2: IS +213% → OOS −5%); funding-momentum hypothesis also dead (−66% IS). No deterministic strategy passes OOS. Carry refactor cuts LOC -72%. New `research/oos_validate.py` is mandatory before any P4 decision.
+- [ ] P4 — blocked: no strategy with OOS edge to deploy
 - [ ] P5 — monitor + viz
 - [ ] P6 — mainnet gate
 
@@ -79,14 +80,22 @@ numbers (Sharpe +0.70, stability 60%, drift +40%). The pass came from
 the 28 fold returns serially produces $100 → $62.30 over 2.3 years —
 **CAGR −18.6%/year**. The 3-check median-based gate didn't see three
 tail folds (−47%, −25%, −21%) wipe out 25 small winners. Rebuilt the
-gate with strict mean/CAGR/max-loss checks (`min_compounded_cagr_pct`,
-`min_mean_test_return_pct`, `max_single_fold_loss_pct`). Architectural
-fixes — trend EMA gate (carry-v4), tail-aware combo selection
-(`research/scoring.py: tail_aware_score`) — lifted CAGR to **+4.95%**
-on the same fold set, but with **negative median Sharpe (−0.05)** and
-**48% fold-positive rate**, this is at the floor of noise, not a real
-edge. Live deployment is blocked on **out-of-sample validation against
-2025 data** before P4 testnet.
+gate with strict mean/CAGR/max-loss checks. Architectural fixes —
+trend EMA gate (carry-v4), tail-aware combo selection — lifted IS
+CAGR to **+4.95%** on the same fold set, but live deployment was
+blocked on out-of-sample validation against 2025 data.
+
+**P3.6 OOS validation killed both candidates:**
+- carry-v4 best IS combo: +74.66% IS → **−5.37% OOS** (2025 Jan-May)
+- donchian-v2 best IS combo: +213.47% IS → **−5.50% OOS**
+- funding-momentum (inverse hypothesis): −66.56% IS (failed before OOS)
+
+The infrastructure (`research/oos_validate.py`) is the right tool;
+the conclusion is that no deterministic strategy in the snapback-btc
+family generalises beyond its IS window. P4 testnet is blocked. See
+`STRATEGY_NOTES.md` for the five concrete next directions
+(different asset, higher timeframe, orderbook data, cross-exchange
+basis trade, or accept the negative result).
 
 **Per-user-decision:** leverage permanently set to 20x in
 `config/params.yaml` and `risk.py: MAX_LEVERAGE`. Ablation showed

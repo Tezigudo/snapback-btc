@@ -363,7 +363,116 @@ the strategy itself is at best marginally profitable in expectation.
 Live deployment at 20x with real slippage would likely turn slightly
 negative.
 
-## Next experiments (in honest priority order, post-P3.5)
+## P3.6 — OOS validation kills all candidates; refactor for next direction
+
+User asked: "why its negative? could you improve a performance of it?
+... lets compact first then start task, I will afk for 2 hr".
+
+Ran in autonomous mode. The 2 hours produced **three definitive
+negative results** and **two infrastructure improvements**.
+
+### Negative results — no strategy survives OOS
+
+OOS window: 2025-01-01 → 2025-05-31 (5 months untouched by any sweep).
+Method (`research/oos_validate.py`): pick the single best combo on the
+2022-06 → 2024-12 IS window using `tail_aware_score`, apply that ONE
+combo to OOS. Cleanest "did we curve-fit?" test.
+
+| Strategy | IS return | OOS return | Verdict |
+|---|---:|---:|:---:|
+| carry-v4 (15m, all gates) | **+74.66%** | **−5.37%** | ❌ curve-fit |
+| donchian-v2 (4h, ATR trail) | **+213.47%** | **−5.50%** | ❌ curve-fit |
+| fmom-v1 (funding momentum) | **−66.56%** | not tested (failed IS) | ❌ wrong hypothesis |
+
+The pattern is identical for the two candidates with positive IS:
+massive positive in-sample return, OOS collapses to small loss.
+
+**This is the cleanest "no edge" evidence we have.** The walk-forward
+gate (even the strict 6-check version) and the tail-aware selection
+both correctly identified the BEST combo on IS — and that best combo
+doesn't generalise. The 2022-2024 fold set is the source of
+overfitting, not any specific strategy.
+
+Funding momentum (the inverse hypothesis to carry — "trade WITH the
+crowd instead of against it") also failed, decisively negative on IS
+itself (−66%). So neither direction of the carry/funding-driven trade
+works on BTC perp at 15m.
+
+### What this means for the project
+
+After 6 strategy versions (snapback v1/v2, donchian v1/v2, carry
+v1/v2/v3/v4, fmom-v1) + ensemble + 3 selection-criterion variants
+across P3.0–P3.6, we have:
+
+1. **No deterministic strategy passes OOS validation on BTC perp 15m.**
+   The "promising" carry-v4 result (+4.95% CAGR in-sample after
+   architectural fixes) is a curve-fit; the true edge is roughly zero
+   or slightly negative once you stop tuning on the same data.
+
+2. **The research infrastructure is solid.** Walk-forward with strict
+   6-check promotion gate + tail-aware combo selection + OOS validation
+   harness is the right way to test this. Every iteration above used
+   the same machinery; the negative result is trustworthy because the
+   measurement is good, not because we were unlucky.
+
+3. **Live deployment is not justified.** No strategy clears the bar;
+   "marginal IS performance + negative OOS" is the most expensive
+   thing to deploy because the live tape will look like OOS, not IS.
+
+### Infrastructure improvements committed in P3.6
+
+1. **Unified carry class** (`strategy/signals_carry_unified.py`)
+   v1/v2/v3/v4 collapsed from 575 LOC of duplicate signal logic into
+   one 200-LOC configurable class with feature flags. Old class files
+   are 3-line shims pointing at the unified subclasses. LOC reduction:
+   **775 → 218 (-72%)**. Behaviour verified identical via fold 27
+   replay (6 trades, −7.81% — exact match before/after).
+
+2. **OOS validation harness** (`research/oos_validate.py`)
+   New tool: pick best train-window combo by tail_aware_score, apply
+   to truly-unseen window, report the gap. Used to invalidate carry-v4
+   and donchian-v2 in this session. Should be the GATE before any P4
+   testnet decision going forward — no strategy goes live without an
+   OOS confirmation.
+
+### Concrete next directions for the user
+
+(All of these are speculation; none should be undertaken without first
+deciding the project is still worth pursuing.)
+
+1. **Try a different asset.** BTC perp may simply not have a
+   deterministic-strategy edge at 15m. ETH/USDT, SOL/USDT have
+   different funding dynamics and may admit edge. Costs: pull data
+   (1 hour), re-run all 6 walk-forwards on each asset. Doesn't change
+   any code.
+
+2. **Try a higher timeframe (1d, 1w).** All our backtests are 15m or
+   coarser. Daily/weekly is a fundamentally different game — fewer
+   bars, less noise, possibly more regime persistence. Some classic
+   strategies (200-day MA cross, monthly momentum) work at daily but
+   not intraday. Pull 1d data (~5 min), rerun.
+
+3. **Use orderbook or whale-flow data.** Funding + price + volume is
+   too sparse a feature set. Public Binance orderbook snapshots,
+   open-interest delta, or large-wallet flow tracking add edges that
+   our current data doesn't see.
+
+4. **Cross-exchange basis trade.** Real institutional carry: long
+   spot (Coinbase) + short perp (Binance), pocket the funding
+   differential delta-neutral. No price risk. Requires multi-exchange
+   plumbing.
+
+5. **Stop and accept the negative result.** Deterministic
+   single-asset BTC perp trading at 15m is hard; the academic
+   literature broadly agrees. Snapback-btc was a research project
+   with a clear hypothesis; the hypothesis is falsified. That's a
+   valid stopping point.
+
+The PRIOR notes section about "next experiments post-P3.5" is now
+obsolete — those experiments don't matter because the strategy
+direction is invalidated. Marking it that way below.
+
+## Next experiments (in honest priority order, post-P3.5 — SUPERSEDED BY P3.6)
 
 The right move is NOT another sweep iteration on this data. We've
 exhausted what train-window selection on the 2022-06 → 2024-12 fold

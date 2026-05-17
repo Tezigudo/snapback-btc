@@ -83,6 +83,11 @@ class StrategyParams:
     dd_halt_pct: float = 100.0
     # Carry-v4 NEW trend gate (0 = disabled = v3 behaviour)
     trend_ema_period: int = 0
+    # FundingMomentum (fmom-v1) params
+    momentum_lookback_bars: int = 96
+    momentum_threshold: float = 0.0002
+    tp_pct: float = 0.02
+    require_trend_align: bool = False
 
     @classmethod
     def from_yaml(cls, path: str | None = None) -> "StrategyParams":

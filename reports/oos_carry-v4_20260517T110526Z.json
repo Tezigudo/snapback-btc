@@ -1,0 +1,69 @@
+{
+  "strategy": "carry-v4",
+  "entry_tf": "15m",
+  "is_window": [
+    "2022-06-01",
+    "2024-12-31"
+  ],
+  "oos_window": [
+    "2025-01-01",
+    "2025-05-31"
+  ],
+  "best_combo": {
+    "atr_percentile_threshold": 80.0,
+    "atr_sl_multiple": 1.0,
+    "atr_tp_multiple": 1.5,
+    "dd_halt_pct": 10.0,
+    "funding_threshold": 0.0001,
+    "leverage": 20,
+    "max_24h_change_pct": 3.0,
+    "rsi_long_threshold": 10,
+    "rsi_period": 2,
+    "sl_pct": 0.015,
+    "time_stop_bars": 48,
+    "trend_ema_period": 2880,
+    "volume_multiple": 1.0
+  },
+  "in_sample_result": {
+    "strategy": "carry-v4",
+    "symbol": "BTC/USDT:USDT",
+    "timeframe": "15m+1h",
+    "start": "2022-06-01 00:00:00",
+    "end": "2024-12-31 00:00:00",
+    "bars": 90625,
+    "trades": 92,
+    "naive_return_pct": 191.84442997808029,
+    "backtest_return_pct": 69.62012634457521,
+    "after_funding_pct": 74.65930193533632,
+    "funding_cost_usdt": -50391.755907611,
+    "funding_events": 336,
+    "sharpe": 0.7599170994133245,
+    "max_drawdown_pct": -20.816422972905336,
+    "profit_factor": 1.687809046365581,
+    "win_rate_pct": 47.82608695652174,
+    "avg_trade_pct": 0.4471660552763934,
+    "commission_per_side": 0.0005,
+    "leverage": 20
+  },
+  "oos_result": {
+    "strategy": "carry-v4",
+    "symbol": "BTC/USDT:USDT",
+    "timeframe": "15m+1h",
+    "start": "2025-01-01 00:00:00",
+    "end": "2025-05-31 00:00:00",
+    "bars": 14401,
+    "trades": 9,
+    "naive_return_pct": 11.108426831771222,
+    "backtest_return_pct": -5.536340227675007,
+    "after_funding_pct": -5.370881268008809,
+    "funding_cost_usdt": -1654.5895966619996,
+    "funding_events": 20,
+    "sharpe": -1.5218928208454288,
+    "max_drawdown_pct": -7.1918631519756975,
+    "profit_factor": 0.3288736720315514,
+    "win_rate_pct": 22.22222222222222,
+    "avg_trade_pct": -0.4962029024891068,
+    "commission_per_side": 0.0005,
+    "leverage": 20
+  }
+}
