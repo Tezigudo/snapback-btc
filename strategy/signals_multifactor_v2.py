@@ -160,16 +160,22 @@ class DayTradeMultiFactorBTCv2(Strategy):
     # -----------------------------------------------------------------------
     def _trendline_confirm(self, i: int, side: str) -> bool:
         """For LONG: price near (above) a recent support trendline.
-        For SHORT: price near (below) a recent resistance trendline."""
-        if i < self.swing_lookback_bars:
+        For SHORT: price near (below) a recent resistance trendline.
+
+        CAUSAL: excludes the last `swing_k` bars from the lookback because
+        their swing status can't be confirmed yet (swing_high_low needs k
+        future bars). This removes the lookahead bias the prior version had.
+        """
+        if i < self.swing_lookback_bars + self.swing_k:
             return False
         start = i - self.swing_lookback_bars
-        sub_high = self._high.iloc[start:i + 1]
-        sub_low = self._low.iloc[start:i + 1]
-        sh = self._sh_mask.iloc[start:i + 1]
-        sl = self._sl_mask.iloc[start:i + 1]
+        end = i - self.swing_k + 1  # exclude last k bars (unconfirmable swings)
+        sub_high = self._high.iloc[start:end]
+        sub_low = self._low.iloc[start:end]
+        sh = self._sh_mask.iloc[start:end]
+        sl = self._sl_mask.iloc[start:end]
         price = float(self.data.Close[-1])
-        bar_idx_local = len(sub_high) - 1
+        bar_idx_local = i - start  # current bar position relative to slice start
         if side == "long":
             line = trendline_from_swings(sl, sub_low, n_recent=3)
             if line is None:
@@ -186,13 +192,15 @@ class DayTradeMultiFactorBTCv2(Strategy):
             return d is not None and -self.trendline_max_distance_pct <= d <= 0
 
     def _sr_zone_confirm(self, i: int, side: str) -> bool:
-        if i < self.swing_lookback_bars:
+        # CAUSAL: exclude last swing_k bars (unconfirmable).
+        if i < self.swing_lookback_bars + self.swing_k:
             return False
         start = i - self.swing_lookback_bars
-        sh = self._sh_mask.iloc[start:i + 1]
-        sl = self._sl_mask.iloc[start:i + 1]
-        sub_high = self._high.iloc[start:i + 1]
-        sub_low = self._low.iloc[start:i + 1]
+        end = i - self.swing_k + 1
+        sh = self._sh_mask.iloc[start:end]
+        sl = self._sl_mask.iloc[start:end]
+        sub_high = self._high.iloc[start:end]
+        sub_low = self._low.iloc[start:end]
         price = float(self.data.Close[-1])
         if side == "long":
             sl_prices = sub_low.values[np.where(sl.values)[0]]
@@ -206,13 +214,15 @@ class DayTradeMultiFactorBTCv2(Strategy):
             return d is not None and d <= self.sr_max_distance_pct
 
     def _fib_confirm(self, i: int, side: str) -> bool:
-        if i < self.swing_lookback_bars:
+        # CAUSAL: exclude last swing_k bars (unconfirmable).
+        if i < self.swing_lookback_bars + self.swing_k:
             return False
         start = i - self.swing_lookback_bars
-        sh = self._sh_mask.iloc[start:i + 1]
-        sl = self._sl_mask.iloc[start:i + 1]
-        sub_high = self._high.iloc[start:i + 1]
-        sub_low = self._low.iloc[start:i + 1]
+        end = i - self.swing_k + 1
+        sh = self._sh_mask.iloc[start:end]
+        sl = self._sl_mask.iloc[start:end]
+        sub_high = self._high.iloc[start:end]
+        sub_low = self._low.iloc[start:end]
         price = float(self.data.Close[-1])
         pair = recent_swing_pair(sh, sl, sub_high, sub_low, self.swing_lookback_bars)
         if pair is None:

@@ -29,6 +29,52 @@ ul li { margin-bottom:4px; }
 <body>
 
 <h1>Lunch-hour summary — May 19, 2026</h1>
+
+<div class="banner ok" style="background:rgba(63,185,80,.10);border-left:3px solid var(--ok);padding:14px 18px;border-radius:8px;margin:18px 0;">
+  ✅ <strong>Post-lunch update (15:00 BKK)</strong>: bot restarted with latest code from git
+  (workflow now set up — no more rsync). Futures wallet detected: <strong>$101.00</strong>.
+  Still on multifactor-v1 dry-run, no real orders.
+</div>
+
+<div class="banner warn">
+  ⚠️ <strong>Kill switch needs re-baselining manually</strong>. The bot's
+  <code>deploy_start_equity</code> is still locked at <strong>$45</strong> (the
+  original deploy start). With current $101, the kill switch would only fire at
+  <strong>$36.90 (-63%)</strong>, not the intended <strong>$82.82 (-18%)</strong>.
+  To fix (still dry-run, zero capital risk):
+  <pre style="margin-top:8px">ssh root@152.42.241.43
+tmux send-keys -t bot C-c
+sleep 3
+# back up state.db
+cp /root/snapback-btc/data/state.db /root/snapback-btc/data/state.db.bak
+# clear baseline
+cd /root/snapback-btc
+.venv/bin/python -c "from exchange import state; state.set_float('deploy_start_equity', 0.0); print('cleared')"
+# restart
+tmux send-keys -t bot 'cd /root/snapback-btc && uv run python -m bot --dry-run' Enter
+# detach
+# Ctrl+B then D</pre>
+  After restart, bot will record <code>deploy_start_equity=$101</code> and kill switch fires at $82.82.
+</div>
+
+<div class="banner bad" style="background:rgba(248,81,73,.08);border-left:3px solid var(--bad);padding:14px 18px;border-radius:8px;margin:18px 0;">
+  🔍 <strong>Validation finding: backtest has LOOKAHEAD BIAS in swing detection.</strong><br>
+  <code>swing_high_low</code> marks bar <code>i</code> as a swing if it's a max in <code>h[i-3:i+4]</code> — using 3 FUTURE bars.
+  The backtest precomputes swings on full data, so at bar <code>i</code> it knows swing markers for bars <code>i-2, i-1, i</code>
+  (which require post-bar data to confirm). My live port (<code>live_v3all_wider4.py</code>) is causally correct —
+  it only sees what was actually known at time <code>i</code>.<br><br>
+  <strong>Practical consequence:</strong>
+  <ul style="margin:6px 0">
+    <li>Live port produces ~50% of backtest's signal count (4/13 in October validation, ±1 bar slack)</li>
+    <li>Backtest's +151% cumulative is OPTIMISTIC; realistic live with the port: probably +50-100%</li>
+    <li>The k=4.0 finding (best ATR multiplier) still holds — it's relative, not absolute</li>
+    <li>Per user's deploy plan ("Only then: switch params.yaml if validation ≥95%"): <strong>not switching</strong></li>
+  </ul>
+  Possible fixes for next session: (a) accept the divergence, deploy port anyway, expect more conservative
+  returns; (b) refactor backtest's swing detection to be causal (drops backtest results too) — most honest;
+  (c) write a fully-causal v4 strategy.
+</div>
+
 <div class="meta">
   ~1 hour of autonomous work while you were at lunch. I followed the plan:
   collect v1 dry-run status → run more ATR variants → port v3-all-wider-4 to
