@@ -70,6 +70,19 @@ sizing:
 
 execution:
   order_type: market            # market | limit
+  # Limit-order knobs (used only when order_type=limit):
+  #   limit_offset_bps  — places the entry limit offset_bps BELOW close for LONG,
+  #                       ABOVE close for SHORT. 0 = at close. Smaller = tighter
+  #                       (less slippage, lower fill probability). 1 bp ≈ $6.5
+  #                       at $65k BTC.
+  #   limit_timeout_s   — wait this long for the limit to fill, then cancel and
+  #                       (if zero fill) market-order the full qty as fallback.
+  #                       Partial fills are bracketed as-is; no market top-up.
+  # Maker fee on Binance Futures USDM = 0.02% vs 0.04% taker → saves ~2 bps/side
+  # when the limit fills (≈4 bps total round-trip). For multifactor-v1 at ~50
+  # trades/year that's ~2%/yr edge improvement on top of strategy returns.
+  limit_offset_bps: 0.0         # 0 = exactly at close; positive = further from close
+  limit_timeout_s: 20.0         # cancel after N seconds, fall back to market
   poll_interval_s: 5            # main loop tick
   reconcile_on_boot: true
 

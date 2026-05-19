@@ -353,35 +353,74 @@ class Bot:
         sl_price = price - sl_dist if side == "long" else price + sl_dist
         tp_price = price + tp_dist if side == "long" else price - tp_dist
 
+        exec_cfg = self.params.get("execution", {})
+        order_type = str(exec_cfg.get("order_type", "market")).lower()
+        limit_offset_bps = float(exec_cfg.get("limit_offset_bps", 0.0))
+        limit_timeout_s = float(exec_cfg.get("limit_timeout_s", 20.0))
+
         if self.dry_run:
-            self.log.info("DRY-RUN would %s qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=$%.2f",
-                          side, qty, price, sl_price, tp_price, notional)
+            self.log.info("DRY-RUN would %s [%s] qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=$%.2f",
+                          side, order_type, qty, price, sl_price, tp_price, notional)
             state.record_event("INFO", "dry_run_signal", {**dbg, "side": side, "qty": qty,
                                                           "sl": sl_price, "tp": tp_price,
-                                                          "notional": notional})
-            send_alert(f"DRY-RUN: would {side.upper()}",
+                                                          "notional": notional,
+                                                          "order_type": order_type})
+            send_alert(f"DRY-RUN: would {side.upper()} [{order_type}]",
                        f"DRY-RUN: would have entered {side.upper()} "
-                       f"{qty:.4f} BTC @ {price:.2f}\n"
+                       f"{qty:.4f} BTC @ {price:.2f} ({order_type})\n"
                        f"SL: {sl_price:.2f}  TP: {tp_price:.2f}\n"
                        f"Notional: ${notional:.2f}\n"
                        f"Equity: {equity:.2f} USDT\n"
                        f"(No real order placed.)")
             return
 
-        self.log.info("Signal %s qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=%.2f",
-                      side, qty, price, sl_price, tp_price, notional)
+        self.log.info("Signal %s [%s] qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=%.2f",
+                      side, order_type, qty, price, sl_price, tp_price, notional)
         try:
-            orders = self.client.market_order_with_bracket(
-                self.symbol, side, qty, sl_price, tp_price)
-            state.record_fill(side=side, qty=qty, price=price,
-                              reason="entry", equity_after=equity)
-            state.record_event("INFO", "entry", {**dbg, "side": side, "qty": qty,
-                                                  "sl": sl_price, "tp": tp_price,
-                                                  "order_ids": {k: v.get("id") for k, v in orders.items()}})
-            send_alert(f"Bot {side.upper()} entry",
-                       f"{side.upper()} {qty:.4f} BTC @ {price:.2f}\n"
-                       f"SL: {sl_price:.2f}  TP: {tp_price:.2f}\n"
-                       f"Equity: {equity:.2f} USDT")
+            if order_type == "limit":
+                # Maker-style: place limit at close ± offset_bps (favor better fill).
+                # For LONG buy: BELOW close (we want to buy lower → maker rebate).
+                # For SHORT sell: ABOVE close (we want to sell higher → maker rebate).
+                if side == "long":
+                    limit_price = price * (1.0 - limit_offset_bps / 10000.0)
+                else:
+                    limit_price = price * (1.0 + limit_offset_bps / 10000.0)
+                orders = self.client.limit_order_with_bracket(
+                    self.symbol, side, qty, limit_price,
+                    sl_distance=sl_dist, tp_distance=tp_dist,
+                    timeout_s=limit_timeout_s)
+                fill_price = float(orders.get("fill_price", price))
+                filled_as = orders.get("filled_as", "limit")
+                filled_qty = float(orders.get("filled_qty", qty))
+                state.record_fill(side=side, qty=filled_qty, price=fill_price,
+                                  reason="entry", equity_after=equity)
+                state.record_event("INFO", "entry", {**dbg, "side": side,
+                                                      "qty": filled_qty,
+                                                      "fill_price": fill_price,
+                                                      "limit_price": limit_price,
+                                                      "filled_as": filled_as,
+                                                      "sl_distance": sl_dist,
+                                                      "tp_distance": tp_dist,
+                                                      "order_ids": {k: v.get("id") for k, v in orders.items()
+                                                                    if isinstance(v, dict)}})
+                send_alert(f"Bot {side.upper()} entry [{filled_as}]",
+                           f"{side.upper()} {filled_qty:.4f} BTC fill @ {fill_price:.2f}\n"
+                           f"limit was {limit_price:.2f} (close {price:.2f}, "
+                           f"offset {limit_offset_bps:.1f}bp); filled_as={filled_as}\n"
+                           f"SL dist {sl_dist:.2f}  TP dist {tp_dist:.2f}\n"
+                           f"Equity: {equity:.2f} USDT")
+            else:
+                orders = self.client.market_order_with_bracket(
+                    self.symbol, side, qty, sl_price, tp_price)
+                state.record_fill(side=side, qty=qty, price=price,
+                                  reason="entry", equity_after=equity)
+                state.record_event("INFO", "entry", {**dbg, "side": side, "qty": qty,
+                                                      "sl": sl_price, "tp": tp_price,
+                                                      "order_ids": {k: v.get("id") for k, v in orders.items()}})
+                send_alert(f"Bot {side.upper()} entry",
+                           f"{side.upper()} {qty:.4f} BTC @ {price:.2f}\n"
+                           f"SL: {sl_price:.2f}  TP: {tp_price:.2f}\n"
+                           f"Equity: {equity:.2f} USDT")
         except Exception as e:
             self.log.exception("order placement failed: %s", e)
             state.record_event("ERROR", "order_failed", str(e))
