@@ -69,7 +69,7 @@ sizing:
                                 # risk.py MAX_LEVERAGE matches this hard ceiling.
 
 execution:
-  order_type: market            # market | limit
+  order_type: limit             # market | limit  (2026-05-19: enabled limit-order entry)
   # Limit-order knobs (used only when order_type=limit):
   #   limit_offset_bps  — places the entry limit offset_bps BELOW close for LONG,
   #                       ABOVE close for SHORT. 0 = at close. Smaller = tighter
