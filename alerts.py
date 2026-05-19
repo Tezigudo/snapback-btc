@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 import os
 import smtplib
-import socket
 import ssl
 from email.message import EmailMessage
 
@@ -82,7 +81,7 @@ def send_alert(subject: str, body: str, *, tag: str = "snapback-btc") -> bool:
                 s.send_message(msg)
         log.info("alerts: sent %r to %s", subject, msg["To"])
         return True
-    except (smtplib.SMTPException, OSError, socket.error) as e:
+    except (smtplib.SMTPException, OSError) as e:
         log.warning("alerts: failed to send %r: %s", subject, e)
         return False
 

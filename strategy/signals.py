@@ -105,29 +105,64 @@ class StrategyParams:
     require_funding_not_extreme: bool = True
     funding_extreme_threshold: float = 0.0005
     max_hold_bars: int = 1344
+    # multifactor-v2 (trailing stop) — legacy
+    trail_activate_atr: float = 1.0
+    trail_atr_multiple: float = 2.0
+    # multifactor-v2 (TA confirmation) — current
+    confirmations_required: int = 2
+    swing_k: int = 3
+    swing_lookback_bars: int = 200
+    trendline_max_distance_pct: float = 0.015
+    sr_max_distance_pct: float = 0.010
+    sr_cluster_tolerance_pct: float = 0.005
+    fib_max_distance_pct: float = 0.010
+    # multifactor-v3 — adaptive risk gates (THRESHOLDS only; enable_* are
+    # class-level switches on the V3* variant subclasses).
+    max_distance_above_ema_pct: float = 0.20
+    max_distance_below_ema_pct: float = 0.20
+    atr_sl_k: float = 1.5
+    atr_tp_k: float = 3.0
+    vol_regime_lookback_days: int = 30
+    vol_regime_max_pctile: float = 0.85
 
     @classmethod
-    def from_yaml(cls, path: str | None = None) -> "StrategyParams":
+    def from_yaml(cls, path: str | None = None) -> StrategyParams:
         path = path or str(REPO_ROOT / "config" / "params.yaml")
         with open(path) as f:
             cfg = yaml.safe_load(f)
         s = cfg["strategy"]
         z = cfg["sizing"]
+
+        def g(key, default):
+            v = s.get(key)
+            return default if v is None else v
+
         return cls(
-            rsi_period=s["rsi_period"],
-            rsi_long_threshold=float(s["rsi_long_threshold"]),
-            rsi_short_threshold=float(s["rsi_short_threshold"]),
-            ema_period=s["ema_period"],
-            volume_ma_period=s["volume_ma_period"],
-            volume_multiple=float(s["volume_multiple"]),
-            funding_long_max=float(s["funding_long_max"]),
-            funding_short_min=float(s["funding_short_min"]),
-            atr_period=s["atr_period"],
-            atr_tp_multiple=float(s["atr_tp_multiple"]),
-            atr_sl_multiple=float(s["atr_sl_multiple"]),
-            time_stop_bars=s["time_stop_bars"],
+            # snapback-v1 base fields
+            rsi_period=int(g("rsi_period", 14)),
+            rsi_long_threshold=float(g("rsi_long_threshold", 40.0)),
+            rsi_short_threshold=float(g("rsi_short_threshold", 70.0)),
+            ema_period=int(g("ema_period", 200)),
+            volume_ma_period=int(g("volume_ma_period", 20)),
+            volume_multiple=float(g("volume_multiple", 2.0)),
+            funding_long_max=float(g("funding_long_max", -0.0003)),
+            funding_short_min=float(g("funding_short_min", 0.0003)),
+            atr_period=int(g("atr_period", 20)),
+            atr_tp_multiple=float(g("atr_tp_multiple", 1.5)),
+            atr_sl_multiple=float(g("atr_sl_multiple", 1.0)),
+            time_stop_bars=int(g("time_stop_bars", 48)),
             risk_per_trade_pct=float(z["risk_per_trade_pct"]),
             leverage=int(z["leverage"]),
+            # multifactor-v1 fields
+            sl_pct=float(g("sl_pct", 0.015)),
+            tp_pct=float(g("tp_pct", 0.030)),
+            mf_trend_ema_period=int(g("mf_trend_ema_period", 200)),
+            require_trend=bool(g("require_trend", True)),
+            require_candlestick=bool(g("require_candlestick", False)),
+            require_macd=bool(g("require_macd", False)),
+            require_funding_not_extreme=bool(g("require_funding_not_extreme", True)),
+            funding_extreme_threshold=float(g("funding_extreme_threshold", 0.0005)),
+            max_hold_bars=int(g("max_hold_bars", 1344)),
         )
 
 

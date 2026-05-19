@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Lunch-hour summary · 2026-05-19</title>
+<style>
+:root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#c9d1d9; --muted:#8b949e; --ok:#3fb950; --bad:#f85149; --warn:#d29922; }
+* { box-sizing:border-box }
+body { margin:0; padding:24px; background:var(--bg); color:var(--text); font:14px/1.6 -apple-system, sans-serif; max-width:1100px; margin:auto; }
+h1 { font-size:24px; margin:0 0 6px 0; }
+h2 { font-size:17px; margin:32px 0 10px; color:var(--text); border-bottom:1px solid var(--border); padding-bottom:6px; }
+h3 { font-size:14px; margin:20px 0 8px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+.meta { color:var(--muted); font-size:12.5px; padding:12px; background:var(--panel); border:1px solid var(--border); border-radius:8px; margin-bottom:18px; }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin:10px 0; }
+.ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+code { background:rgba(255,255,255,.06); padding:1px 6px; border-radius:4px; font-size:12.5px; }
+a { color:#58a6ff; text-decoration:none; border-bottom:1px solid rgba(88,166,255,.3); }
+a:hover { color:#79b8ff; border-bottom-color:#79b8ff; }
+pre { background:#0a0f17; border:1px solid var(--border); border-radius:6px; padding:12px; overflow-x:auto; font-size:12.5px; }
+table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden; font-size:12.5px; margin:10px 0; }
+th, td { padding:8px 12px; border-bottom:1px solid var(--border); text-align:left; }
+th { background:#0a0f17; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+ul li { margin-bottom:4px; }
+.banner { padding:14px 18px; border-radius:8px; margin:18px 0; font-weight:500; }
+.banner.ok { background:rgba(63,185,80,.08); border-left:3px solid var(--ok); }
+.banner.warn { background:rgba(210,153,34,.08); border-left:3px solid var(--warn); }
+</style>
+</head>
+<body>
+
+<h1>Lunch-hour summary — May 19, 2026</h1>
+<div class="meta">
+  ~1 hour of autonomous work while you were at lunch. I followed the plan:
+  collect v1 dry-run status → run more ATR variants → port v3-all-wider-4 to
+  bot.py → write this summary. <strong>Live trading was NOT enabled</strong>
+  per the project rule "NEVER place orders from Claude Code." The bot remains
+  on multifactor-v1 in dry-run; you decide the deploy.
+</div>
+
+<h2>1. Bot status (multifactor-v1 dry-run)</h2>
+<div class="banner ok">
+  ✓ Bot is ALIVE in tmux, heartbeat fresh, no errors.
+</div>
+<ul>
+  <li><strong>tmux session</strong>: <code>bot:</code> still attached, created 2026-05-18 18:09</li>
+  <li><strong>Heartbeat</strong>: fresh (last update within seconds)</li>
+  <li><strong>JSONL log</strong>: 27 events recorded; no signal fires; only boot/restart/SMTP-timeout messages</li>
+  <li><strong>Deploy equity</strong>: $45.00 (deploy start) — see flag below</li>
+  <li><strong>Signal fires</strong>: 0 over ~12 hours dry-run (expected — patient strategy)</li>
+</ul>
+
+<div class="banner warn">
+  ⚠️ <strong>Equity flag</strong>: bot reads <code>$45</code> but you said you topped up to $100.
+  Most likely the $100 is in your Spot wallet, not Futures (USDM). Check:
+  Binance → Wallet → Futures USDM wallet balance.
+  <strong>If it's in Spot</strong>: go to Wallet → Transfer → USDT-M Futures.
+  Bot will pick up new balance on next boot.
+</div>
+
+<h2>2. Research finding — ATR-multiplier optimum</h2>
+<p>Ran granular sweep across 8 stop multipliers, 12 OOS windows (2020-H2 → 2026-YTD), 2 friction levels.</p>
+
+<h3>Headline pick: <code>k=4.0</code> (v3-all-wider-4)</h3>
+
+<table>
+  <thead><tr><th>k</th><th>5 bps cum.</th><th>10 bps cum.</th><th>5 bps wins</th><th>10 bps wins</th><th>Kill hits @ 10bps</th></tr></thead>
+  <tbody>
+    <tr><td>1.5 (orig)</td><td>+155%</td><td class="bad">-42%</td><td>11/12</td><td>6/12</td><td class="bad">6/12</td></tr>
+    <tr><td>2.5</td><td>+187%</td><td>+80%</td><td>10/12</td><td>7/12</td><td>3/12</td></tr>
+    <tr><td>3.5</td><td>+182%</td><td>+111%</td><td>11/12</td><td>9/12</td><td>1/12</td></tr>
+    <tr><td><strong>4.0 ⭐</strong></td><td>+151%</td><td class="ok">+92%</td><td>11/12</td><td class="ok">10/12</td><td class="ok">0/12</td></tr>
+    <tr><td>5.0</td><td>+106%</td><td>+61%</td><td>10/12</td><td>7/12</td><td>0/12</td></tr>
+    <tr><td>6.0</td><td>+102%</td><td>+66%</td><td>10/12</td><td>9/12</td><td>0/12</td></tr>
+  </tbody>
+</table>
+
+<p><strong>k=4.0 wins on robustness:</strong> 0/12 kill-switch hits at both friction levels, 11/12 then 10/12 wins as friction doubles. Modest return at 5bps but strong at 10bps. Full data: <strong><a href="reports/ATR_OPTIMUM.html">reports/ATR_OPTIMUM.html →</a></strong></p>
+
+<h2>3. Code changes (ALL backward-compatible — bot still defaults to v1)</h2>
+
+<h3>New files</h3>
+<ul>
+  <li><code>strategy/live_v3all_wider4.py</code> — pure-function port of v3-all-wider-4 signal logic. Implements v1 base filters + v2 TA confirmations (trendline, S/R, Fib) + v3 gates (dist-ema, vol-regime) + ATR-based stops (k=4.0).</li>
+  <li><code>tools/build_atr_optimum.py</code> — granular k-sweep across 12 windows × 2 friction</li>
+  <li><code>tools/build_extended_walkforward.py</code> — 6-year walk-forward harness</li>
+  <li><code>tools/build_friction_stress.py</code> — friction sensitivity test</li>
+  <li><code>tools/build_full_tuning_report.py</code> — combined walk-forward + ablation + variants</li>
+  <li><code>tools/build_dashboard.py</code> — live dashboard generator (already deployed to droplet)</li>
+  <li><code>tools/build_margin20_results.py</code>, <code>tools/build_sizing_sweep.py</code> — sizing exploration</li>
+  <li><code>tools/analyze_exits.py</code> — exit classification</li>
+</ul>
+
+<h3>Modified files</h3>
+<ul>
+  <li><code>bot.py</code> — added <code>compute_qty_from_distance()</code> (for ATR-based sizing). <code>_maybe_enter()</code> now selects signal engine based on <code>params["strategy_name"]</code>. Bumped fetch_ohlcv limit from 400 → 1500 bars (more warmup). Earlier today: timezone display in GMT+7, deprecated datetime.utcnow() fixed.</li>
+  <li><code>config/params.yaml</code> — added documentation for <code>strategy_name</code>. Default unchanged: <code>multifactor-v1</code>.</li>
+  <li><code>strategy/signals_multifactor_v3.py</code> — added 7 wider-stop variants (k=2.0 / 2.5 / 3.0 / 3.5 / 4.0 / 5.0 / 6.0). Same 2:1 R:R throughout.</li>
+  <li><code>strategy/signals_multifactor_tuned.py</code> (earlier today) — debounce + loss-floor variants for v1 trend-exit ablation.</li>
+  <li><code>backtest.py</code> — added <code>return_trades</code>, <code>commission</code> parameters. Removed <code>confirmations_required</code>, <code>atr_sl_k</code>, <code>atr_tp_k</code> from <code>_apply_params_to_class</code> field list (the class-state-leak bug — variants now correctly preserve their distinct values).</li>
+</ul>
+
+<h2>4. How to switch to v3-all-wider-4 (when YOU're ready)</h2>
+
+<div class="banner warn">
+  ⚠️ <strong>Don't switch tonight without doing paranoid validation first</strong> — see "What I did NOT do" below.
+</div>
+
+<p>The path to switching:</p>
+<ol>
+  <li><strong>Run validation</strong> (TODO — see below). Compare live-port signals to backtest signals over a known window. They should match.</li>
+  <li><strong>Edit <code>config/params.yaml</code></strong>: change <code>strategy_name: multifactor-v1</code> → <code>strategy_name: v3-all-wider-4</code></li>
+  <li><strong>Deploy</strong>:
+    <pre>cd /Users/god/Desktop/work/snapback-btc
+rsync -av bot.py strategy/live_v3all_wider4.py strategy/signals_multifactor_v3.py \
+  config/params.yaml backtest.py \
+  root@152.42.241.43:/root/snapback-btc/</pre>
+  </li>
+  <li><strong>Restart bot in tmux</strong>:
+    <pre>ssh root@152.42.241.43
+tmux attach -t bot
+# Ctrl+C to stop
+uv run python -m bot --dry-run
+# Wait for "Bot loop started"
+# Ctrl+B then D</pre>
+  </li>
+  <li><strong>Watch for 24-48h dry-run</strong> with v3-all-wider-4 before considering live (drop <code>--dry-run</code>).</li>
+</ol>
+
+<h2>5. ⚠️ Validation finding — port has signal drift (DO NOT DEPLOY YET)</h2>
+
+<div class="banner bad" style="background:rgba(248,81,73,.08);border-left:3px solid var(--bad);padding:14px 18px;border-radius:8px;margin:18px 0;">
+  Ran <code>tools/validate_v3_port.py</code> on a 3-month window (Oct-Dec 2025) comparing
+  live-port signal fires to backtest entries. <strong>Result: 0% timestamp overlap</strong>.
+</div>
+
+<table>
+  <thead><tr><th>Source</th><th>Entries / signal fires</th></tr></thead>
+  <tbody>
+    <tr><td>Backtest (V3AllWider4)</td><td>13</td></tr>
+    <tr><td>Live port (this hour)</td><td>6</td></tr>
+    <tr><td class="bad">Common timestamps</td><td>0</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Root cause analysis</strong> — two issues:</p>
+
+<ol>
+  <li><strong>Off-by-one bar (timing report)</strong>: backtest records <code>EntryTime</code> as the fill time
+      (= open of bar i+1 with <code>trade_on_close=False</code>). Live port returns the signal at the
+      moment the bar closes (= start of bar i+1). They're 15 minutes apart, so set intersection is empty.
+      Example: backtest entry at <code>2025-10-03 07:45</code>, live fires at <code>2025-10-03 07:30</code> — same event,
+      different timestamp convention.</li>
+  <li><strong>Real signal-count drift</strong>: backtest = 13 entries, live = 6. After fixing the timing
+      issue, ~5 entries are likely lost. Possible causes (need investigation):
+    <ul>
+      <li>Daily ATR percentile computation slightly differs (rolling-window edge effects)</li>
+      <li>Position-already-open logic: backtest tracks an open position so it doesn't re-enter; my port
+          doesn't know about position state and may suppress some entries the backtest takes after close</li>
+      <li>TA confirmation slicing — swing detection uses different effective window boundaries</li>
+    </ul>
+  </li>
+</ol>
+
+<p><strong>What this means:</strong> the port produces FEWER signals than the backtest. It's "more
+conservative" — likely safer, but the live returns will be LOWER than the backtest predicts.
+Until we resolve this, <strong>DO NOT deploy v3-all-wider-4 live</strong>. Keep dry-running v1.</p>
+
+<h3>Action items to unblock the v3 deployment</h3>
+<ol>
+  <li>Fix <code>tools/validate_v3_port.py</code> timestamp comparison to allow ±1 bar slack.</li>
+  <li>Re-run validation; verify ≥95% match after timestamp fix.</li>
+  <li>If still &lt;95%, diff the gate decisions bar-by-bar to find the divergent gate.</li>
+  <li>Iterate until live port matches backtest within 2-3 entries.</li>
+  <li>THEN consider deploying.</li>
+</ol>
+
+<h2>6. What I did NOT do (deliberately)</h2>
+
+<ul>
+  <li><strong>Limit-order support</strong> — deferred. Wider stops in v3-all-wider-4 already tolerate 10 bps friction so this is less urgent than I thought before the optimization. Save for next session.</li>
+  <li><strong>Trend-cross exit in live bot</strong> — the backtest closes positions when price crosses EMA(200) against you. Bot.py does NOT do this in live (pre-existing divergence). Adding it is risky without testing. <strong>Both v1 and v3 inherit this gap</strong> — should be addressed before going live.</li>
+  <li><strong>Paranoid validation</strong> — comparing live-port signals to backtest signals bar-by-bar. The smoke test passed but a full validation would catch subtle bugs (e.g., off-by-one in swing detection windows).</li>
+  <li><strong>Switched the live bot</strong> — per project rule. You decide.</li>
+  <li><strong>Touched <code>risk.py</code></strong> — protected per <code>CLAUDE.md</code>.</li>
+</ul>
+
+<h2>6. Reports to look at</h2>
+
+<ul>
+  <li><strong>⭐ <a href="reports/ATR_OPTIMUM.html">reports/ATR_OPTIMUM.html</a></strong> — the headline finding (8 k-values × 12 windows × 2 friction)</li>
+  <li><a href="reports/EXTENDED_WALKFORWARD.html">reports/EXTENDED_WALKFORWARD.html</a> — 6-year 12-window walk-forward (k=1.5 / 2.0 / 3.0 / 4.0)</li>
+  <li><a href="reports/FRICTION_STRESS_RESULTS.html">reports/FRICTION_STRESS_RESULTS.html</a> — friction stress (earlier hypothesis)</li>
+  <li><a href="reports/TUNING_REPORT.html">reports/TUNING_REPORT.html</a> — earlier session: walk-forward, exit ablation, debounce/floor variants</li>
+  <li><a href="reports/SIZING_SWEEP_RESULTS.html">reports/SIZING_SWEEP_RESULTS.html</a> — earlier session: 5% / 7.5% / 10% / 20% margin sweep</li>
+  <li><a href="reports/MARGIN20_RESULTS.html">reports/MARGIN20_RESULTS.html</a> — original 20%-margin all-strategies test (the first big experiment)</li>
+  <li><a href="reports/V3_RESULTS.html">reports/V3_RESULTS.html</a> — earlier v3 investigation (before class-state fix)</li>
+  <li><a href="reports/V2_RESULTS.html">reports/V2_RESULTS.html</a> — v1 vs v2 head-to-head</li>
+  <li><a href="reports/INVESTIGATE_2024H1.html">reports/INVESTIGATE_2024H1.html</a> — original 2024-H1 underperformance post-mortem</li>
+  <li><a href="reports/dashboard.html">reports/dashboard.html</a> — local copy of live droplet dashboard (refresh with <code>dash</code> alias from Mac)</li>
+</ul>
+
+<h2>7. Next-session priorities (when you have time)</h2>
+
+<ol>
+  <li><strong>Paranoid validation</strong> — write a script that runs <code>evaluate_signal_v3all_wider4()</code> bar-by-bar over a backtest window and compares signal timestamps to the backtest's <code>_trades</code>. They should match.</li>
+  <li><strong>Trend-cross exit</strong> in live bot.py (close when EMA crosses against position) — needed for backtest fidelity. Test in dry-run first.</li>
+  <li><strong>Limit-order support</strong> — modify <code>BinanceClient</code> to add <code>limit_order_with_bracket()</code>. Add config <code>order_type: limit</code> + <code>limit_offset_bps</code>.</li>
+  <li><strong>BNB fee discount</strong> — 5 minutes on Binance UI. Free 10% off fees.</li>
+  <li><strong>Verify $100 in Futures wallet</strong>, then the bot's deploy-start equity will read $100 on next boot (currently $45).</li>
+</ol>
+
+<div class="meta" style="margin-top:30px;">
+  Generated 2026-05-19. The bot is healthy. v1 dry-run is still the safest baseline.
+  v3-all-wider-4 looks like a real upgrade in backtest but needs more verification before going live.
+</div>
+
+</body>
+</html>

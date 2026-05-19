@@ -21,9 +21,8 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-import numpy as np
 import pandas as pd
 from backtesting import Backtest, Strategy
 from backtesting.lib import FractionalBacktest
@@ -35,24 +34,46 @@ from strategy.signals import (
     StrategyParams,
     prepare_strategy_data,
 )
-from strategy.regime import attach_regimes
-from strategy.prep_tf import prepare_simple_data
-from strategy.signals_carry import CarryHarvester
-from strategy.signals_carry_v2 import CarryHarvesterV2
-from strategy.signals_carry_v3 import CarryHarvesterV3
-from strategy.signals_carry_v4 import CarryHarvesterV4
-from strategy.signals_funding_momentum import FundingMomentumBTC
-from strategy.signals_multifactor import DayTradeMultiFactorBTC
-from strategy.signals_donchian import (
-    DonchianBreakoutBTC,
-    DonchianBreakoutBTCv2,
-    DonchianBreakoutBTCv3,
-    attach_donchian,
-)
-from strategy.signals_v2 import SnapbackBTCv2
 
-# Carry + Donchian work on any single entry TF (snapback strictly needs 15m+1h).
-_TF_AGNOSTIC_STRATEGIES = {"carry-v1", "carry-v2", "carry-v3", "carry-v4", "fmom-v1", "multifactor-v1", "donchian-v1", "donchian-v2", "donchian-v3"}
+# 2026-05-17: cleaned up to only the deployable strategy + benchmark.
+# Old strategies (carry, donchian, fmom, snapback-v2, multifactor v2/mtf)
+# removed from this repo after PATH2_RESULTS.html locked multifactor-v1
+# as the production choice. Recover from git history if needed.
+from strategy.signals_multifactor import DayTradeMultiFactorBTC
+from strategy.signals_multifactor_v2 import (
+    DayTradeMultiFactorBTCv2Loose,
+    DayTradeMultiFactorBTCv2Strict,
+)
+from strategy.signals_multifactor_v3 import (
+    DayTradeMultiFactorBTCv3,
+    V3All,
+    V3AllK_2_5,
+    V3AllK_3_5,
+    V3AllK_5_0,
+    V3AllK_6_0,
+    V3AllWider2,
+    V3AllWider3,
+    V3AllWider4,
+    V3AtrStopsOnly,
+    V3DistEmaOnly,
+    V3VolRegimeOnly,
+)
+from strategy.signals_multifactor_tuned import (
+    V1Debounce2,
+    V1Debounce3,
+    V1Debounce4,
+    V1Deluxe,
+    V1Floor005,
+    V1Floor010,
+)
+
+# multifactor-v1/v2/v3 use a single entry TF (15m); no second-TF prep required.
+_TF_AGNOSTIC_STRATEGIES = {
+    "multifactor-v1",
+    "multifactor-v2-loose", "multifactor-v2-strict",
+    "multifactor-v3", "v3-dist-ema-only", "v3-vol-regime-only",
+    "v3-atr-stops-only", "v3-all",
+}
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
 # an integer unit. Returns are scale-invariant so headline metrics are
@@ -88,22 +109,33 @@ class BuyAndHold(Strategy):
 STRATEGIES: dict[str, type[Strategy]] = {
     "buy-and-hold": BuyAndHold,
     "snapback-v1": SnapbackBTC,
-    "snapback-v2": SnapbackBTCv2,
-    "donchian-v1": DonchianBreakoutBTC,
-    "donchian-v2": DonchianBreakoutBTCv2,
-    "donchian-v3": DonchianBreakoutBTCv3,
-    "carry-v1": CarryHarvester,
-    "carry-v2": CarryHarvesterV2,
-    "carry-v3": CarryHarvesterV3,
-    "carry-v4": CarryHarvesterV4,
-    "fmom-v1": FundingMomentumBTC,
     "multifactor-v1": DayTradeMultiFactorBTC,
+    "multifactor-v2-loose": DayTradeMultiFactorBTCv2Loose,
+    "multifactor-v2-strict": DayTradeMultiFactorBTCv2Strict,
+    "multifactor-v3": DayTradeMultiFactorBTCv3,
+    "v3-dist-ema-only": V3DistEmaOnly,
+    "v3-vol-regime-only": V3VolRegimeOnly,
+    "v3-atr-stops-only": V3AtrStopsOnly,
+    "v3-all": V3All,
+    "v3-all-k-2.5": V3AllK_2_5,
+    "v3-all-wider-2": V3AllWider2,
+    "v3-all-k-3.5": V3AllK_3_5,
+    "v3-all-wider-3": V3AllWider3,
+    "v3-all-wider-4": V3AllWider4,
+    "v3-all-k-5.0": V3AllK_5_0,
+    "v3-all-k-6.0": V3AllK_6_0,
+    # multifactor-v1 trend-exit ablation variants
+    "v1-debounce-2": V1Debounce2,
+    "v1-debounce-3": V1Debounce3,
+    "v1-debounce-4": V1Debounce4,
+    "v1-floor-0.5": V1Floor005,
+    "v1-floor-1.0": V1Floor010,
+    "v1-deluxe": V1Deluxe,
 }
 
-# Strategies that need regime columns layered on top of the snapback prep.
-_REGIME_STRATEGIES = {"snapback-v2"}
-# Strategies that need Donchian channel columns layered on top.
-_DONCHIAN_STRATEGIES = {"donchian-v1", "donchian-v2", "donchian-v3"}
+# No strategy in the current codebase needs regime or Donchian columns.
+_REGIME_STRATEGIES: set[str] = set()
+_DONCHIAN_STRATEGIES: set[str] = set()
 
 
 # --- Funding accounting ------------------------------------------------------
@@ -211,20 +243,11 @@ def _prepare_snapback_data(
         raise RuntimeError("Missing 15m or 1h klines for the requested window.")
 
     prepared = prepare_strategy_data(k15, k1h, fund, params)
-    # v2 needs regime columns; v1 doesn't and we skip the work.
-    if with_regimes:
-        prepared = attach_regimes(
-            prepared,
-            funding=prepared["Funding"],
-            ema_1h=prepared["EMA_1h"],
-            atr_1h=prepared["ATR_1h"],
-        )
-    if with_donchian:
-        prepared = attach_donchian(
-            prepared, k1h,
-            period_entry=donchian_entry, period_exit=donchian_exit,
-            atr_period=params.atr_period,
-        )
+    # NOTE: old regime/Donchian attach steps removed with the archived strategies.
+    _ = with_regimes  # parameter kept for backward-compat callers
+    _ = with_donchian
+    _ = donchian_entry
+    _ = donchian_exit
     # prepare_strategy_data strips tz; slice bounds + funding must match.
     naive_start = start.replace(tzinfo=None) if start.tzinfo else start
     naive_end = end.replace(tzinfo=None) if end.tzinfo else end
@@ -271,18 +294,17 @@ def _prepare_tf_agnostic_data(
     if klines.empty:
         raise RuntimeError(f"Missing {entry_tf} klines for the requested window.")
 
-    prepared = prepare_simple_data(klines, fund)
-    if with_donchian:
-        # Use the same klines as both entry and channel source — single-TF Donchian.
-        # `attach_donchian` expects already-capitalised, tz-naive df_15m + a 1h-shaped
-        # klines arg. For our single-TF use, pass the entry klines (raw, lowercase) as
-        # the second arg; it re-caps internally.
-        prepared = attach_donchian(
-            prepared, klines,
-            period_entry=donchian_entry,
-            period_exit=donchian_exit,
-            atr_period=atr_period,
-        )
+    # _prepare_tf_agnostic_data was used by archived carry/donchian strategies.
+    # multifactor-v1 uses _prepare_snapback_data (15m + 1h + funding), so this
+    # path is currently unused. Kept as a stub for future single-TF strategies.
+    klines.columns = [c.capitalize() for c in klines.columns]
+    if klines.index.tz is not None:
+        klines.index = klines.index.tz_convert("UTC").tz_localize(None)
+    prepared = klines
+    _ = with_donchian
+    _ = donchian_entry
+    _ = donchian_exit
+    _ = atr_period
 
     naive_start = start.replace(tzinfo=None) if start.tzinfo else start
     naive_end = end.replace(tzinfo=None) if end.tzinfo else end
@@ -323,6 +345,28 @@ def _apply_params_to_class(cls: type[Strategy], params: StrategyParams) -> None:
         "mf_trend_ema_period", "macd_fast", "macd_slow", "macd_signal",
         "require_candlestick", "require_macd", "require_trend",
         "require_funding_not_extreme", "funding_extreme_threshold", "max_hold_bars",
+        # multifactor-v2 trailing (legacy; v2 reborn as TA confirmation)
+        "trail_activate_atr", "trail_atr_multiple",
+        # multifactor-v2 TA confirmation (current).
+        # `confirmations_required` is CLASS-LEVEL per variant (Loose=1, Strict=3,
+        # v3=3). DO NOT include it here — _apply_params_to_class would otherwise
+        # clobber each variant with the StrategyParams default (2), making all
+        # variants identical. Same rationale as the v3 enable_* flags below.
+        "swing_k", "swing_lookback_bars",
+        "trendline_max_distance_pct", "sr_max_distance_pct",
+        "sr_cluster_tolerance_pct", "fib_max_distance_pct",
+        # multifactor-v3 — only THRESHOLDS go through param injection.
+        # enable_dist_ema_filter / enable_atr_stops / enable_vol_regime_gate are
+        # CLASS-LEVEL switches set by the variant subclass (V3DistEmaOnly etc),
+        # so do NOT include them here — _apply_params_to_class would otherwise
+        # reset them to StrategyParams defaults and break ablation testing.
+        "max_distance_above_ema_pct", "max_distance_below_ema_pct",
+        # atr_sl_k / atr_tp_k are CLASS-LEVEL per variant
+        # (V3All: 1.5/3.0; V3AllWider2: 2.0/4.0; V3AllWider3: 3.0/6.0; etc).
+        # Same rationale as confirmations_required and the enable_* flags:
+        # if we apply StrategyParams defaults here we'd silently clobber the
+        # variant's intentional choice, making ablations indistinguishable.
+        "vol_regime_lookback_days", "vol_regime_max_pctile",
         # volume_ma_period already in StrategyParams default 20
     ):
         if hasattr(cls, field):
@@ -340,6 +384,8 @@ def run_backtest(
     quiet: bool = False,
     params_override: StrategyParams | None = None,
     return_equity: bool = False,
+    return_trades: bool = False,
+    commission: float | None = None,
 ) -> dict:
     """Run a backtest.
 
@@ -401,13 +447,14 @@ def run_backtest(
     eff_leverage = leverage or (params.leverage if params else 1)
     margin = 1.0 / max(eff_leverage, 1)
 
+    eff_commission = commission if commission is not None else COMMISSION_PER_SIDE
     if strategy_name == "buy-and-hold":
         actual_cash = cash
         bt = FractionalBacktest(
             data,
             STRATEGIES[strategy_name],
             cash=actual_cash,
-            commission=COMMISSION_PER_SIDE,
+            commission=eff_commission,
             margin=margin,
             trade_on_close=False,
             exclusive_orders=True,
@@ -424,7 +471,7 @@ def run_backtest(
             data,
             STRATEGIES[strategy_name],
             cash=actual_cash,
-            commission=COMMISSION_PER_SIDE,
+            commission=eff_commission,
             margin=margin,
             trade_on_close=False,
             exclusive_orders=True,
@@ -476,7 +523,7 @@ def run_backtest(
         "profit_factor": _safe_pf(stats),
         "win_rate_pct": float(stats.get("Win Rate [%]") or 0.0),
         "avg_trade_pct": float(stats.get("Avg. Trade [%]") or 0.0),
-        "commission_per_side": COMMISSION_PER_SIDE,
+        "commission_per_side": eff_commission,
         "leverage": eff_leverage,
     }
 
@@ -489,6 +536,9 @@ def run_backtest(
             result["equity_series"] = equity
             result["returns_series"] = equity / float(equity.iloc[0])
             result["actual_cash"] = actual_cash
+
+    if return_trades:
+        result["trades_df"] = getattr(stats, "_trades", None)
 
     if not quiet:
         _print_result(result)
@@ -537,14 +587,14 @@ def _main() -> int:
     args = p.parse_args()
 
     end = (
-        datetime.fromisoformat(args.end).replace(tzinfo=timezone.utc)
+        datetime.fromisoformat(args.end).replace(tzinfo=UTC)
         if args.end
-        else datetime.now(timezone.utc)
+        else datetime.now(UTC)
     )
     if args.days:
         start = end - timedelta(days=args.days)
     elif args.start:
-        start = datetime.fromisoformat(args.start).replace(tzinfo=timezone.utc)
+        start = datetime.fromisoformat(args.start).replace(tzinfo=UTC)
     else:
         start = end - timedelta(days=365)
 

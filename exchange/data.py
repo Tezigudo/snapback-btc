@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -57,7 +57,7 @@ TF_MS: dict[Timeframe, int] = {
 
 def _to_ms(dt: datetime) -> int:
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return int(dt.timestamp() * 1000)
 
 
@@ -171,7 +171,7 @@ def load_klines(
     a first call with small days_back would pin the cache start; later calls
     with larger days_back would silently return short slices.
     """
-    end = end or datetime.now(timezone.utc)
+    end = end or datetime.now(UTC)
     start = end - timedelta(days=days_back)
     cache_path = _cache_path(symbol, timeframe)
 
@@ -223,7 +223,7 @@ def load_funding(
     end: datetime | None = None,
 ) -> pd.DataFrame:
     """Load funding history from cache, fetching forward AND backward gaps."""
-    end = end or datetime.now(timezone.utc)
+    end = end or datetime.now(UTC)
     start = end - timedelta(days=days_back)
     cache_path = _cache_path(symbol, "funding")
 

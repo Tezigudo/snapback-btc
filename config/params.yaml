@@ -1,59 +1,87 @@
-# Tunable strategy params. NOT a safety surface — see risk.py for ceilings.
-# Changes here should be backed by a walk-forward run.
+# Tunable strategy params for multifactor-v1 (the deployable strategy).
+# NOT a safety surface — see risk.py for hard ceilings.
+#
+# Locked 2026-05-17 for 90-day testnet deploy per PATH2_RESULTS.html.
+# Backtest evidence: 5 OOS windows 2022 H1 – 2025 H1, 262 trades,
+# +55.73% compounded equity. 4 of 5 windows positive. Worst window
+# 2024 H1 = -12.56% (chop year). DO NOT TUNE THESE VALUES WITHOUT
+# explicit re-validation across all 5 OOS windows.
 
 symbol: BTC/USDT:USDT
+
+# strategy_name selects the live signal logic in bot.py.
+#   "multifactor-v1" (default) — v1 RSI/vol/EMA/funding filters, fixed 1.5%/3% SL/TP.
+#   "v3-all-wider-4" — v3 ported: TA confirmations (trendline/SR/Fib) + dist-ema gate
+#                      + vol-regime gate + ATR-based stops (4×/8× ATR, k=4.0).
+#                      Best in extended walk-forward 2020-2026: 10/12 wins at 10bps
+#                      stress, 0/12 kill-switch hits. See EXTENDED_WALKFORWARD.html.
+#                      Switch ONLY after stopping bot cleanly + restarting in tmux.
+#                      Requires ~30 days of warm-up before vol-regime gate is valid.
+strategy_name: multifactor-v1
 
 timeframes:
   entry: 15m
   trend: 1h
 
 strategy:
-  # RSI on entry timeframe. Default RSI(2) per Connors' short-term
-  # mean-reversion playbook — the strategy intent here is snap-back, and
-  # RSI(14) on 15m bars smooths out exactly the spikes we want to fade.
-  #
-  # Bake-off on BTC perp 2025-05 → 2026-05 (3x lev, fees+slip+funding):
-  #   config         trades  return%  PF    WR%   DD%    Sharpe
-  #   RSI(2)  10/90    40    -10.4%   0.71  42.5  -13.6  -1.25  <- chosen
-  #   RSI(14) 30/70     6     -5.0%   0.26  16.7   -6.1  -1.49  too quiet
-  #   RSI(14) 35/65    14     -9.4%   0.38  21.4  -14.1  -1.50
-  #   RSI(14) 40/60    35    -18.5%   0.47  31.4  -21.0  -2.22  worst
-  # RSI(2) wins on every quality metric (PF, WR, Sharpe) at every matched
-  # signal density. P3 walk-forward will sweep rsi_period as a free param.
-  rsi_period: 2
-  rsi_long_threshold: 10        # buy when RSI(2) < 10
-  rsi_short_threshold: 90       # sell when RSI(2) > 90
+  # RSI(14) — standard period (not RSI(2)!). Asymmetric thresholds.
+  rsi_period: 14
+  rsi_long_threshold: 40        # buy when RSI(14) < 40 (oversold within uptrend)
+  rsi_short_threshold: 70       # sell when RSI(14) > 70 (overbought within downtrend)
 
-  # EMA(200) on trend timeframe
-  ema_period: 200
+  # EMA on the ENTRY timeframe (15m). multifactor-v1 uses mf_trend_ema_period.
+  ema_period: 200               # kept for backtest-prep warm-up sizing
+  mf_trend_ema_period: 200
 
-  # Relative volume filter
+  # Volume confirmation: current vol > 2.0 * 20-bar SMA
   volume_ma_period: 20
-  volume_multiple: 1.5          # current vol > 1.5 * SMA(20)
+  volume_multiple: 2.0
 
-  # Funding rate filter (per 8h, decimal). The 2025-2026 regime has compressed
-  # funding to ±0.01% so the original ±0.03% gate triggered zero bars. We
-  # relax to ±0.005% ("funding not strongly against direction") and treat
-  # funding more as a cost than a hard gate. P3 walk-forward retunes per fold.
-  funding_long_max: 0.00005     # long allowed unless funding > +0.005%
-  funding_short_min: -0.00005   # short allowed unless funding < -0.005%
+  # Funding-rate sentiment gate (refuse crowded trade direction).
+  # Funding > +0.05% per 8h = extremely long-crowded → block new longs.
+  # Funding < -0.05% per 8h = extremely short-crowded → block new shorts.
+  funding_extreme_threshold: 0.0005
+  require_funding_not_extreme: true
 
-  # ATR-based exits on trend timeframe
+  # Snapback-v1 funding fields (unused by multifactor-v1; kept for YAML loader compat).
+  funding_long_max: -0.0003
+  funding_short_min: 0.0003
+
+  # ATR fields are unused by multifactor-v1 but kept for backtest plumbing compat.
   atr_period: 20
-  atr_tp_multiple: 1.5          # TP at +1.5 * ATR
-  atr_sl_multiple: 1.0          # SL at -1.0 * ATR (1.5:1 R:R)
-  time_stop_bars: 48            # bars on entry TF (48 * 15m = 12h)
+  atr_tp_multiple: 1.5
+  atr_sl_multiple: 1.0
+
+  # Fixed % SL / TP geometry (multifactor-v1 uses these, not ATR).
+  sl_pct: 0.015                 # 1.5% stop loss
+  tp_pct: 0.030                 # 3.0% take profit (2:1 R:R)
+  time_stop_bars: 1344          # 14 days × 96 bars/day at 15m = 1344 bars
+  max_hold_bars: 1344
+
+  # Required toggles for multifactor-v1
+  require_trend: true           # close on correct side of EMA(200)
+  require_candlestick: false    # disabled in production (too rare on 15m)
+  require_macd: false           # disabled in production (redundant)
 
 sizing:
   risk_per_trade_pct: 2.0       # 2% of equity per trade (fixed-fractional)
-  leverage: 20                  # Persistent user override (P3.4+). risk.py
-                                # ceiling also at 20. Backtest ablation showed
-                                # leverage doesn't change carry-v2 returns
-                                # (cap doesn't bind for sl_pct=0.015 winners)
-                                # but live tail risk is real — flash crash
-                                # past SL at 20x = liquidation.
+  leverage: 20                  # ceiling. Risk-based sizing → ~1.33x effective.
+                                # risk.py MAX_LEVERAGE matches this hard ceiling.
 
 execution:
   order_type: market            # market | limit
   poll_interval_s: 5            # main loop tick
   reconcile_on_boot: true
+
+# Deploy gates (read by bot.py)
+deploy:
+  # If equity drops to this fraction of deploy_start_equity → HALT + email + flatten.
+  # 0.82 = -18% drawdown ceiling. Widened from -15% per 2026 Q1 analysis:
+  # 2024 H2 (winning window) had max DD -14.23% mid-window. -15% would have
+  # killed a winner. -18% gives ~4pp cushion above worst recoverable observed DD.
+  kill_switch_equity_fraction: 0.82
+  # Send daily status email at this UTC hour.
+  daily_status_email_hour_utc: 0
+  # Warn (don't block) when starting equity is below this. Below $100 USDT,
+  # exchange minimums (0.001 BTC / $50 notional) may cause frequent signal skips.
+  min_capital_warn_usdt: 100.0

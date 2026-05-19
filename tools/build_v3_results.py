@@ -1,0 +1,218 @@
+"""Build V3_RESULTS.html — v3 ablation tests + honest verdict.
+
+v3 added 3 adaptive risk gates aimed at fixing 2024 H1:
+  - Distance-from-EMA filter
+  - ATR-based stops
+  - Vol-regime gate (skip top-15% ATR percentile days)
+
+This page reports the empirical results — some are negative.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def cum_compound(rows: list) -> float:
+    c = 1.0
+    for r in rows:
+        c *= (1 + r["ret"] / 100)
+    return (c - 1) * 100
+
+
+def build() -> str:
+    main = json.loads((ROOT / "reports/v3_oos_results.json").read_text())
+    sweep = json.loads((ROOT / "reports/v3_clean_sweep.json").read_text())
+
+    configs = [
+        ("v1 baseline", main["multifactor-v1"]),
+        ("v2 strict (conf=3)", main["multifactor-v2-strict"]),
+        ("v3 dist-EMA only (20%)", main["v3-dist-ema-only"]),
+        ("v3 vol-gate only (0.85)", main["v3-vol-regime-only"]),
+        ("v3 ATR-stops only", main["v3-atr-stops-only"]),
+        ("v3 ALL THREE", main["v3-all"]),
+        ("v3 vol-gate @ 0.75", sweep["v3-vol-gate @ 0.75"]),
+        ("v3 dist-EMA @ 10%", sweep["v3-dist-ema @ 10%"]),
+    ]
+
+    parts = []
+    parts.append("""<!doctype html><html><head><meta charset="utf-8">
+<title>v3 results — adaptive risk gates</title>
+<style>
+  body { font: 14px/1.55 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;
+         max-width: 1280px; margin: 24px auto; padding: 0 20px; color: #2c2c2c; background: #fafafa; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  h2 { margin-top: 36px; border-bottom: 2px solid #ddd; padding-bottom: 6px; }
+  h3 { margin-top: 22px; color: #555; }
+  .sub { color: #666; font-style: italic; }
+  table { border-collapse: collapse; margin: 12px 0; font-size: 13px; width: 100%; }
+  th, td { padding: 6px 12px; border: 1px solid #ddd; text-align: right; }
+  th { background: #eee; }
+  td.l { text-align: left; }
+  .green { color: #1b5e20; font-weight: 600; }
+  .red { color: #b71c1c; font-weight: 600; }
+  .neutral { color: #757575; }
+  .winner { background: #e8f5e9 !important; }
+  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px;
+          padding: 14px 18px; margin: 14px 0; }
+  .key { background: #fff8e1; border-left: 4px solid #f57c00; padding: 10px 16px; margin: 14px 0; }
+  .verdict { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 12px 16px; margin: 18px 0; }
+  .truth { background: #ffebee; border-left: 4px solid #c62828; padding: 12px 16px; margin: 18px 0; }
+  code { background: #f3f3f3; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+</style></head><body>""")
+
+    parts.append("<h1>v3 results — adaptive risk gates</h1>")
+    parts.append('<p class="sub">Three new gates tested as ablations. Most don\'t help; one helps a little; one hurts a lot.</p>')
+
+    # ---- Headline ----
+    parts.append("""<div class="truth">
+<b>The honest summary:</b> v3 was an attempt to fix 2024 H1's losing window. The result —
+<b>v2-strict is still the champion</b>. None of the v3 variants beat it on total compounded
+return. Vol-regime gate offers a small "lower DD, lower return" trade-off. ATR stops are
+a regression. Distance-from-EMA at the tested thresholds doesn't engage.
+</div>""")
+
+    # ---- Master comparison table ----
+    parts.append("<h2>1. All variants — head-to-head</h2>")
+    parts.append('<table>')
+    parts.append('<tr><th>Strategy</th>')
+    for w in ("2022H1","2023H1","2024H1","2024H2","2025H1","2026Q1"):
+        parts.append(f'<th>{w}</th>')
+    parts.append('<th>Compounded</th><th>Worst</th></tr>')
+
+    best_cum = max(cum_compound(rows) for _, rows in configs)
+
+    for label, rows in configs:
+        cum = cum_compound(rows)
+        worst = min(r["ret"] for r in rows)
+        row_cls = "winner" if abs(cum - best_cum) < 0.5 else ""
+        parts.append(f'<tr class="{row_cls}"><td class="l"><b>{label}</b></td>')
+        for r in rows:
+            ret = r["ret"]
+            cls = "green" if ret > 0 else "red"
+            parts.append(f'<td class="{cls}">{ret:+.2f}%</td>')
+        c_cls = "green" if cum > 0 else "red"
+        parts.append(f'<td class="{c_cls}"><b>{cum:+.2f}%</b></td>')
+        parts.append(f'<td class="red">{worst:+.2f}%</td></tr>')
+    parts.append('</table>')
+
+    # ---- Per-gate analysis ----
+    parts.append("<h2>2. Per-gate verdict</h2>")
+    parts.append("""<div class="card">
+<h3>Distance-from-EMA filter (block when price &gt; X% above EMA200)</h3>
+<table>
+<tr><th>Threshold</th><th>Compounded</th><th>vs v2-strict</th><th>2024 H1</th></tr>
+<tr><td>20% (default)</td><td>+71.52%</td><td class="neutral">±0.00pp</td><td>−5.58%</td></tr>
+<tr><td>10%</td><td>+71.52%</td><td class="neutral">±0.00pp</td><td>−5.58%</td></tr>
+</table>
+<b>Verdict:</b> <span class="red">no-op at these thresholds</span>. BTC's price wasn't 10–20% above
+EMA(200) at the moments our entry signals fired. To engage at all we'd need an
+extremely tight threshold (5% or less), which would also reject legitimate dip-buys
+in normal uptrends. Net: this gate doesn't separate good from bad trades for THIS
+strategy at THESE windows. Drop.
+</div>""")
+
+    parts.append("""<div class="card">
+<h3>ATR-based stops (replace fixed 1.5% with k × ATR)</h3>
+<table>
+<tr><th>Config</th><th>Compounded</th><th>vs v2-strict</th><th>Worst window</th></tr>
+<tr><td>atr_sl_k=1.5, atr_tp_k=3.0</td><td class="red">−21.84%</td><td class="red">−93pp</td><td class="red">−23.79% (2025H1)</td></tr>
+</table>
+<b>Verdict:</b> <span class="red">catastrophic</span>. The idea was "widen stops in vol — fewer
+unfair stop-outs". The reality: when ATR is high, the bot also sizes positions for the
+WIDER stop (qty = risk / sl_distance, so qty shrinks when sl_distance grows). But the
+TP also grows. So winners are bigger but losers are bigger too — and the strategy's
+win rate isn't high enough to make the bigger losers worth it. The fixed 1.5% / 3% was
+better. Drop.
+</div>""")
+
+    parts.append("""<div class="card">
+<h3>Vol-regime gate (skip entries when 30d ATR percentile &gt; threshold)</h3>
+<table>
+<tr><th>Threshold</th><th>Compounded</th><th>vs v2-strict</th><th>2024 H1</th><th>Worst DD</th></tr>
+<tr><td>0.85</td><td>+48.22%</td><td class="red">−23pp</td><td>−3.17%</td><td>−13.88%</td></tr>
+<tr><td>0.75</td><td>+54.21%</td><td class="red">−17pp</td><td>−0.82%</td><td>−12.74%</td></tr>
+<tr><td>v2-strict (no gate)</td><td>+71.52%</td><td>—</td><td>−5.58%</td><td>−12.86%</td></tr>
+</table>
+<b>Verdict:</b> <span style="color:#f57c00">trade-off, not a win</span>. The vol-regime gate
+DOES reduce 2024 H1 losses (−5.58% → −0.82%) and DOES slightly reduce worst-window
+drawdown. But it also skips trades during high-vol uptrend expansions in 2024 H2 and
+2023 H1 — cutting +18% to +2% on 2024 H2, for example. <b>You lose ~17–23pp of
+compounded return to save ~4–5pp on the worst window.</b> Not worth it unless you
+have a specific reason to value DD over total return.
+</div>""")
+
+    # ---- 2024 H1 specifically ----
+    parts.append("<h2>3. 2024 H1 — did anything actually fix it?</h2>")
+    parts.append('<table>')
+    parts.append('<tr><th>Strategy</th><th>2024 H1 return</th><th>vs v1 baseline</th><th>Cost elsewhere</th></tr>')
+    parts.append('<tr><td class="l">v1 baseline</td><td class="red">−12.56%</td><td>—</td><td class="l">—</td></tr>')
+    parts.append('<tr class="winner"><td class="l">v2 strict</td><td class="red">−5.58%</td><td class="green">+6.98pp</td><td class="green">also boosts other windows (+16pp net)</td></tr>')
+    parts.append('<tr><td class="l">v3 vol-gate @ 0.85</td><td class="red">−3.17%</td><td class="green">+9.39pp</td><td class="red">loses 23pp across other windows</td></tr>')
+    parts.append('<tr><td class="l">v3 vol-gate @ 0.75</td><td class="red">−0.82%</td><td class="green">+11.74pp</td><td class="red">loses 17pp across other windows</td></tr>')
+    parts.append('<tr><td class="l">v3 dist-EMA (any thresh)</td><td class="red">−5.58%</td><td class="green">+6.98pp</td><td class="neutral">no change (filter inactive)</td></tr>')
+    parts.append('<tr><td class="l">v3 ATR stops</td><td class="red">−11.64%</td><td class="green">+0.92pp</td><td class="red">total return becomes NEGATIVE (−22%)</td></tr>')
+    parts.append('</table>')
+    parts.append("""<div class="key">
+<b>Read this:</b> v2-strict <b>already</b> mitigated 2024 H1 (−12.56% → −5.58%) at no
+cost — it improved every window. The further fixes in v3 either don't engage (dist-EMA),
+trade total return for incremental DD reduction (vol-gate), or hurt badly (ATR stops).
+<br><br>
+<b>The clean conclusion: v2-strict is the optimal version of the strategy in this
+codebase. There is no clean technical fix for 2024 H1 that doesn't pay for itself
+in losses on other windows.</b>
+</div>""")
+
+    # ---- Recommendation ----
+    parts.append("<h2>4. Recommendation</h2>")
+    parts.append("""<div class="verdict">
+<b>For deploy: stick with multifactor-v2-strict.</b><br><br>
+
+It's the best total compounded return (+71.52%), 5 of 6 windows positive, smallest
+worst-case DD across the tested set, and already gives most of the 2024 H1 improvement
+v3 was reaching for.<br><br>
+
+<b>v3 is shelved, not deployed.</b> The code stays in <code>strategy/signals_multifactor_v3.py</code>
+for reference and future experimentation, but it doesn't go to production.<br><br>
+
+<b>What v3 taught us:</b>
+<ul>
+<li>The 2024 H1 underperformance is structural to the strategy class, not a tunable knob</li>
+<li>ATR-based stops fundamentally change the win/loss geometry in ways that hurt
+this strategy's edge</li>
+<li>Distance-from-EMA needs to be coupled to OTHER information to be useful — alone
+it's either inactive (loose) or noisy (tight)</li>
+<li>Vol-regime gate offers a real but small risk-adjusted-return trade-off; could be
+worth shipping for a more risk-averse deploy variant later</li>
+</ul>
+</div>""")
+
+    parts.append("""<div class="key">
+<b>If you ever want a "safer" variant with smaller drawdowns:</b><br>
+Use <code>v3-vol-regime-only</code> with <code>vol_regime_max_pctile: 0.75</code>.
+Expect ~+54% compounded vs +72% for v2-strict, but slightly smoother. This is a
+debatable preference — I'd default to v2-strict unless the drawdown matters more
+than the total return.
+</div>""")
+
+    # ---- Files ----
+    parts.append("<h2>Appendix: files</h2>")
+    parts.append("""<ul>
+<li><code>strategy/signals_multifactor_v3.py</code> — v3 + ablation variants (shelved)</li>
+<li><code>backtest.py</code> — registers <code>multifactor-v3</code>, <code>v3-dist-ema-only</code>,
+<code>v3-vol-regime-only</code>, <code>v3-atr-stops-only</code>, <code>v3-all</code></li>
+<li><code>reports/v3_oos_results.json</code> — full 6×6 matrix for default v3 variants</li>
+<li><code>reports/v3_clean_sweep.json</code> — threshold sweep for vol-gate and dist-EMA</li>
+</ul>""")
+
+    parts.append("</body></html>")
+    return "".join(parts)
+
+
+if __name__ == "__main__":
+    p = ROOT / "V3_RESULTS.html"
+    p.write_text(build())
+    print(f"Wrote {p} ({p.stat().st_size // 1024} KB)")
