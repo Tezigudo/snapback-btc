@@ -208,6 +208,51 @@ def test_drain_keeps_rows_on_4xx(tmp: Path) -> None:
 
 
 @_with_temp_db_and_env
+def test_drain_handles_partial_failure_207(tmp: Path) -> None:
+    """Server returned 207 (some events failed, others succeeded). Bot must
+    delete the successful local outbox rows AND keep the failed ones queued."""
+    from exchange import state
+    from tools import consolidate_push
+    state.init_db()
+    id1 = state.enqueue_bot_event("heartbeat", equity_usd=101)
+    id2 = state.enqueue_bot_event("entry", signal_id="bad", side="long",
+                                   qty=0.001, price_usd=65000)
+    id3 = state.enqueue_bot_event("heartbeat", equity_usd=101)
+    assert state.outbox_size() == 3
+
+    fake_response = MagicMock()
+    fake_response.status = 207
+    # id2 (the entry) failed; id1 and id3 succeeded.
+    fake_response.read.return_value = json.dumps({
+        "ok": False,
+        "inserted": 2,
+        "skipped": 0,
+        "errors": [
+            {"external_id": f"snapback-btc:{id2}", "message": "constraint violation"},
+        ],
+    }).encode("utf-8")
+    fake_response.__enter__ = lambda self: self
+    fake_response.__exit__ = lambda self, *_a: None
+
+    with patch.dict("os.environ",
+                    {"CONSOLIDATE_API_URL": "https://example.test",
+                     "CONSOLIDATE_API_TOKEN": "tok"}), \
+         patch("urllib.request.urlopen", return_value=fake_response):
+        result = consolidate_push.drain()
+
+    assert result["status"] == 207
+    assert result["failed"] == 1
+    assert result["deleted_locally"] == 2
+    # Only the failed event remains; successful ones deleted.
+    assert state.outbox_size() == 1
+    with sqlite3.connect(tmp) as c:
+        remaining = c.execute("SELECT id, attempts, last_error FROM outbox").fetchone()
+    assert remaining[0] == id2
+    assert remaining[1] == 1
+    assert "207" in remaining[2]
+
+
+@_with_temp_db_and_env
 def test_external_id_is_stable_across_retries(tmp: Path) -> None:
     """If push fails and we retry, the same external_id must be sent so
     the server-side dedup kicks in. Tests this by simulating: enqueue,

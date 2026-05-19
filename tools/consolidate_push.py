@@ -105,11 +105,13 @@ def drain(limit: int = DEFAULT_BATCH_LIMIT, timeout_s: float = DEFAULT_TIMEOUT_S
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            resp_status = int(resp.status)
             resp_data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        # Distinguish 4xx (don't retry — payload bug) from 5xx (retry).
-        # 401 (bad token) is a config problem, not transient — mark and skip
-        # so they don't pile up forever. Operator must fix .env then.
+        # 4xx and 5xx end up here. Server returns 500 when ALL events failed
+        # (transient or persistent — caller retries). 401 (bad token) is a
+        # config problem, not transient, but we still keep rows queued so
+        # the operator can fix .env without losing data.
         err_msg = f"HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:200]}"
         log.warning("consolidate push failed: %s", err_msg)
         state.outbox_mark_failed(ids, err_msg)
@@ -126,15 +128,38 @@ def drain(limit: int = DEFAULT_BATCH_LIMIT, timeout_s: float = DEFAULT_TIMEOUT_S
         state.outbox_mark_failed(ids, err_msg)
         return {"error": err_msg, "queued": len(ids)}
 
-    # API ack'd. The response has {ok, inserted, skipped, errors}. We delete
-    # ALL sent ids regardless of inserted-vs-skipped — dedup on the server
-    # side just means a retry succeeded earlier; either way, we're done.
-    deleted = state.outbox_delete(ids)
+    # 2xx response. Server returns 200 when every event was accepted (inserted
+    # OR deduped), and 207 (Multi-Status) when some failed but others made it
+    # through. In the 207 case we must delete only the successful ids — the
+    # failed ones stay queued for retry.
+    error_external_ids: set[str] = set()
+    for err in (resp_data.get("errors") or []):
+        if isinstance(err, dict) and err.get("external_id"):
+            error_external_ids.add(str(err["external_id"]))
+
+    success_ids: list[int] = []
+    failed_ids: list[int] = []
+    for row_id in ids:
+        ext_id = f"{SOURCE}:{row_id}"
+        if ext_id in error_external_ids:
+            failed_ids.append(row_id)
+        else:
+            success_ids.append(row_id)
+
+    deleted = state.outbox_delete(success_ids) if success_ids else 0
+    if failed_ids:
+        state.outbox_mark_failed(
+            failed_ids, f"server status {resp_status}: per-event failure")
+        log.warning("consolidate push: %d/%d events failed server-side",
+                    len(failed_ids), len(ids))
+
     return {
         "sent": len(events),
         "inserted": int(resp_data.get("inserted") or 0),
         "skipped": int(resp_data.get("skipped") or 0),
+        "failed": len(failed_ids),
         "deleted_locally": deleted,
+        "status": resp_status,
     }
 
 
