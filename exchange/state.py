@@ -18,6 +18,15 @@ Schema:
     of a bot trade (entry + SL + TP) on Binance. See exchange/binance_client.py
     `_coid()`. Lets us join state.db fills to Binance-reported trades by
     clientOrderId prefix `snap-v1-<root>-{e|s|t|x|bf|h|k}`.
+
+  outbox(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, payload TEXT,
+         created_at TEXT, attempts INTEGER, last_error TEXT NULL)
+    Pending events queued for push to investing-consolidate's /bot-event API.
+    Rows are inserted by enqueue_bot_event() and removed by
+    tools.consolidate_push.drain() once the API acknowledges. The bot's local
+    state.db is the source of truth; consolidate is a downstream read-only
+    view. If consolidate is unreachable, events queue here and replay
+    automatically when the API comes back.
 """
 
 from __future__ import annotations
@@ -69,6 +78,15 @@ def init_db() -> None:
             msg TEXT NOT NULL,
             signal_id TEXT
         );
+        CREATE TABLE IF NOT EXISTS outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_outbox_id ON outbox(id);
         """)
         # Additive migrations for pre-existing databases.
         if "client_order_id_root" not in _columns(c, "fills"):
@@ -125,6 +143,92 @@ def record_event(level: str, kind: str, msg: str | dict,
             "VALUES (?, ?, ?, ?, ?)",
             (datetime.utcnow().isoformat(), level, kind, msg, signal_id),
         )
+
+
+def enqueue_bot_event(
+    kind: str,
+    *,
+    signal_id: str | None = None,
+    strategy: str | None = None,
+    side: str | None = None,
+    qty: float | None = None,
+    price_usd: float | None = None,
+    notional_usd: float | None = None,
+    equity_usd: float | None = None,
+    payload: dict | None = None,
+) -> int:
+    """Queue a bot event for push to consolidate's /bot-event API.
+
+    The push happens out-of-band via tools.consolidate_push.drain(). This
+    function just inserts to the local outbox table and returns the row id.
+
+    bot_ts_ms is captured here (at enqueue time) and stored in the payload
+    so a queued event keeps its original timestamp even if the push is
+    delayed by an API outage.
+    """
+    import time as _time
+    body = json.dumps({
+        "bot_ts_ms": int(_time.time() * 1000),
+        "kind": kind,
+        "signal_id": signal_id,
+        "strategy": strategy,
+        "side": side,
+        "qty": qty,
+        "price_usd": price_usd,
+        "notional_usd": notional_usd,
+        "equity_usd": equity_usd,
+        "payload": payload or {},
+    }, default=str)
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO outbox(kind, payload, created_at) VALUES (?, ?, ?)",
+            (kind, body, datetime.utcnow().isoformat()),
+        )
+        return int(cur.lastrowid or 0)
+
+
+def outbox_pending(limit: int = 50) -> list[tuple[int, str, str, int]]:
+    """Return up to `limit` pending outbox rows oldest-first.
+
+    Each row: (id, kind, payload_json, attempts).
+    """
+    with _conn() as c:
+        return [
+            (int(r[0]), str(r[1]), str(r[2]), int(r[3]))
+            for r in c.execute(
+                "SELECT id, kind, payload, attempts FROM outbox "
+                "ORDER BY id ASC LIMIT ?", (limit,)
+            ).fetchall()
+        ]
+
+
+def outbox_delete(ids: list[int]) -> int:
+    """Hard-delete outbox rows by id (after successful push)."""
+    if not ids:
+        return 0
+    with _conn() as c:
+        placeholders = ",".join("?" * len(ids))
+        cur = c.execute(f"DELETE FROM outbox WHERE id IN ({placeholders})", ids)
+        return cur.rowcount or 0
+
+
+def outbox_mark_failed(ids: list[int], error: str) -> None:
+    """Increment attempts + record last_error for the given outbox rows."""
+    if not ids:
+        return
+    with _conn() as c:
+        placeholders = ",".join("?" * len(ids))
+        c.execute(
+            f"UPDATE outbox SET attempts = attempts + 1, last_error = ? "
+            f"WHERE id IN ({placeholders})",
+            [error] + ids,
+        )
+
+
+def outbox_size() -> int:
+    with _conn() as c:
+        row = c.execute("SELECT COUNT(*) FROM outbox").fetchone()
+    return int(row[0]) if row else 0
 
 
 def latest_entry_coid_root() -> str | None:

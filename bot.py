@@ -51,6 +51,7 @@ import yaml
 from alerts import send_alert
 from exchange import state
 from exchange.binance_client import BinanceClient
+from tools import consolidate_push
 from exchange.constraints import (
     DEFAULT_CONSTRAINTS,
     ExchangeConstraints,
@@ -206,6 +207,11 @@ class Bot:
         self.constraints: ExchangeConstraints = DEFAULT_CONSTRAINTS
         self._stopped = False
         self._last_signal_ts: pd.Timestamp | None = None
+        # Push to consolidate every PUSH_INTERVAL_S; also send a heartbeat
+        # event at the same cadence so the dashboard's "alive" check works.
+        # 30s is well under consolidate's 60s healthy-threshold.
+        self._push_interval_s = 30.0
+        self._last_push_ts: float = 0.0
         if self.dry_run:
             self.log.warning("DRY-RUN MODE: no real orders will be placed")
 
@@ -245,9 +251,29 @@ class Bot:
                        f"deploy_start_equity={equity:.2f} USDT\n"
                        f"kill_switch at {(self.kill_fraction*100):.0f}% = "
                        f"{equity * self.kill_fraction:.2f} USDT")
+            start_eq = equity
         else:
             self.log.info("Resuming deploy. start=%.2f current=%.2f (%+.2f%%)",
                           start_eq, equity, (equity/start_eq - 1) * 100)
+
+        # Push a boot event to consolidate so the dashboard knows the bot
+        # is alive and which strategy/env it's running. The deploy-start
+        # equity and kill-switch fraction let consolidate compute the
+        # kill-switch level without needing a separate config endpoint.
+        state.enqueue_bot_event(
+            "boot",
+            strategy=str(self.params.get("strategy_name") or "multifactor-v1"),
+            equity_usd=float(equity),
+            payload={
+                "env": self.client.env,
+                "dry_run": bool(self.dry_run),
+                "strategy_name": self.params.get("strategy_name") or "multifactor-v1",
+                "deploy_start_equity": float(start_eq),
+                "kill_switch_fraction": float(self.kill_fraction),
+                "leverage": int(self.leverage),
+                "order_type": str(self.params.get("execution", {}).get("order_type", "market")),
+            },
+        )
 
         pos = self.client.fetch_position(self.symbol)
         if pos.side != "flat":
@@ -267,6 +293,14 @@ class Bot:
                                     "entry": pos.entry_price,
                                     "signal_id": root},
                                    signal_id=root)
+                state.enqueue_bot_event(
+                    "boot_flatten",
+                    signal_id=root,
+                    side=pos.side,
+                    qty=float(pos.qty),
+                    price_usd=float(pos.entry_price),
+                    payload={"reason": "stale_position_at_boot"},
+                )
 
     def stop(self, *_args) -> None:
         self._stopped = True
@@ -276,6 +310,31 @@ class Bot:
         HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
         HEARTBEAT.touch()
 
+    def _maybe_push_consolidate(self, equity: float | None) -> None:
+        """If enough time elapsed since last push: enqueue a heartbeat event
+        and drain the outbox. Never blocks for more than the HTTP timeout
+        (3s by default). Failures are logged and retried on the next tick.
+        """
+        now = time.time()
+        if now - self._last_push_ts < self._push_interval_s:
+            return
+        self._last_push_ts = now
+        if not consolidate_push.is_configured():
+            return  # don't even enqueue heartbeats if no consumer
+        try:
+            state.enqueue_bot_event(
+                "heartbeat",
+                equity_usd=float(equity) if equity is not None else None,
+                payload={"halt_present": is_halted(),
+                         "outbox_size_before_drain": state.outbox_size()},
+            )
+            result = consolidate_push.drain()
+            if result.get("error"):
+                self.log.debug("consolidate push deferred: %s", result.get("error"))
+        except Exception as e:
+            # Push must NEVER affect the trading loop. Log + move on.
+            self.log.warning("consolidate push raised (continuing): %s", e)
+
     def _check_kill_switch(self, equity: float) -> bool:
         start = state.get_float("deploy_start_equity", 0.0)
         if start <= 0:
@@ -284,6 +343,17 @@ class Bot:
             self.log.error("KILL SWITCH: equity %.2f < %.2f (start %.2f * %.2f)",
                            equity, start * self.kill_fraction, start, self.kill_fraction)
             (REPO_ROOT / "data" / "HALT").touch()
+            state.enqueue_bot_event(
+                "kill_switch", equity_usd=float(equity),
+                payload={"deploy_start_equity": float(start),
+                         "kill_switch_fraction": float(self.kill_fraction),
+                         "drawdown_pct": (equity/start - 1) * 100},
+            )
+            # Force a push so the dashboard sees this before the bot exits.
+            try:
+                consolidate_push.drain()
+            except Exception as e:
+                self.log.warning("kill-switch push failed: %s", e)
             send_alert(
                 "BOT KILL SWITCH FIRED",
                 f"Equity drawdown breached -{(1-self.kill_fraction)*100:.0f}%.\n"
@@ -378,6 +448,15 @@ class Bot:
                                                           "order_type": order_type,
                                                           "signal_id": signal_id},
                                signal_id=signal_id)
+            state.enqueue_bot_event(
+                "dry_run_signal",
+                signal_id=signal_id,
+                strategy=str(self.params.get("strategy_name") or "multifactor-v1"),
+                side=side, qty=float(qty), price_usd=float(price),
+                notional_usd=float(notional), equity_usd=float(equity),
+                payload={"sl_price": float(sl_price), "tp_price": float(tp_price),
+                         "order_type": order_type},
+            )
             send_alert(f"DRY-RUN: would {side.upper()} [{order_type}]",
                        f"DRY-RUN: would have entered {side.upper()} "
                        f"{qty:.4f} BTC @ {price:.2f} ({order_type})\n"
@@ -421,6 +500,14 @@ class Bot:
                                                       "order_ids": {k: v.get("id") for k, v in orders.items()
                                                                     if isinstance(v, dict)}},
                                    signal_id=signal_id)
+                state.enqueue_bot_event(
+                    "entry", signal_id=signal_id,
+                    strategy=str(self.params.get("strategy_name") or "multifactor-v1"),
+                    side=side, qty=float(filled_qty), price_usd=float(fill_price),
+                    notional_usd=float(filled_qty * fill_price), equity_usd=float(equity),
+                    payload={"filled_as": filled_as, "limit_price": float(limit_price),
+                             "sl_distance": float(sl_dist), "tp_distance": float(tp_dist)},
+                )
                 send_alert(f"Bot {side.upper()} entry [{filled_as}]",
                            f"{side.upper()} {filled_qty:.4f} BTC fill @ {fill_price:.2f}\n"
                            f"limit was {limit_price:.2f} (close {price:.2f}, "
@@ -440,6 +527,14 @@ class Bot:
                                                       "signal_id": signal_id,
                                                       "order_ids": {k: v.get("id") for k, v in orders.items()}},
                                    signal_id=signal_id)
+                state.enqueue_bot_event(
+                    "entry", signal_id=signal_id,
+                    strategy=str(self.params.get("strategy_name") or "multifactor-v1"),
+                    side=side, qty=float(qty), price_usd=float(price),
+                    notional_usd=float(qty * price), equity_usd=float(equity),
+                    payload={"filled_as": "market", "sl_price": float(sl_price),
+                             "tp_price": float(tp_price)},
+                )
                 send_alert(f"Bot {side.upper()} entry",
                            f"{side.upper()} {qty:.4f} BTC @ {price:.2f}\n"
                            f"SL: {sl_price:.2f}  TP: {tp_price:.2f}\n"
@@ -480,6 +575,11 @@ class Bot:
                 state.record_fill(side="close", qty=pos.qty, price=0.0,
                                   reason="time_stop", equity_after=equity,
                                   client_order_id_root=root)
+                state.enqueue_bot_event(
+                    "exit", signal_id=root, side=pos.side, qty=float(pos.qty),
+                    equity_usd=float(equity),
+                    payload={"reason": "time_stop", "age_h": age_s / 3600},
+                )
                 send_alert("Bot time-stop close",
                            f"Closed {pos.side} {pos.qty:.4f} BTC after "
                            f"{age_s/3600:.1f}h hold. Equity: {equity:.2f}\n"
@@ -502,6 +602,14 @@ class Bot:
                         self.client.close_position(
                             self.symbol,
                             client_order_id_root=root, close_leg="h")
+                    state.enqueue_bot_event(
+                        "halt",
+                        payload={"dry_run": bool(self.dry_run)},
+                    )
+                    try:
+                        consolidate_push.drain()
+                    except Exception as e:
+                        self.log.warning("halt push failed: %s", e)
                     send_alert("Bot HALTED",
                                f"data/HALT detected. "
                                f"{'DRY-RUN exit, no flatten.' if self.dry_run else 'Position flattened.'} "
@@ -519,6 +627,7 @@ class Bot:
 
                 self._maybe_time_stop(equity)
                 self._maybe_enter(equity)
+                self._maybe_push_consolidate(equity)
                 backoff_s = self.poll_s
                 time.sleep(self.poll_s)
             except KeyboardInterrupt:
