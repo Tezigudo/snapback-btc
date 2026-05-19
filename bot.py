@@ -44,12 +44,17 @@ import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-import numpy as np
 import pandas as pd
 import yaml
 
 from alerts import send_alert
-from exchange import state
+from bot_internals import (
+    SignalDecision,
+    evaluate_for_strategy,
+    limit_entry_price,
+    resolve_strategy_name,
+)
+from exchange import state, trade_events
 from exchange.binance_client import BinanceClient
 from tools import consolidate_push
 from exchange.constraints import (
@@ -66,8 +71,8 @@ from risk import (
     check_notional,
     check_symbol,
 )
-from strategy.indicators import ema, rsi, sma
-from strategy.live_v3all_wider4 import evaluate_signal_v3all_wider4
+# Re-export for tools/preflight_live.py and any downstream importers.
+from strategy.live_multifactor_v1 import evaluate_signal  # noqa: F401
 
 LOG_DIR = REPO_ROOT / "logs"
 LOG_FILE = LOG_DIR / "bot.jsonl"
@@ -121,54 +126,6 @@ def load_params() -> dict:
         return yaml.safe_load(f)
 
 
-# --- Signal evaluation (pure function over bars) -----------------------------
-def evaluate_signal(bars_15m: pd.DataFrame, funding_rate: float, params: dict
-                    ) -> tuple[str | None, dict]:
-    """Return ('long'/'short'/None, debug_dict) for the last CLOSED 15m bar.
-
-    Pure-function port of DayTradeMultiFactorBTC._long_signal/_short_signal.
-    """
-    s = params["strategy"]
-    warm = max(s["mf_trend_ema_period"], s["volume_ma_period"], s["rsi_period"]) + 5
-    if len(bars_15m) < warm:
-        return None, {"reason": "warmup"}
-
-    close = bars_15m["Close"]
-    vol = bars_15m["Volume"]
-
-    rsi_v = rsi(close, s["rsi_period"]).iloc[-1]
-    vol_sma_v = sma(vol, s["volume_ma_period"]).iloc[-1]
-    trend_ema_v = ema(close, s["mf_trend_ema_period"]).iloc[-1]
-    cur_vol = vol.iloc[-1]
-    cur_close = close.iloc[-1]
-
-    if not all(np.isfinite([rsi_v, vol_sma_v, trend_ema_v, cur_vol, cur_close])):
-        return None, {"reason": "nan_indicators"}
-
-    vol_ok = cur_vol > s["volume_multiple"] * vol_sma_v
-    trend_up = cur_close > trend_ema_v
-    funding_long_blocked = (s["require_funding_not_extreme"]
-                            and funding_rate > s["funding_extreme_threshold"])
-    funding_short_blocked = (s["require_funding_not_extreme"]
-                             and funding_rate < -s["funding_extreme_threshold"])
-
-    debug = {
-        "ts": bars_15m.index[-1].isoformat(),
-        "rsi": float(rsi_v), "vol_sma": float(vol_sma_v), "trend_ema": float(trend_ema_v),
-        "cur_vol": float(cur_vol), "cur_close": float(cur_close),
-        "vol_ok": bool(vol_ok), "trend_up": bool(trend_up),
-        "funding_rate": funding_rate,
-    }
-
-    if (rsi_v < s["rsi_long_threshold"] and vol_ok and trend_up
-            and not funding_long_blocked):
-        return "long", debug
-    if (rsi_v > s["rsi_short_threshold"] and vol_ok and not trend_up
-            and not funding_short_blocked):
-        return "short", debug
-    return None, debug
-
-
 def compute_qty(equity: float, price: float, sl_pct: float,
                 risk_pct: float, leverage: int) -> float:
     """Risk-based sizing matching backtest: target_btc = risk / sl_distance.
@@ -196,11 +153,17 @@ class Bot:
     def __init__(self, params: dict, dry_run: bool = False) -> None:
         self.params = params
         self.symbol = params["symbol"]
+        self.strategy_name = resolve_strategy_name(params)
         self.dry_run = dry_run
         self.log = logging.getLogger("snapback.bot")
         self.client = BinanceClient.from_env()
-        self.poll_s = float(params["execution"]["poll_interval_s"])
+        exec_cfg = params.get("execution", {})
+        self.poll_s = float(exec_cfg["poll_interval_s"])
+        self.order_type = str(exec_cfg.get("order_type", "market")).lower()
+        self.limit_offset_bps = float(exec_cfg.get("limit_offset_bps", 0.0))
+        self.limit_timeout_s = float(exec_cfg.get("limit_timeout_s", 20.0))
         self.leverage = int(params["sizing"]["leverage"])
+        self.risk_pct = float(params["sizing"]["risk_per_trade_pct"])
         self.kill_fraction = float(params["deploy"]["kill_switch_equity_fraction"])
         # Min-capital warning threshold (read from params, default $100).
         self.min_capital_warn = float(params.get("deploy", {}).get("min_capital_warn_usdt", 100.0))
@@ -262,16 +225,16 @@ class Bot:
         # kill-switch level without needing a separate config endpoint.
         state.enqueue_bot_event(
             "boot",
-            strategy=str(self.params.get("strategy_name") or "multifactor-v1"),
+            strategy=self.strategy_name,
             equity_usd=float(equity),
             payload={
                 "env": self.client.env,
                 "dry_run": bool(self.dry_run),
-                "strategy_name": self.params.get("strategy_name") or "multifactor-v1",
+                "strategy_name": self.strategy_name,
                 "deploy_start_equity": float(start_eq),
                 "kill_switch_fraction": float(self.kill_fraction),
                 "leverage": int(self.leverage),
-                "order_type": str(self.params.get("execution", {}).get("order_type", "market")),
+                "order_type": self.order_type,
             },
         )
 
@@ -367,8 +330,7 @@ class Bot:
     def _maybe_enter(self, equity: float) -> None:
         # Skip entry evaluation if already in a position — bracket SL/TP
         # manage the existing trade. Matches backtest's exclusive_orders=True.
-        pos = self.client.fetch_position(self.symbol)
-        if pos.side != "flat":
+        if self.client.fetch_position(self.symbol).side != "flat":
             return
 
         # 1500 bars (~15 days) covers v1 warmup (200-EMA + 50). v3 needs more
@@ -382,41 +344,31 @@ class Bot:
             return
 
         funding = self.client.fetch_funding_rate(self.symbol)
-        strategy_name = self.params.get("strategy_name", "multifactor-v1")
-
-        if strategy_name == "v3-all-wider-4":
-            side, sl_dist, tp_dist, dbg = evaluate_signal_v3all_wider4(
-                df, funding, self.params)
-            price = dbg.get("cur_close", float(df["Close"].iloc[-1]))
-        else:
-            side, dbg = evaluate_signal(df, funding, self.params)
-            price = dbg.get("cur_close", float(df["Close"].iloc[-1])) if isinstance(dbg, dict) else float(df["Close"].iloc[-1])
-            sl_pct = float(self.params["strategy"]["sl_pct"])
-            tp_pct = float(self.params["strategy"]["tp_pct"])
-            sl_dist = sl_pct * price
-            tp_dist = tp_pct * price
-
+        decision = evaluate_for_strategy(self.strategy_name, df, funding, self.params)
         self._last_signal_ts = last_ts
-
-        if side is None:
+        if decision.side is None:
             return
 
-        risk_pct = float(self.params["sizing"]["risk_per_trade_pct"])
-        raw_qty = compute_qty_from_distance(equity, price, sl_dist, risk_pct, self.leverage)
-        qty = round_qty_down(raw_qty, self.constraints.qty_step)
-        notional = qty * price
+        qty = round_qty_down(
+            compute_qty_from_distance(
+                equity, decision.price, decision.sl_distance,
+                self.risk_pct, self.leverage),
+            self.constraints.qty_step,
+        )
+        notional = qty * decision.price
 
-        # Exchange minimums (min qty + min notional). These come from the live
-        # market spec — tighter than our own caps. If a signal can't be filled,
-        # SKIP it. Do NOT scale up to meet the minimum; that would violate the
+        # Exchange minimums (min qty + min notional) come from the live market
+        # spec — tighter than our own caps. If a signal can't be filled, SKIP
+        # it. Do NOT scale up to meet the minimum; that would violate the
         # risk budget.
-        ok, reason = passes_minimums(qty, price, self.constraints)
+        ok, reason = passes_minimums(qty, decision.price, self.constraints)
         if not ok:
             self.log.warning("Skipping %s signal: %s (equity=$%.2f). "
                              "Need more capital or accept smaller positions.",
-                             side, reason, equity)
+                             decision.side, reason, equity)
             state.record_event("WARN", "signal_skipped_minimum",
-                               {**dbg, "side": side, "qty": qty, "reason": reason})
+                               {**decision.debug, "side": decision.side,
+                                "qty": qty, "reason": reason})
             return
 
         try:
@@ -425,125 +377,79 @@ class Bot:
             self.log.warning("Skipping signal: %s", e)
             return
 
-        sl_price = price - sl_dist if side == "long" else price + sl_dist
-        tp_price = price + tp_dist if side == "long" else price - tp_dist
-
-        exec_cfg = self.params.get("execution", {})
-        order_type = str(exec_cfg.get("order_type", "market")).lower()
-        limit_offset_bps = float(exec_cfg.get("limit_offset_bps", 0.0))
-        limit_timeout_s = float(exec_cfg.get("limit_timeout_s", 20.0))
-
         # signal_id anchors all 3 legs of this trade on Binance via clientOrderId.
         # Format: snap-v1-<signal_id>-{e|s|t|x|bf|h|k}. Investing-consolidate's
         # importer joins entry+exit fills via this root. ms precision avoids
         # collisions across bot restarts.
         signal_id = str(int(time.time() * 1000))
 
+        self.log.info(
+            "%s %s [%s] sid=%s qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=$%.2f",
+            "DRY-RUN would" if self.dry_run else "Signal",
+            decision.side, self.order_type, signal_id, qty,
+            decision.price, decision.sl_price, decision.tp_price, notional,
+        )
+
         if self.dry_run:
-            self.log.info("DRY-RUN would %s [%s] sid=%s qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=$%.2f",
-                          side, order_type, signal_id, qty, price, sl_price, tp_price, notional)
-            state.record_event("INFO", "dry_run_signal", {**dbg, "side": side, "qty": qty,
-                                                          "sl": sl_price, "tp": tp_price,
-                                                          "notional": notional,
-                                                          "order_type": order_type,
-                                                          "signal_id": signal_id},
-                               signal_id=signal_id)
-            state.enqueue_bot_event(
-                "dry_run_signal",
-                signal_id=signal_id,
-                strategy=str(self.params.get("strategy_name") or "multifactor-v1"),
-                side=side, qty=float(qty), price_usd=float(price),
-                notional_usd=float(notional), equity_usd=float(equity),
-                payload={"sl_price": float(sl_price), "tp_price": float(tp_price),
-                         "order_type": order_type},
+            trade_events.record_dry_run_entry(
+                side=decision.side, qty=qty, price=decision.price,
+                sl_price=decision.sl_price, tp_price=decision.tp_price,
+                notional=notional, equity=equity,
+                signal_id=signal_id, strategy_name=self.strategy_name,
+                order_type=self.order_type, dbg=decision.debug,
             )
-            send_alert(f"DRY-RUN: would {side.upper()} [{order_type}]",
-                       f"DRY-RUN: would have entered {side.upper()} "
-                       f"{qty:.4f} BTC @ {price:.2f} ({order_type})\n"
-                       f"SL: {sl_price:.2f}  TP: {tp_price:.2f}\n"
-                       f"Notional: ${notional:.2f}\n"
-                       f"Equity: {equity:.2f} USDT\n"
-                       f"signal_id: {signal_id}\n"
-                       f"(No real order placed.)")
             return
 
-        self.log.info("Signal %s [%s] sid=%s qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=%.2f",
-                      side, order_type, signal_id, qty, price, sl_price, tp_price, notional)
         try:
-            if order_type == "limit":
-                # Maker-style: place limit at close ± offset_bps (favor better fill).
-                # For LONG buy: BELOW close (we want to buy lower → maker rebate).
-                # For SHORT sell: ABOVE close (we want to sell higher → maker rebate).
-                if side == "long":
-                    limit_price = price * (1.0 - limit_offset_bps / 10000.0)
-                else:
-                    limit_price = price * (1.0 + limit_offset_bps / 10000.0)
-                orders = self.client.limit_order_with_bracket(
-                    self.symbol, side, qty, limit_price,
-                    sl_distance=sl_dist, tp_distance=tp_dist,
-                    timeout_s=limit_timeout_s,
-                    client_order_id_root=signal_id)
-                fill_price = float(orders.get("fill_price", price))
-                filled_as = orders.get("filled_as", "limit")
-                filled_qty = float(orders.get("filled_qty", qty))
-                state.record_fill(side=side, qty=filled_qty, price=fill_price,
-                                  reason="entry", equity_after=equity,
-                                  client_order_id_root=signal_id)
-                state.record_event("INFO", "entry", {**dbg, "side": side,
-                                                      "qty": filled_qty,
-                                                      "fill_price": fill_price,
-                                                      "limit_price": limit_price,
-                                                      "filled_as": filled_as,
-                                                      "sl_distance": sl_dist,
-                                                      "tp_distance": tp_dist,
-                                                      "signal_id": signal_id,
-                                                      "order_ids": {k: v.get("id") for k, v in orders.items()
-                                                                    if isinstance(v, dict)}},
-                                   signal_id=signal_id)
-                state.enqueue_bot_event(
-                    "entry", signal_id=signal_id,
-                    strategy=str(self.params.get("strategy_name") or "multifactor-v1"),
-                    side=side, qty=float(filled_qty), price_usd=float(fill_price),
-                    notional_usd=float(filled_qty * fill_price), equity_usd=float(equity),
-                    payload={"filled_as": filled_as, "limit_price": float(limit_price),
-                             "sl_distance": float(sl_dist), "tp_distance": float(tp_dist)},
-                )
-                send_alert(f"Bot {side.upper()} entry [{filled_as}]",
-                           f"{side.upper()} {filled_qty:.4f} BTC fill @ {fill_price:.2f}\n"
-                           f"limit was {limit_price:.2f} (close {price:.2f}, "
-                           f"offset {limit_offset_bps:.1f}bp); filled_as={filled_as}\n"
-                           f"SL dist {sl_dist:.2f}  TP dist {tp_dist:.2f}\n"
-                           f"signal_id: {signal_id}\n"
-                           f"Equity: {equity:.2f} USDT")
-            else:
-                orders = self.client.market_order_with_bracket(
-                    self.symbol, side, qty, sl_price, tp_price,
-                    client_order_id_root=signal_id)
-                state.record_fill(side=side, qty=qty, price=price,
-                                  reason="entry", equity_after=equity,
-                                  client_order_id_root=signal_id)
-                state.record_event("INFO", "entry", {**dbg, "side": side, "qty": qty,
-                                                      "sl": sl_price, "tp": tp_price,
-                                                      "signal_id": signal_id,
-                                                      "order_ids": {k: v.get("id") for k, v in orders.items()}},
-                                   signal_id=signal_id)
-                state.enqueue_bot_event(
-                    "entry", signal_id=signal_id,
-                    strategy=str(self.params.get("strategy_name") or "multifactor-v1"),
-                    side=side, qty=float(qty), price_usd=float(price),
-                    notional_usd=float(qty * price), equity_usd=float(equity),
-                    payload={"filled_as": "market", "sl_price": float(sl_price),
-                             "tp_price": float(tp_price)},
-                )
-                send_alert(f"Bot {side.upper()} entry",
-                           f"{side.upper()} {qty:.4f} BTC @ {price:.2f}\n"
-                           f"SL: {sl_price:.2f}  TP: {tp_price:.2f}\n"
-                           f"signal_id: {signal_id}\n"
-                           f"Equity: {equity:.2f} USDT")
+            self._place_live_entry(decision, qty, signal_id, equity)
         except Exception as e:
             self.log.exception("order placement failed: %s", e)
             state.record_event("ERROR", "order_failed", str(e), signal_id=signal_id)
-            send_alert("Bot order failed", f"{side} entry failed: {e}")
+            send_alert("Bot order failed", f"{decision.side} entry failed: {e}")
+
+    def _place_live_entry(
+        self, decision: SignalDecision, qty: float, signal_id: str, equity: float,
+    ) -> None:
+        """Place a live entry (market or limit per config) + brackets, then
+        record the fill via trade_events. Raises on order-placement failure
+        so the caller can log + alert."""
+        if self.order_type == "limit":
+            limit_price = limit_entry_price(
+                decision.side, decision.price, self.limit_offset_bps)
+            orders = self.client.limit_order_with_bracket(
+                self.symbol, decision.side, qty, limit_price,
+                sl_distance=decision.sl_distance, tp_distance=decision.tp_distance,
+                timeout_s=self.limit_timeout_s,
+                client_order_id_root=signal_id,
+            )
+            trade_events.record_limit_entry(
+                side=decision.side,
+                filled_qty=float(orders.get("filled_qty", qty)),
+                fill_price=float(orders.get("fill_price", decision.price)),
+                sl_distance=decision.sl_distance,
+                tp_distance=decision.tp_distance,
+                limit_price=limit_price,
+                signal_price=decision.price,
+                limit_offset_bps=self.limit_offset_bps,
+                equity=equity, signal_id=signal_id,
+                strategy_name=self.strategy_name,
+                filled_as=str(orders.get("filled_as", "limit")),
+                orders=orders, dbg=decision.debug,
+            )
+            return
+
+        orders = self.client.market_order_with_bracket(
+            self.symbol, decision.side, qty,
+            decision.sl_price, decision.tp_price,
+            client_order_id_root=signal_id,
+        )
+        trade_events.record_market_entry(
+            side=decision.side, qty=qty, price=decision.price,
+            sl_price=decision.sl_price, tp_price=decision.tp_price,
+            equity=equity, signal_id=signal_id,
+            strategy_name=self.strategy_name,
+            orders=orders, dbg=decision.debug,
+        )
 
     def _maybe_time_stop(self, equity: float) -> None:
         pos = self.client.fetch_position(self.symbol)
