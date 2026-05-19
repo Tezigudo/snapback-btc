@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -30,6 +31,30 @@ from .env import get_api_credentials, get_env
 log = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_MS = 15_000
+
+# clientOrderId scheme that lets investing-consolidate attribute trades back
+# to this bot. Format: snap-<version>-<signal_id>-<leg>
+#   version  : strategy version, e.g. "v1"
+#   signal_id: millisecond epoch when the bot decided on the signal
+#              (passed in by bot.py — anchors all 3 legs of a trade)
+#   leg      : "e" entry, "s" stop-loss, "t" take-profit,
+#              "x" time-stop close, "bf" boot-flatten, "h" HALT close,
+#              "k" kill-switch close
+# Binance allows alnum + ._-, max 36 chars. snap-v1-<13 digit ms>-tx = 24 chars.
+_COID_PREFIX = "snap-v1-"
+_COID_VALID = re.compile(r"^[A-Za-z0-9._\-]{1,36}$")
+
+
+def _coid(root: str | None, leg: str) -> str | None:
+    """Build a Binance-safe clientOrderId. Returns None if root is None.
+
+    Returns None (not a raised error) on invalid inputs so callers can fall
+    back to an untagged order placement gracefully.
+    """
+    if root is None:
+        return None
+    coid = f"{_COID_PREFIX}{root}-{leg}"
+    return coid if _COID_VALID.fullmatch(coid) else None
 
 
 @dataclass
@@ -150,14 +175,42 @@ class BinanceClient:
         except Exception:
             return round(qty, 3)
 
+    def _create_order_with_coid_retry(
+        self, symbol: str, order_type: str, side: str, qty: float,
+        price: float | None, params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """create_order wrapper that retries without newClientOrderId if the
+        exchange rejects the COID specifically.
+
+        Causes of COID rejection in practice: duplicate (effectively impossible
+        with ms-precision signal_id), invalid chars, length > 36, or Binance
+        silently tightening their regex. We never want a tagging failure to
+        prevent a real trade from being placed.
+        """
+        coid = params.get("newClientOrderId")
+        try:
+            return self.ex.create_order(symbol, order_type, side, qty, price, params=params)
+        except (ccxt.InvalidOrder, ccxt.BadRequest, ccxt.OperationFailed) as e:
+            msg = str(e).lower()
+            if coid and ("client" in msg or "newclientorderid" in msg or "duplicate" in msg):
+                log.warning("clientOrderId %r rejected (%s) — retrying untagged", coid, e)
+                params_clean = {k: v for k, v in params.items() if k != "newClientOrderId"}
+                return self.ex.create_order(symbol, order_type, side, qty, price, params=params_clean)
+            raise
+
     def market_order_with_bracket(
         self, symbol: str, side: str, qty: float,
         sl_price: float, tp_price: float,
+        client_order_id_root: str | None = None,
     ) -> dict[str, Any]:
         """Place market entry + stop-market SL + take-profit-market TP brackets.
 
         Returns {"entry": order, "sl": order, "tp": order}.
         Brackets are reduce-only and trigger off mark price.
+
+        If `client_order_id_root` is provided, each leg gets a Binance
+        clientOrderId of form snap-v1-<root>-{e|s|t} so consolidate-investment
+        can attribute the trade. See `_coid` for the scheme.
         """
         qty = self._round_qty(symbol, qty)
         if qty <= 0:
@@ -165,23 +218,31 @@ class BinanceClient:
         ccxt_side = "buy" if side == "long" else "sell"
         bracket_side = "sell" if side == "long" else "buy"
 
-        entry = self.ex.create_order(symbol, "market", ccxt_side, qty, None,
-                                     params={"reduceOnly": False})
+        entry_params: dict[str, Any] = {"reduceOnly": False}
+        if (coid := _coid(client_order_id_root, "e")):
+            entry_params["newClientOrderId"] = coid
+        entry = self._create_order_with_coid_retry(
+            symbol, "market", ccxt_side, qty, None, entry_params)
 
-        sl_params = {"stopPrice": float(sl_price), "reduceOnly": True,
-                     "workingType": "MARK_PRICE"}
-        sl = self.ex.create_order(symbol, "STOP_MARKET", bracket_side, qty,
-                                  None, params=sl_params)
+        sl_params: dict[str, Any] = {"stopPrice": float(sl_price), "reduceOnly": True,
+                                      "workingType": "MARK_PRICE"}
+        if (coid := _coid(client_order_id_root, "s")):
+            sl_params["newClientOrderId"] = coid
+        sl = self._create_order_with_coid_retry(
+            symbol, "STOP_MARKET", bracket_side, qty, None, sl_params)
 
-        tp_params = {"stopPrice": float(tp_price), "reduceOnly": True,
-                     "workingType": "MARK_PRICE"}
-        tp = self.ex.create_order(symbol, "TAKE_PROFIT_MARKET", bracket_side, qty,
-                                  None, params=tp_params)
+        tp_params: dict[str, Any] = {"stopPrice": float(tp_price), "reduceOnly": True,
+                                      "workingType": "MARK_PRICE"}
+        if (coid := _coid(client_order_id_root, "t")):
+            tp_params["newClientOrderId"] = coid
+        tp = self._create_order_with_coid_retry(
+            symbol, "TAKE_PROFIT_MARKET", bracket_side, qty, None, tp_params)
         return {"entry": entry, "sl": sl, "tp": tp}
 
     def _place_brackets(
         self, symbol: str, side: str, qty: float,
         fill_price: float, sl_distance: float, tp_distance: float,
+        client_order_id_root: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         bracket_side = "sell" if side == "long" else "buy"
         if side == "long":
@@ -190,20 +251,25 @@ class BinanceClient:
         else:
             sl_price = fill_price + sl_distance
             tp_price = fill_price - tp_distance
-        sl = self.ex.create_order(
-            symbol, "STOP_MARKET", bracket_side, qty, None,
-            params={"stopPrice": float(sl_price), "reduceOnly": True,
-                    "workingType": "MARK_PRICE"})
-        tp = self.ex.create_order(
-            symbol, "TAKE_PROFIT_MARKET", bracket_side, qty, None,
-            params={"stopPrice": float(tp_price), "reduceOnly": True,
-                    "workingType": "MARK_PRICE"})
+        sl_params: dict[str, Any] = {"stopPrice": float(sl_price), "reduceOnly": True,
+                                      "workingType": "MARK_PRICE"}
+        if (coid := _coid(client_order_id_root, "s")):
+            sl_params["newClientOrderId"] = coid
+        sl = self._create_order_with_coid_retry(
+            symbol, "STOP_MARKET", bracket_side, qty, None, sl_params)
+        tp_params: dict[str, Any] = {"stopPrice": float(tp_price), "reduceOnly": True,
+                                      "workingType": "MARK_PRICE"}
+        if (coid := _coid(client_order_id_root, "t")):
+            tp_params["newClientOrderId"] = coid
+        tp = self._create_order_with_coid_retry(
+            symbol, "TAKE_PROFIT_MARKET", bracket_side, qty, None, tp_params)
         return sl, tp
 
     def limit_order_with_bracket(
         self, symbol: str, side: str, qty: float,
         limit_price: float, sl_distance: float, tp_distance: float,
         timeout_s: float = 20.0, poll_s: float = 2.0,
+        client_order_id_root: str | None = None,
     ) -> dict[str, Any]:
         """Place a maker-style limit entry; fall back to market if not filled.
 
@@ -221,12 +287,15 @@ class BinanceClient:
             raise ValueError(f"qty rounded to <= 0 for {symbol}")
         ccxt_side = "buy" if side == "long" else "sell"
 
-        entry = self.ex.create_order(
-            symbol, "limit", ccxt_side, qty, float(limit_price),
-            params={"reduceOnly": False, "timeInForce": "GTC"})
+        entry_params: dict[str, Any] = {"reduceOnly": False, "timeInForce": "GTC"}
+        if (coid := _coid(client_order_id_root, "e")):
+            entry_params["newClientOrderId"] = coid
+        entry = self._create_order_with_coid_retry(
+            symbol, "limit", ccxt_side, qty, float(limit_price), entry_params)
         order_id = entry["id"]
-        log.info("limit %s placed id=%s qty=%.6f @ %.2f (timeout=%.0fs)",
-                 ccxt_side, order_id, qty, limit_price, timeout_s)
+        log.info("limit %s placed id=%s qty=%.6f @ %.2f (timeout=%.0fs, coid=%s)",
+                 ccxt_side, order_id, qty, limit_price, timeout_s,
+                 entry_params.get("newClientOrderId", "—"))
 
         filled_qty = 0.0
         avg_price = float(limit_price)
@@ -247,8 +316,9 @@ class BinanceClient:
                 avg_price = float(avg)
             if last_status in ("closed", "filled") and filled_qty >= qty * 0.999:
                 log.info("limit filled fully @ %.2f after %.0fs", avg_price, elapsed)
-                sl, tp = self._place_brackets(symbol, side, filled_qty,
-                                              avg_price, sl_distance, tp_distance)
+                sl, tp = self._place_brackets(
+                    symbol, side, filled_qty, avg_price, sl_distance, tp_distance,
+                    client_order_id_root=client_order_id_root)
                 return {"entry": o, "sl": sl, "tp": tp, "filled_as": "limit",
                         "fill_price": avg_price, "filled_qty": filled_qty}
             if last_status in ("canceled", "rejected", "expired"):
@@ -277,8 +347,9 @@ class BinanceClient:
 
         if filled_qty >= qty * 0.999:
             # Filled fully right at the cancel boundary.
-            sl, tp = self._place_brackets(symbol, side, filled_qty,
-                                          avg_price, sl_distance, tp_distance)
+            sl, tp = self._place_brackets(
+                symbol, side, filled_qty, avg_price, sl_distance, tp_distance,
+                client_order_id_root=client_order_id_root)
             return {"entry": entry, "sl": sl, "tp": tp, "filled_as": "limit",
                     "fill_price": avg_price, "filled_qty": filled_qty}
 
@@ -289,39 +360,58 @@ class BinanceClient:
             log.warning("limit partially filled %.6f / %.6f — bracketing partial, "
                         "skipping market fallback to avoid position doubling",
                         partial_qty, qty)
-            sl, tp = self._place_brackets(symbol, side, partial_qty,
-                                          avg_price, sl_distance, tp_distance)
+            sl, tp = self._place_brackets(
+                symbol, side, partial_qty, avg_price, sl_distance, tp_distance,
+                client_order_id_root=client_order_id_root)
             return {"entry": entry, "sl": sl, "tp": tp, "filled_as": "limit_partial",
                     "fill_price": avg_price, "filled_qty": partial_qty}
 
-        # Zero fill — fall back to market for full qty.
+        # Zero fill — fall back to market for full qty. Reuse the same
+        # client_order_id_root with leg "e" — there's only ever ONE entry
+        # per signal_id, so this is unambiguous from the importer's view.
         log.info("limit unfilled after %.0fs — falling back to market", elapsed)
-        market_entry = self.ex.create_order(
-            symbol, "market", ccxt_side, qty, None,
-            params={"reduceOnly": False})
+        mkt_params: dict[str, Any] = {"reduceOnly": False}
+        if (coid := _coid(client_order_id_root, "e")):
+            mkt_params["newClientOrderId"] = coid
+        market_entry = self._create_order_with_coid_retry(
+            symbol, "market", ccxt_side, qty, None, mkt_params)
         try:
             m = self.ex.fetch_order(market_entry["id"], symbol)
             m_avg = m.get("average") or m.get("price") or limit_price
             market_fill = float(m_avg)
         except Exception:
             market_fill = float(limit_price)
-        sl, tp = self._place_brackets(symbol, side, qty,
-                                      market_fill, sl_distance, tp_distance)
+        sl, tp = self._place_brackets(
+            symbol, side, qty, market_fill, sl_distance, tp_distance,
+            client_order_id_root=client_order_id_root)
         return {"entry": market_entry, "sl": sl, "tp": tp,
                 "filled_as": "market_fallback",
                 "fill_price": market_fill, "filled_qty": qty}
 
-    def close_position(self, symbol: str) -> dict[str, Any] | None:
-        """Flatten via reduce-only market order. No-op if already flat."""
+    def close_position(
+        self, symbol: str,
+        client_order_id_root: str | None = None, close_leg: str = "c",
+    ) -> dict[str, Any] | None:
+        """Flatten via reduce-only market order. No-op if already flat.
+
+        close_leg names the exit reason for tagging:
+          - "x"  time-stop
+          - "bf" boot-flatten (recovering from a stale position)
+          - "h"  HALT-triggered close
+          - "k"  kill-switch close
+          - "c"  generic (fallback)
+        If client_order_id_root is None, places the close untagged.
+        """
         p = self.fetch_position(symbol)
         if p.side == "flat" or p.qty == 0:
             return None
         ccxt_side = "sell" if p.side == "long" else "buy"
         self.cancel_open_orders(symbol)
-        return self.ex.create_order(
-            symbol, "market", ccxt_side, p.qty, None,
-            params={"reduceOnly": True},
-        )
+        params: dict[str, Any] = {"reduceOnly": True}
+        if (coid := _coid(client_order_id_root, close_leg)):
+            params["newClientOrderId"] = coid
+        return self._create_order_with_coid_retry(
+            symbol, "market", ccxt_side, p.qty, None, params)
 
     def __repr__(self) -> str:
         return f"BinanceClient(env={self.env!r}, api_key='***')"

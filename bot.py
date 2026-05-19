@@ -256,12 +256,17 @@ class Bot:
                                  "DRY-RUN: leaving it alone.",
                                  pos.side, pos.qty, pos.entry_price)
             else:
-                self.log.warning("Boot found open position %s qty=%.4f @ %.2f. Flattening.",
-                                 pos.side, pos.qty, pos.entry_price)
-                self.client.close_position(self.symbol)
+                root = state.latest_entry_coid_root()
+                self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
+                                 "Flattening (root=%s).",
+                                 pos.side, pos.qty, pos.entry_price, root or "—")
+                self.client.close_position(self.symbol,
+                                           client_order_id_root=root, close_leg="bf")
                 state.record_event("WARN", "boot_flatten",
                                    {"side": pos.side, "qty": pos.qty,
-                                    "entry": pos.entry_price})
+                                    "entry": pos.entry_price,
+                                    "signal_id": root},
+                                   signal_id=root)
 
     def stop(self, *_args) -> None:
         self._stopped = True
@@ -358,24 +363,33 @@ class Bot:
         limit_offset_bps = float(exec_cfg.get("limit_offset_bps", 0.0))
         limit_timeout_s = float(exec_cfg.get("limit_timeout_s", 20.0))
 
+        # signal_id anchors all 3 legs of this trade on Binance via clientOrderId.
+        # Format: snap-v1-<signal_id>-{e|s|t|x|bf|h|k}. Investing-consolidate's
+        # importer joins entry+exit fills via this root. ms precision avoids
+        # collisions across bot restarts.
+        signal_id = str(int(time.time() * 1000))
+
         if self.dry_run:
-            self.log.info("DRY-RUN would %s [%s] qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=$%.2f",
-                          side, order_type, qty, price, sl_price, tp_price, notional)
+            self.log.info("DRY-RUN would %s [%s] sid=%s qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=$%.2f",
+                          side, order_type, signal_id, qty, price, sl_price, tp_price, notional)
             state.record_event("INFO", "dry_run_signal", {**dbg, "side": side, "qty": qty,
                                                           "sl": sl_price, "tp": tp_price,
                                                           "notional": notional,
-                                                          "order_type": order_type})
+                                                          "order_type": order_type,
+                                                          "signal_id": signal_id},
+                               signal_id=signal_id)
             send_alert(f"DRY-RUN: would {side.upper()} [{order_type}]",
                        f"DRY-RUN: would have entered {side.upper()} "
                        f"{qty:.4f} BTC @ {price:.2f} ({order_type})\n"
                        f"SL: {sl_price:.2f}  TP: {tp_price:.2f}\n"
                        f"Notional: ${notional:.2f}\n"
                        f"Equity: {equity:.2f} USDT\n"
+                       f"signal_id: {signal_id}\n"
                        f"(No real order placed.)")
             return
 
-        self.log.info("Signal %s [%s] qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=%.2f",
-                      side, order_type, qty, price, sl_price, tp_price, notional)
+        self.log.info("Signal %s [%s] sid=%s qty=%.4f price=%.2f sl=%.2f tp=%.2f notional=%.2f",
+                      side, order_type, signal_id, qty, price, sl_price, tp_price, notional)
         try:
             if order_type == "limit":
                 # Maker-style: place limit at close ± offset_bps (favor better fill).
@@ -388,12 +402,14 @@ class Bot:
                 orders = self.client.limit_order_with_bracket(
                     self.symbol, side, qty, limit_price,
                     sl_distance=sl_dist, tp_distance=tp_dist,
-                    timeout_s=limit_timeout_s)
+                    timeout_s=limit_timeout_s,
+                    client_order_id_root=signal_id)
                 fill_price = float(orders.get("fill_price", price))
                 filled_as = orders.get("filled_as", "limit")
                 filled_qty = float(orders.get("filled_qty", qty))
                 state.record_fill(side=side, qty=filled_qty, price=fill_price,
-                                  reason="entry", equity_after=equity)
+                                  reason="entry", equity_after=equity,
+                                  client_order_id_root=signal_id)
                 state.record_event("INFO", "entry", {**dbg, "side": side,
                                                       "qty": filled_qty,
                                                       "fill_price": fill_price,
@@ -401,29 +417,37 @@ class Bot:
                                                       "filled_as": filled_as,
                                                       "sl_distance": sl_dist,
                                                       "tp_distance": tp_dist,
+                                                      "signal_id": signal_id,
                                                       "order_ids": {k: v.get("id") for k, v in orders.items()
-                                                                    if isinstance(v, dict)}})
+                                                                    if isinstance(v, dict)}},
+                                   signal_id=signal_id)
                 send_alert(f"Bot {side.upper()} entry [{filled_as}]",
                            f"{side.upper()} {filled_qty:.4f} BTC fill @ {fill_price:.2f}\n"
                            f"limit was {limit_price:.2f} (close {price:.2f}, "
                            f"offset {limit_offset_bps:.1f}bp); filled_as={filled_as}\n"
                            f"SL dist {sl_dist:.2f}  TP dist {tp_dist:.2f}\n"
+                           f"signal_id: {signal_id}\n"
                            f"Equity: {equity:.2f} USDT")
             else:
                 orders = self.client.market_order_with_bracket(
-                    self.symbol, side, qty, sl_price, tp_price)
+                    self.symbol, side, qty, sl_price, tp_price,
+                    client_order_id_root=signal_id)
                 state.record_fill(side=side, qty=qty, price=price,
-                                  reason="entry", equity_after=equity)
+                                  reason="entry", equity_after=equity,
+                                  client_order_id_root=signal_id)
                 state.record_event("INFO", "entry", {**dbg, "side": side, "qty": qty,
                                                       "sl": sl_price, "tp": tp_price,
-                                                      "order_ids": {k: v.get("id") for k, v in orders.items()}})
+                                                      "signal_id": signal_id,
+                                                      "order_ids": {k: v.get("id") for k, v in orders.items()}},
+                                   signal_id=signal_id)
                 send_alert(f"Bot {side.upper()} entry",
                            f"{side.upper()} {qty:.4f} BTC @ {price:.2f}\n"
                            f"SL: {sl_price:.2f}  TP: {tp_price:.2f}\n"
+                           f"signal_id: {signal_id}\n"
                            f"Equity: {equity:.2f} USDT")
         except Exception as e:
             self.log.exception("order placement failed: %s", e)
-            state.record_event("ERROR", "order_failed", str(e))
+            state.record_event("ERROR", "order_failed", str(e), signal_id=signal_id)
             send_alert("Bot order failed", f"{side} entry failed: {e}")
 
     def _maybe_time_stop(self, equity: float) -> None:
@@ -448,13 +472,18 @@ class Bot:
                 if self.dry_run:
                     self.log.info("DRY-RUN: would time-stop close after %.1f hours", age_s / 3600)
                     return
-                self.log.info("Time-stop firing after %.1f hours", age_s / 3600)
-                self.client.close_position(self.symbol)
+                root = state.latest_entry_coid_root()
+                self.log.info("Time-stop firing after %.1f hours (root=%s)",
+                              age_s / 3600, root or "—")
+                self.client.close_position(self.symbol,
+                                           client_order_id_root=root, close_leg="x")
                 state.record_fill(side="close", qty=pos.qty, price=0.0,
-                                  reason="time_stop", equity_after=equity)
+                                  reason="time_stop", equity_after=equity,
+                                  client_order_id_root=root)
                 send_alert("Bot time-stop close",
                            f"Closed {pos.side} {pos.qty:.4f} BTC after "
-                           f"{age_s/3600:.1f}h hold. Equity: {equity:.2f}")
+                           f"{age_s/3600:.1f}h hold. Equity: {equity:.2f}\n"
+                           f"signal_id: {root or '(untagged)'}")
         except Exception as e:
             self.log.warning("time-stop check failed: %s", e)
 
@@ -469,7 +498,10 @@ class Bot:
                                      "exiting (DRY-RUN, no flatten)" if self.dry_run
                                      else "flattening and exiting")
                     if not self.dry_run:
-                        self.client.close_position(self.symbol)
+                        root = state.latest_entry_coid_root()
+                        self.client.close_position(
+                            self.symbol,
+                            client_order_id_root=root, close_leg="h")
                     send_alert("Bot HALTED",
                                f"data/HALT detected. "
                                f"{'DRY-RUN exit, no flatten.' if self.dry_run else 'Position flattened.'} "
@@ -479,7 +511,10 @@ class Bot:
                 equity = self.client.fetch_equity_usdt()
                 if self._check_kill_switch(equity):
                     if not self.dry_run:
-                        self.client.close_position(self.symbol)
+                        root = state.latest_entry_coid_root()
+                        self.client.close_position(
+                            self.symbol,
+                            client_order_id_root=root, close_leg="k")
                     return 0
 
                 self._maybe_time_stop(equity)
