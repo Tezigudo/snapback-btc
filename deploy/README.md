@@ -40,6 +40,11 @@ sudo systemctl enable snapback-btc
 ```
 
 Email alerts: configure SMTP_* env vars in `/etc/snapback-btc/.env` (see
-`.env.example`). For Gmail, generate an app password at
-https://myaccount.google.com/apppasswords (2FA required first). Test the
-wiring before going live: `python alerts.py "deploy test" "smoke"`.
+`.env.example`).
+
+⚠ DigitalOcean blocks ports 25/465/587 on droplets (since 2025-03-06), so
+Gmail SMTP no longer works from DO. Use a transactional provider on port
+2525 — MailerSend free tier (3k/mo) is the default in `.env.example`.
+Mailgun, SendGrid, Brevo, and Postmark also expose 2525.
+
+Test the wiring before going live: `python alerts.py "deploy test" "smoke"`.

@@ -2,8 +2,11 @@
 Out-of-band alerting via SMTP email.
 
 Used by monitor.py (cron) and bot.py (fill/halt events) to notify the operator
-without paying for any service — Gmail SMTP with an app password is free and
-delivers reliably to phone push notifications.
+without paying for any service.
+
+⚠ DigitalOcean droplets block ports 25/465/587 since 2025-03-06. Use a
+transactional provider that exposes port 2525 (MailerSend, Mailgun,
+SendGrid, Brevo). Gmail SMTP no longer works from DO droplets.
 
 Config (in .env):
     SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD,
