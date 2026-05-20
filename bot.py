@@ -44,6 +44,7 @@ import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+import ccxt
 import pandas as pd
 import yaml
 
@@ -496,6 +497,7 @@ class Bot:
     def loop(self) -> int:
         self.log.info("Bot loop started. poll=%.1fs symbol=%s", self.poll_s, self.symbol)
         backoff_s = self.poll_s
+        transient_backoff_s = self.poll_s
         while not self._stopped:
             try:
                 self._heartbeat()
@@ -535,10 +537,31 @@ class Bot:
                 self._maybe_enter(equity)
                 self._maybe_push_consolidate(equity)
                 backoff_s = self.poll_s
+                transient_backoff_s = self.poll_s
                 time.sleep(self.poll_s)
             except KeyboardInterrupt:
                 self.log.info("KeyboardInterrupt — clean stop.")
                 return 0
+            except ccxt.InvalidNonce as e:
+                # Binance error -1021: request timestamp outside recvWindow.
+                # Caused by droplet clock drift. ccxt's adjustForTimeDifference
+                # only re-syncs on the next fetch_time call, so force one now
+                # before retrying. Short capped backoff — drift normally clears
+                # within a few seconds after the resync.
+                self.log.warning("InvalidNonce (clock drift) — forcing time re-sync: %s", e)
+                try:
+                    self.client.ex.load_time_difference()
+                except Exception as sync_err:
+                    self.log.warning("load_time_difference() failed: %s", sync_err)
+                transient_backoff_s = min(transient_backoff_s * 2, 30)
+                time.sleep(transient_backoff_s)
+            except ccxt.NetworkError as e:
+                # Connection drop, timeout, DDoSProtection, ExchangeNotAvailable.
+                # All transient — retry on a short capped backoff so a 10-second
+                # Binance hiccup doesn't escalate to the 300s catch-all backoff.
+                self.log.warning("NetworkError (transient) — retrying: %s", e)
+                transient_backoff_s = min(transient_backoff_s * 2, 30)
+                time.sleep(transient_backoff_s)
             except Exception as e:
                 self.log.exception("loop error: %s", e)
                 state.record_event("ERROR", "loop_error", str(e))
