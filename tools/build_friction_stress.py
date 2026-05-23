@@ -156,7 +156,6 @@ def main() -> None:
           f"{len(WINDOWS)} windows")
     print()
     t_total = time.time()
-    grid: dict[tuple[str, str, str], dict] = {}  # (strategy, fric_label, win_label) → result
     sections_per_sizing: dict[str, dict] = {label: {} for label, _ in SIZINGS}
 
     for siz_label, risk_pct in SIZINGS:

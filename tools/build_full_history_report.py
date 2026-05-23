@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -160,10 +161,11 @@ def _trade_table(records: list[dict], strategy: str, max_rows: int = 25,
             f'<td class="{pnl_cls}">{ret:+.2f}%</td></tr>'
         )
 
-    section = lambda title, rs: (
-        f'<tr><th class="l" colspan="8" style="background:#eceff1">{title}</th></tr>' +
-        "".join(fmt(r) for r in rs)
-    )
+    def section(title: str, rs: list[dict]) -> str:
+        return (
+            f'<tr><th class="l" colspan="8" style="background:#eceff1">{title}</th></tr>'
+            + "".join(fmt(r) for r in rs)
+        )
 
     return (
         f'<details><summary>{strategy} — {len(records)} trades '
@@ -249,7 +251,7 @@ def build() -> str:
     parts.append(f'<p class="mute">Source data: <code>{json_path.name}</code> '
                  f'({json_path.stat().st_size // 1024} KB)</p>')
 
-    parts.append(f"""<div class="warn">
+    parts.append("""<div class="warn">
 <b>Reality check on dollar amounts:</b> these dollar trajectories assume the
 strategy can size <i>proportionally</i> at $50.50 / $101. The real bot enforces
 Binance min-qty 0.001 BTC and min-notional $50. At BTC ~$100k, v1's risk-based
@@ -629,8 +631,11 @@ then improves as both legs gain. Fire rate over 6.7 years: <b>{cr['total_fires']
 
         # === Equity curve PNG: realistic vs upper bound ===
         try:
+            import base64 as _b64
+            import io as _io
+
             import matplotlib.pyplot as _plt
-            import io as _io, base64 as _b64, pandas as _pd
+            import pandas as _pd
             ts_re = real["ts"]
             real_co = _pd.read_csv(ROOT / "reports" / f"realistic_50_50_{ts_re}_nokill_combined.csv",
                                   index_col=0, parse_dates=True)["equity_usd"]
@@ -684,7 +689,7 @@ then improves as both legs gain. Fire rate over 6.7 years: <b>{cr['total_fires']
         parts.append('<p class="red">No realistic-env JSON found. Run <code>tools/realistic_50_50_sim.py</code>.</p>')
 
     parts.append("<h2>8. Caveats — read before extrapolating</h2>")
-    parts.append(f"""<ol>
+    parts.append("""<ol>
 <li><b>Single 6-year continuous run is not 6 walk-forwards.</b> The Donchian cons params
 (80/20/gate-on) were OOS-selected on IS 2020-04..2021-12; the 2022+ period is genuine
 forward, but the 2020-2021 portion is the IS itself. The agg params (40/10/gate-off) have

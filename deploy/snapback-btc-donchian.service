@@ -12,13 +12,10 @@ WorkingDirectory=/root/snapback-btc
 # BINANCE_API_KEY / BINANCE_API_SECRET. The main account's keys won't have
 # access to the sub-account's wallet.
 EnvironmentFile=/root/snapback-btc/.env.donchian
-# Donchian leg uses its own config, state.db, log, and heartbeat. Shares the
-# same Binance Futures account with v1 via hedge mode + positionSide=SHORT/LONG.
-ExecStart=/root/snapback-btc/.venv/bin/python /root/snapback-btc/bot.py \
-  --config /root/snapback-btc/config/params_donchian.yaml \
-  --state-db /root/snapback-btc/data/state_donchian.db \
-  --log-file /root/snapback-btc/logs/donchian.jsonl \
-  --heartbeat /root/snapback-btc/data/heartbeat_donchian
+# Donchian leg uses its own config, state.db, log, and heartbeat — all derived
+# from --instance donchian. Runs on a separate Binance sub-account (creds in
+# /root/snapback-btc/.env.donchian) so it cannot conflict with v1's positions.
+ExecStart=/root/snapback-btc/.venv/bin/python -m bot --instance donchian
 Restart=on-failure
 RestartSec=10
 StandardOutput=append:/var/log/snapback-btc/donchian_stdout.log

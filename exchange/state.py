@@ -236,7 +236,7 @@ def outbox_mark_failed(ids: list[int], error: str) -> None:
         c.execute(
             f"UPDATE outbox SET attempts = attempts + 1, last_error = ? "
             f"WHERE id IN ({placeholders})",
-            [error] + ids,
+            [error, *ids],
         )
 
 

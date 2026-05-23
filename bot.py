@@ -41,7 +41,8 @@ import signal
 import sqlite3
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import ccxt
@@ -57,7 +58,6 @@ from bot_internals import (
 )
 from exchange import state, trade_events
 from exchange.binance_client import BinanceClient
-from tools import consolidate_push
 from exchange.constraints import (
     DEFAULT_CONSTRAINTS,
     ExchangeConstraints,
@@ -72,14 +72,36 @@ from risk import (
     check_notional,
     check_symbol,
 )
+
 # Re-export for tools/preflight_live.py and any downstream importers.
 from strategy.live_multifactor_v1 import evaluate_signal  # noqa: F401
+from tools import consolidate_push
 
 LOG_DIR = REPO_ROOT / "logs"
 LOG_FILE = LOG_DIR / "bot.jsonl"
 HEARTBEAT = REPO_ROOT / "data" / "heartbeat"
-# CONFIG_PATH default — overridable via --config CLI flag.
+# CONFIG_PATH default — overridable via --config CLI flag (or --instance).
 CONFIG_PATH = REPO_ROOT / "config" / "params.yaml"
+
+# Named instance profiles for the multi-leg deploy. Picking `--instance donchian`
+# derives all four paths (config / state.db / log / heartbeat) at once so the
+# systemd unit and tmux commands don't have to spell out four flags each.
+# Individual --config / --state-db / --log-file / --heartbeat overrides still
+# work and take precedence — useful for one-off experiments.
+INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
+    "v1": {
+        "config":    REPO_ROOT / "config" / "params.yaml",
+        "state_db":  REPO_ROOT / "data" / "state.db",
+        "log_file":  REPO_ROOT / "logs" / "bot.jsonl",
+        "heartbeat": REPO_ROOT / "data" / "heartbeat",
+    },
+    "donchian": {
+        "config":    REPO_ROOT / "config" / "params_donchian.yaml",
+        "state_db":  REPO_ROOT / "data" / "state_donchian.db",
+        "log_file":  REPO_ROOT / "logs" / "donchian.jsonl",
+        "heartbeat": REPO_ROOT / "data" / "heartbeat_donchian",
+    },
+}
 
 # Console logs display in Bangkok time (GMT+7) for human readability.
 # JSONL `ts` field and state.db remain UTC for alignment with Binance candles.
@@ -108,7 +130,7 @@ def _setup_logging(level: str = "INFO") -> logging.Logger:
     class JsonFormatter(logging.Formatter):
         def format(self, record: logging.LogRecord) -> str:
             payload = {
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "level": record.levelname,
                 "logger": record.name,
                 "msg": record.getMessage(),
@@ -218,7 +240,7 @@ class Bot:
         start_eq = state.get_float("deploy_start_equity", 0.0)
         if start_eq <= 0:
             state.set_float("deploy_start_equity", equity)
-            state.set_meta("deploy_start_ts", datetime.now(timezone.utc).isoformat())
+            state.set_meta("deploy_start_ts", datetime.now(UTC).isoformat())
             self.log.info("Recorded deploy_start_equity=%.2f USDT", equity)
             mode = "DRY-RUN" if self.dry_run else "LIVE"
             send_alert(f"Bot deploy start [{mode}]",
@@ -479,8 +501,8 @@ class Bot:
                 return
             entry_ts = datetime.fromisoformat(row[0])
             if entry_ts.tzinfo is None:
-                entry_ts = entry_ts.replace(tzinfo=timezone.utc)
-            age_s = (datetime.now(timezone.utc) - entry_ts).total_seconds()
+                entry_ts = entry_ts.replace(tzinfo=UTC)
+            age_s = (datetime.now(UTC) - entry_ts).total_seconds()
             if age_s >= max_hold_s:
                 if self.dry_run:
                     self.log.info("DRY-RUN: would time-stop close after %.1f hours", age_s / 3600)
@@ -588,39 +610,47 @@ def main() -> int:
                     help="Observe-only: fetch real data, evaluate signals, log what WOULD happen, "
                          "but never place real orders. Also honored via DRY_RUN=1 env var.")
     ap.add_argument("--log-level", default="INFO")
-    # Multi-instance flags — let the Donchian leg use its own config, state.db,
-    # log file, and heartbeat without touching the v1 instance's files.
+    # Canonical multi-instance selector. `--instance donchian` derives config,
+    # state.db, log, heartbeat paths in one shot. Individual --config etc.
+    # below override single paths if you need to mix and match.
+    ap.add_argument("--instance", default="v1", choices=list(INSTANCE_PROFILES.keys()),
+                    help="Named instance profile (v1 | donchian). Derives all four paths "
+                         "from INSTANCE_PROFILES. Individual --config / --state-db / "
+                         "--log-file / --heartbeat take precedence if also set.")
     ap.add_argument("--config", default=None,
-                    help="Path to params YAML (default: config/params.yaml).")
+                    help="Path to params YAML (overrides --instance default).")
     ap.add_argument("--state-db", default=None,
-                    help="Path to SQLite state.db (default: data/state.db).")
+                    help="Path to SQLite state.db (overrides --instance default).")
     ap.add_argument("--log-file", default=None,
-                    help="Path to JSONL log file (default: logs/bot.jsonl).")
+                    help="Path to JSONL log file (overrides --instance default).")
     ap.add_argument("--heartbeat", default=None,
-                    help="Path to heartbeat file (default: data/heartbeat).")
+                    help="Path to heartbeat file (overrides --instance default).")
     args = ap.parse_args()
 
-    # Apply path overrides BEFORE the rest of main runs — state import is
-    # already a module-level reference so we must call its setter.
-    if args.config:
-        CONFIG_PATH = type(CONFIG_PATH)(args.config)
-    if args.state_db:
-        state.set_db_path(args.state_db)
-    if args.log_file:
-        LOG_FILE = type(LOG_FILE)(args.log_file)
-        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if args.heartbeat:
-        HEARTBEAT = type(HEARTBEAT)(args.heartbeat)
-        HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
+    # Resolve effective paths: profile defaults, then per-flag overrides.
+    profile = INSTANCE_PROFILES[args.instance]
+    config_path = Path(args.config) if args.config else profile["config"]
+    state_db_path = Path(args.state_db) if args.state_db else profile["state_db"]
+    log_file_path = Path(args.log_file) if args.log_file else profile["log_file"]
+    heartbeat_path = Path(args.heartbeat) if args.heartbeat else profile["heartbeat"]
+
+    # Apply path overrides BEFORE the rest of main runs — state, LOG_FILE,
+    # and HEARTBEAT are module-level constants that the rest of the bot
+    # reads, so write them before _setup_logging() / bot.boot() / bot.loop().
+    CONFIG_PATH = config_path
+    state.set_db_path(state_db_path)
+    LOG_FILE = log_file_path
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    HEARTBEAT = heartbeat_path
+    HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
 
     dry_run = args.dry_run or os.environ.get("DRY_RUN") in ("1", "true", "yes")
 
-    params = load_params(args.config)
+    params = load_params(config_path)
     log = _setup_logging(args.log_level)
-    log.info("snapback-btc booting strategy=%s config=%s state=%s log=%s",
-             resolve_strategy_name(params),
-             args.config or "default",
-             state.DB_PATH, LOG_FILE)
+    log.info("snapback-btc booting instance=%s strategy=%s config=%s state=%s log=%s",
+             args.instance, resolve_strategy_name(params),
+             config_path, state.DB_PATH, LOG_FILE)
     env = get_env()
     log.info("snapback-btc booting env=%s dry_run=%s", env, dry_run)
     if env == "mainnet" and not dry_run:

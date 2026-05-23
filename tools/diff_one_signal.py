@@ -8,9 +8,8 @@ Usage:
 
 from __future__ import annotations
 
-import dataclasses
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -27,8 +26,7 @@ from strategy.indicators import (  # noqa: E402
     trendline_from_swings, trendline_proximity_pct,
 )
 from strategy.live_v3all_wider4 import (  # noqa: E402
-    CONFIRMATIONS_REQUIRED, MAX_DISTANCE_ABOVE_EMA_PCT, MAX_DISTANCE_BELOW_EMA_PCT,
-    SR_CLUSTER_TOLERANCE_PCT, SR_MAX_DIST_PCT, SWING_K, SWING_LOOKBACK_BARS,
+    CONFIRMATIONS_REQUIRED, MAX_DISTANCE_ABOVE_EMA_PCT, SR_CLUSTER_TOLERANCE_PCT, SR_MAX_DIST_PCT, SWING_K, SWING_LOOKBACK_BARS,
     TRENDLINE_MAX_DIST_PCT, FIB_MAX_DIST_PCT, VOL_REGIME_LOOKBACK_DAYS,
     VOL_REGIME_MAX_PCTILE, ATR_PERIOD, evaluate_signal_v3all_wider4,
 )

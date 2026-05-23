@@ -29,7 +29,7 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from backtest import STRATEGIES, run_backtest  # noqa: E402
+from backtest import run_backtest  # noqa: E402
 from strategy.signals import StrategyParams  # noqa: E402
 
 SYMBOL = "BTC/USDT:USDT"

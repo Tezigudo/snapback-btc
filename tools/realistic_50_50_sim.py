@@ -27,7 +27,6 @@ import glob
 import json
 import math
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -91,9 +90,9 @@ def atr_4h_at(t: pd.Timestamp) -> float:
         if k4.index.tz is not None:
             k4.index = k4.index.tz_convert("UTC").tz_localize(None)
         k4 = k4.sort_index()
-        h, l, c = k4["high"], k4["low"], k4["close"]
-        prev_c = c.shift(1)
-        tr = pd.concat([h - l, (h - prev_c).abs(), (l - prev_c).abs()], axis=1).max(axis=1)
+        hi, lo, cl = k4["high"], k4["low"], k4["close"]
+        prev_c = cl.shift(1)
+        tr = pd.concat([hi - lo, (hi - prev_c).abs(), (lo - prev_c).abs()], axis=1).max(axis=1)
         _ATR_CACHE = tr.rolling(DON_ATR_PERIOD, min_periods=DON_ATR_PERIOD).mean()
     return float(_ATR_CACHE.asof(t - pd.Timedelta(minutes=1)))
 
@@ -209,12 +208,11 @@ def simulate_leg(trades: pd.DataFrame, start_equity: float,
         })
         history.append({"ts": t["ExitTime"], "equity": equity})
 
-        # Kill-switch check AFTER each closed trade. Note: real bot checks
-        # equity continuously, so this might miss intrabar dips that would
-        # have tripped earlier. To approximate, also check the trade's
-        # min equity assuming worst-case mid-trade DD = SL was hit:
-        worst_intrabar = equity if net_pnl >= 0 else equity  # trade already closed at exit; intrabar low captured by exit price
-        if kill_floor > 0 and (equity <= kill_floor or worst_intrabar <= kill_floor):
+        # Kill-switch check AFTER each closed trade. The trade is already
+        # closed at exit price (we don't simulate intrabar lows separately —
+        # the SL was already hit if it would have fired mid-trade, and the
+        # exit_price in the trade record reflects that).
+        if kill_floor > 0 and equity <= kill_floor:
             killed_at = pd.Timestamp(t["ExitTime"])
             killed_equity = equity
             break
@@ -247,7 +245,7 @@ def simulate_leg(trades: pd.DataFrame, start_equity: float,
         "ret_pct": ret_pct,
         "sharpe": sharpe,
         "max_dd_pct": max_dd_pct,
-        "n_signals": int(len(trades)),
+        "n_signals": len(trades),
         "fires": fires,
         "skips_min_qty": skips_min_qty,
         "skips_min_notional": skips_min_notional,
@@ -348,7 +346,7 @@ def main() -> int:
         v1_ub_end = START_PER_LEG * (1 + ub["v1"]["ret_pct"] / 100)
         d3_ub_end = START_PER_LEG * (1 + ub["d3cons"]["ret_pct"] / 100)
         co_ub_end = START_COMBINED * (1 + ub["combined_cons"]["ret_pct"] / 100)
-        print(f"\n=== Upper-bound (proportional sizing, ignores min-qty) for comparison ===")
+        print("\n=== Upper-bound (proportional sizing, ignores min-qty) for comparison ===")
         print(f"  v1:              ${v1_ub_end:.2f} ({ub['v1']['ret_pct']:+.2f}%)")
         print(f"  Donchian-cons:   ${d3_ub_end:.2f} ({ub['d3cons']['ret_pct']:+.2f}%)")
         print(f"  combined:        ${co_ub_end:.2f} ({ub['combined_cons']['ret_pct']:+.2f}%)")

@@ -72,7 +72,7 @@ Files added/changed by this work (see `git log` for the deploy commit):
 - `config/params_donchian.yaml` — NEW Donchian leg config
 - `strategy/live_donchian_v3.py` — NEW live signal evaluator
 - `bot_internals.py` — added donchian-v3 dispatch
-- `bot.py` — added `--config / --state-db / --log-file / --heartbeat` CLI flags
+- `bot.py` — added `--instance v1|donchian` (canonical) plus `--config / --state-db / --log-file / --heartbeat` overrides
 - `exchange/state.py` — `set_db_path()` for second-instance redirect
 - `exchange/binance_client.py` — configurable coid_prefix + hedge-mode plumbing (unused in sub-account path; kept for future use)
 - `deploy/snapback-btc-donchian.service` — NEW systemd unit
@@ -124,14 +124,10 @@ Open the unit file and double-check `EnvironmentFile=/root/snapback-btc/.env.don
 tmux new-session -ds bot_donchian
 tmux send-keys -t bot_donchian \
   'set -a; source /root/snapback-btc/.env.donchian; set +a; \
-   .venv/bin/python -m bot --dry-run \
-     --config config/params_donchian.yaml \
-     --state-db data/state_donchian.db \
-     --log-file logs/donchian.jsonl \
-     --heartbeat data/heartbeat_donchian' Enter
+   .venv/bin/python -m bot --dry-run --instance donchian' Enter
 ```
 
-The `set -a; source ...; set +a` exports the sub-account credentials so the bot reads the right API key.
+`--instance donchian` derives the config path, state.db path, log file, and heartbeat file from the named profile in `bot.py:INSTANCE_PROFILES`. The `set -a; source ...; set +a` exports the sub-account credentials so the bot reads the right API key.
 
 After 60 seconds:
 ```bash
@@ -190,11 +186,7 @@ tmux send-keys -t bot_v1 '.venv/bin/python -m bot' Enter
 tmux new-session -ds bot_donchian
 tmux send-keys -t bot_donchian \
   'set -a; source /root/snapback-btc/.env.donchian; set +a; \
-   .venv/bin/python -m bot \
-     --config config/params_donchian.yaml \
-     --state-db data/state_donchian.db \
-     --log-file logs/donchian.jsonl \
-     --heartbeat data/heartbeat_donchian' Enter
+   .venv/bin/python -m bot --instance donchian' Enter
 ```
 
 For real systemd-managed deploy later: `sudo systemctl enable --now snapback-btc-donchian` (after editing the unit's ExecStart to drop `--dry-run` if you added it).
@@ -233,7 +225,7 @@ git checkout HEAD~1 config/params.yaml config/params_donchian.yaml
 | `config/params_donchian.yaml` | new — Donchian-v3 cons params, 4h, risk 2.75, kill 0.645, sub-account uses one-way mode |
 | `strategy/live_donchian_v3.py` | new — pure-function live signal evaluator (channel breakout + slope gate + ATR stops) |
 | `bot_internals.py` | added donchian-v3 case in `evaluate_for_strategy` |
-| `bot.py` | new CLI flags `--config / --state-db / --log-file / --heartbeat`; reads `hedge` block from params |
+| `bot.py` | new `--instance v1\|donchian` (canonical), plus path-override flags; reads `hedge` block from params |
 | `exchange/state.py` | added `set_db_path()` for multi-instance |
 | `exchange/binance_client.py` | configurable `coid_prefix` per instance; `positionSide` plumbing kept for future hedge-mode use (unused in sub-account path) |
 | `deploy/snapback-btc-donchian.service` | new systemd unit pointing at `.env.donchian`, separate state/logs/heartbeat |

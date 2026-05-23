@@ -12,9 +12,9 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from strategy.live_donchian_v3 import evaluate_signal_donchian_v3
 from strategy.live_multifactor_v1 import evaluate_signal
 from strategy.live_v3all_wider4 import evaluate_signal_v3all_wider4
-from strategy.live_donchian_v3 import evaluate_signal_donchian_v3
 
 
 def resolve_strategy_name(params: dict) -> str:

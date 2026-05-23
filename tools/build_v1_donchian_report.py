@@ -102,7 +102,7 @@ def build() -> str:
 
     # === Headline / TL;DR with critical warnings ===
     parts.append("<h2>TL;DR</h2>")
-    parts.append(f"""<div class="truth">
+    parts.append("""<div class="truth">
 <b>Do NOT deploy at the current $101 capital.</b> 50/50 splits to $50.50 per strategy —
 below the $50 Binance min-notional after any drawdown. <b>Top up to ≥ $200 first.</b><br><br>
 
@@ -114,7 +114,7 @@ the realized +2.1% return. Use <b>per-strategy kill-switches</b> (each bot proce
 its own equity), not a combined-account switch.
 </div>""")
 
-    parts.append(f"""<div class="warn">
+    parts.append("""<div class="warn">
 <b>Why Donchian instead of "inventing" something new:</b><br>
 First candidate (Funding-Carry Reversal) was killed in 5 minutes by a hypothesis check on
 <code>funding.parquet</code> — net forward 24h mean at the natural extreme threshold was

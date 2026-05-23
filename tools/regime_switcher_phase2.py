@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import math
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -118,7 +117,7 @@ def stats(rets: pd.Series, label: str = "") -> dict:
     ret_pct = float((eq.iloc[-1] - 1) * 100)
     return {
         "label": label,
-        "n": int(len(rets)),
+        "n": len(rets),
         "ret_pct": ret_pct,
         "sharpe": sharpe,
         "max_dd_pct": dd,
@@ -144,7 +143,7 @@ def main() -> int:
     best = None
     for threshold in (0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.50):
         for hyst in (1, 2, 3, 5):
-            sw_ret, choice, switches = apply_switcher(
+            sw_ret, _choice, switches = apply_switcher(
                 train["pct"], train["v1"], train["d3"], threshold, hyst
             )
             st = stats(sw_ret)
