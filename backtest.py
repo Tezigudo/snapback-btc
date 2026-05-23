@@ -66,13 +66,17 @@ from strategy.signals_multifactor_tuned import (
     V1Floor005,
     V1Floor010,
 )
+# Resurrected 2026-05-23 for v1+Donchian parallel-deploy backtest.
+from strategy.signals_donchian import DonchianBreakoutBTCv3, attach_donchian
 
 # multifactor-v1/v2/v3 use a single entry TF (15m); no second-TF prep required.
+# Donchian-v3 is single-TF too (entry_tf == channel TF, typically 4h).
 _TF_AGNOSTIC_STRATEGIES = {
     "multifactor-v1",
     "multifactor-v2-loose", "multifactor-v2-strict",
     "multifactor-v3", "v3-dist-ema-only", "v3-vol-regime-only",
     "v3-atr-stops-only", "v3-all",
+    "donchian-v3",
 }
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
@@ -131,11 +135,15 @@ STRATEGIES: dict[str, type[Strategy]] = {
     "v1-floor-0.5": V1Floor005,
     "v1-floor-1.0": V1Floor010,
     "v1-deluxe": V1Deluxe,
+    # Resurrected 2026-05-23.
+    "donchian-v3": DonchianBreakoutBTCv3,
 }
 
-# No strategy in the current codebase needs regime or Donchian columns.
+# No strategy in the current codebase needs regime columns.
 _REGIME_STRATEGIES: set[str] = set()
-_DONCHIAN_STRATEGIES: set[str] = set()
+# Donchian-v3 needs DonchianUpper/Lower/ExitUpper/ExitLower + ATR_1h columns
+# attached to the entry-TF frame by attach_donchian().
+_DONCHIAN_STRATEGIES: set[str] = {"donchian-v3"}
 
 
 # --- Funding accounting ------------------------------------------------------
@@ -294,17 +302,18 @@ def _prepare_tf_agnostic_data(
     if klines.empty:
         raise RuntimeError(f"Missing {entry_tf} klines for the requested window.")
 
-    # _prepare_tf_agnostic_data was used by archived carry/donchian strategies.
-    # multifactor-v1 uses _prepare_snapback_data (15m + 1h + funding), so this
-    # path is currently unused. Kept as a stub for future single-TF strategies.
+    # 2026-05-23: re-enabled for donchian-v3 resurrection.
     klines.columns = [c.capitalize() for c in klines.columns]
     if klines.index.tz is not None:
         klines.index = klines.index.tz_convert("UTC").tz_localize(None)
     prepared = klines
-    _ = with_donchian
-    _ = donchian_entry
-    _ = donchian_exit
-    _ = atr_period
+    if with_donchian:
+        prepared = attach_donchian(
+            prepared, klines,
+            period_entry=donchian_entry,
+            period_exit=donchian_exit,
+            atr_period=atr_period,
+        )
 
     naive_start = start.replace(tzinfo=None) if start.tzinfo else start
     naive_end = end.replace(tzinfo=None) if end.tzinfo else end

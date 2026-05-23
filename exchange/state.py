@@ -32,12 +32,27 @@ Schema:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
 from .env import REPO_ROOT
 
-DB_PATH = REPO_ROOT / "data" / "state.db"
+# Env-var override so a second bot instance (Donchian leg) can point at
+# data/state_donchian.db without code changes. Default matches the single-bot
+# v1 deploy.
+DB_PATH = Path(os.environ.get("SNAPBACK_STATE_DB", REPO_ROOT / "data" / "state.db"))
+
+
+def set_db_path(path: str | Path) -> None:
+    """Override DB_PATH from bot.main() after CLI args are parsed.
+
+    Used by the second bot instance (Donchian leg) to point at
+    data/state_donchian.db. Call BEFORE any other state.* function.
+    """
+    global DB_PATH
+    DB_PATH = Path(path)
 
 
 def _conn() -> sqlite3.Connection:

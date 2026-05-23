@@ -41,11 +41,12 @@ DEFAULT_TIMEOUT_MS = 15_000
 #              "x" time-stop close, "bf" boot-flatten, "h" HALT close,
 #              "k" kill-switch close
 # Binance allows alnum + ._-, max 36 chars. snap-v1-<13 digit ms>-tx = 24 chars.
-_COID_PREFIX = "snap-v1-"
+# Donchian leg uses prefix "snap-d3-" to distinguish in fills/logs.
+_COID_PREFIX_DEFAULT = "snap-v1-"
 _COID_VALID = re.compile(r"^[A-Za-z0-9._\-]{1,36}$")
 
 
-def _coid(root: str | None, leg: str) -> str | None:
+def _coid(root: str | None, leg: str, prefix: str = _COID_PREFIX_DEFAULT) -> str | None:
     """Build a Binance-safe clientOrderId. Returns None if root is None.
 
     Returns None (not a raised error) on invalid inputs so callers can fall
@@ -53,7 +54,7 @@ def _coid(root: str | None, leg: str) -> str | None:
     """
     if root is None:
         return None
-    coid = f"{_COID_PREFIX}{root}-{leg}"
+    coid = f"{prefix}{root}-{leg}"
     return coid if _COID_VALID.fullmatch(coid) else None
 
 
@@ -68,14 +69,25 @@ class Position:
 
 
 class BinanceClient:
-    """Thin facade over ccxt.binanceusdm with bot-friendly methods."""
+    """Thin facade over ccxt.binanceusdm with bot-friendly methods.
 
-    def __init__(self, ex: ccxt.Exchange, env: str) -> None:
+    Hedge mode + position_side support: when running two bots on one account,
+    each instance MUST pass its `position_side` ("LONG" or "SHORT") to the
+    exchange so Binance tracks both legs independently. The bot reads
+    `hedge.enabled` from params.yaml and constructs the client accordingly.
+    """
+
+    def __init__(self, ex: ccxt.Exchange, env: str,
+                 hedge_mode: bool = False,
+                 coid_prefix: str = _COID_PREFIX_DEFAULT) -> None:
         self.ex = ex
         self.env = env
+        self.hedge_mode = hedge_mode
+        self.coid_prefix = coid_prefix
 
     @classmethod
-    def from_env(cls) -> BinanceClient:
+    def from_env(cls, hedge_mode: bool = False,
+                 coid_prefix: str = _COID_PREFIX_DEFAULT) -> BinanceClient:
         env = get_env()
         api_key, api_secret = get_api_credentials()
         ex = ccxt.binanceusdm({
@@ -91,7 +103,20 @@ class BinanceClient:
         else:
             log.info("BinanceClient: MAINNET mode (real money)")
         ex.load_markets()
-        return cls(ex=ex, env=env)
+        if hedge_mode:
+            log.info("BinanceClient: HEDGE MODE on (positionSide will be sent on every order)")
+        return cls(ex=ex, env=env, hedge_mode=hedge_mode, coid_prefix=coid_prefix)
+
+    def _position_side(self, side: str) -> str | None:
+        """Return positionSide for Binance Futures hedge mode.
+
+        side: "long" | "short" — direction of the trade we're opening.
+        Returns "LONG" / "SHORT" when hedge mode is on; None otherwise (one-way
+        mode — Binance rejects positionSide when account is in one-way mode).
+        """
+        if not self.hedge_mode:
+            return None
+        return "LONG" if side == "long" else "SHORT"
 
     # --- market data --------------------------------------------------------
     def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 500) -> pd.DataFrame:
@@ -208,8 +233,13 @@ class BinanceClient:
         Returns {"entry": order, "sl": order, "tp": order}.
         Brackets are reduce-only and trigger off mark price.
 
+        Hedge mode: when self.hedge_mode is True, every leg includes the
+        position_side matching the entry (LONG for long entries, SHORT for
+        shorts) — even reduce-only legs. Binance uses positionSide to identify
+        which position SLOT the order touches, not the order direction.
+
         If `client_order_id_root` is provided, each leg gets a Binance
-        clientOrderId of form snap-v1-<root>-{e|s|t} so consolidate-investment
+        clientOrderId of form {prefix}<root>-{e|s|t} so consolidate-investment
         can attribute the trade. See `_coid` for the scheme.
         """
         qty = self._round_qty(symbol, qty)
@@ -217,24 +247,31 @@ class BinanceClient:
             raise ValueError(f"qty rounded to <= 0 for {symbol}")
         ccxt_side = "buy" if side == "long" else "sell"
         bracket_side = "sell" if side == "long" else "buy"
+        pos_side = self._position_side(side)   # LONG/SHORT/None
 
         entry_params: dict[str, Any] = {"reduceOnly": False}
-        if (coid := _coid(client_order_id_root, "e")):
+        if (coid := _coid(client_order_id_root, "e", self.coid_prefix)):
             entry_params["newClientOrderId"] = coid
+        if pos_side is not None:
+            entry_params["positionSide"] = pos_side
         entry = self._create_order_with_coid_retry(
             symbol, "market", ccxt_side, qty, None, entry_params)
 
         sl_params: dict[str, Any] = {"stopPrice": float(sl_price), "reduceOnly": True,
                                       "workingType": "MARK_PRICE"}
-        if (coid := _coid(client_order_id_root, "s")):
+        if (coid := _coid(client_order_id_root, "s", self.coid_prefix)):
             sl_params["newClientOrderId"] = coid
+        if pos_side is not None:
+            sl_params["positionSide"] = pos_side
         sl = self._create_order_with_coid_retry(
             symbol, "STOP_MARKET", bracket_side, qty, None, sl_params)
 
         tp_params: dict[str, Any] = {"stopPrice": float(tp_price), "reduceOnly": True,
                                       "workingType": "MARK_PRICE"}
-        if (coid := _coid(client_order_id_root, "t")):
+        if (coid := _coid(client_order_id_root, "t", self.coid_prefix)):
             tp_params["newClientOrderId"] = coid
+        if pos_side is not None:
+            tp_params["positionSide"] = pos_side
         tp = self._create_order_with_coid_retry(
             symbol, "TAKE_PROFIT_MARKET", bracket_side, qty, None, tp_params)
         return {"entry": entry, "sl": sl, "tp": tp}
@@ -245,6 +282,7 @@ class BinanceClient:
         client_order_id_root: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         bracket_side = "sell" if side == "long" else "buy"
+        pos_side = self._position_side(side)
         if side == "long":
             sl_price = fill_price - sl_distance
             tp_price = fill_price + tp_distance
@@ -253,14 +291,18 @@ class BinanceClient:
             tp_price = fill_price - tp_distance
         sl_params: dict[str, Any] = {"stopPrice": float(sl_price), "reduceOnly": True,
                                       "workingType": "MARK_PRICE"}
-        if (coid := _coid(client_order_id_root, "s")):
+        if (coid := _coid(client_order_id_root, "s", self.coid_prefix)):
             sl_params["newClientOrderId"] = coid
+        if pos_side is not None:
+            sl_params["positionSide"] = pos_side
         sl = self._create_order_with_coid_retry(
             symbol, "STOP_MARKET", bracket_side, qty, None, sl_params)
         tp_params: dict[str, Any] = {"stopPrice": float(tp_price), "reduceOnly": True,
                                       "workingType": "MARK_PRICE"}
-        if (coid := _coid(client_order_id_root, "t")):
+        if (coid := _coid(client_order_id_root, "t", self.coid_prefix)):
             tp_params["newClientOrderId"] = coid
+        if pos_side is not None:
+            tp_params["positionSide"] = pos_side
         tp = self._create_order_with_coid_retry(
             symbol, "TAKE_PROFIT_MARKET", bracket_side, qty, None, tp_params)
         return sl, tp
@@ -286,10 +328,13 @@ class BinanceClient:
         if qty <= 0:
             raise ValueError(f"qty rounded to <= 0 for {symbol}")
         ccxt_side = "buy" if side == "long" else "sell"
+        pos_side = self._position_side(side)
 
         entry_params: dict[str, Any] = {"reduceOnly": False, "timeInForce": "GTC"}
-        if (coid := _coid(client_order_id_root, "e")):
+        if (coid := _coid(client_order_id_root, "e", self.coid_prefix)):
             entry_params["newClientOrderId"] = coid
+        if pos_side is not None:
+            entry_params["positionSide"] = pos_side
         entry = self._create_order_with_coid_retry(
             symbol, "limit", ccxt_side, qty, float(limit_price), entry_params)
         order_id = entry["id"]
@@ -371,8 +416,10 @@ class BinanceClient:
         # per signal_id, so this is unambiguous from the importer's view.
         log.info("limit unfilled after %.0fs — falling back to market", elapsed)
         mkt_params: dict[str, Any] = {"reduceOnly": False}
-        if (coid := _coid(client_order_id_root, "e")):
+        if (coid := _coid(client_order_id_root, "e", self.coid_prefix)):
             mkt_params["newClientOrderId"] = coid
+        if pos_side is not None:
+            mkt_params["positionSide"] = pos_side
         market_entry = self._create_order_with_coid_retry(
             symbol, "market", ccxt_side, qty, None, mkt_params)
         try:
@@ -406,10 +453,13 @@ class BinanceClient:
         if p.side == "flat" or p.qty == 0:
             return None
         ccxt_side = "sell" if p.side == "long" else "buy"
+        pos_side = self._position_side(p.side)
         self.cancel_open_orders(symbol)
         params: dict[str, Any] = {"reduceOnly": True}
-        if (coid := _coid(client_order_id_root, close_leg)):
+        if (coid := _coid(client_order_id_root, close_leg, self.coid_prefix)):
             params["newClientOrderId"] = coid
+        if pos_side is not None:
+            params["positionSide"] = pos_side
         return self._create_order_with_coid_retry(
             symbol, "market", ccxt_side, p.qty, None, params)
 

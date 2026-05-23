@@ -78,6 +78,8 @@ from strategy.live_multifactor_v1 import evaluate_signal  # noqa: F401
 LOG_DIR = REPO_ROOT / "logs"
 LOG_FILE = LOG_DIR / "bot.jsonl"
 HEARTBEAT = REPO_ROOT / "data" / "heartbeat"
+# CONFIG_PATH default — overridable via --config CLI flag.
+CONFIG_PATH = REPO_ROOT / "config" / "params.yaml"
 
 # Console logs display in Bangkok time (GMT+7) for human readability.
 # JSONL `ts` field and state.db remain UTC for alignment with Binance candles.
@@ -121,9 +123,10 @@ def _setup_logging(level: str = "INFO") -> logging.Logger:
     return logger
 
 
-def load_params() -> dict:
-    path = REPO_ROOT / "config" / "params.yaml"
-    with open(path) as f:
+def load_params(path: str | None = None) -> dict:
+    """Load YAML params. Default path = config/params.yaml. Override via --config."""
+    p = path or CONFIG_PATH
+    with open(p) as f:
         return yaml.safe_load(f)
 
 
@@ -157,7 +160,15 @@ class Bot:
         self.strategy_name = resolve_strategy_name(params)
         self.dry_run = dry_run
         self.log = logging.getLogger("snapback.bot")
-        self.client = BinanceClient.from_env()
+        # Hedge mode + clientOrderId prefix come from `hedge` block in params YAML.
+        # When unset, behaves exactly like the legacy single-bot deploy.
+        hedge_cfg = params.get("hedge", {}) or {}
+        self.hedge_enabled = bool(hedge_cfg.get("enabled", False))
+        self.coid_prefix = str(hedge_cfg.get("client_order_id_prefix", "snap-v1-"))
+        self.client = BinanceClient.from_env(
+            hedge_mode=self.hedge_enabled,
+            coid_prefix=self.coid_prefix,
+        )
         exec_cfg = params.get("execution", {})
         self.poll_s = float(exec_cfg["poll_interval_s"])
         self.order_type = str(exec_cfg.get("order_type", "market")).lower()
@@ -571,17 +582,45 @@ class Bot:
 
 
 def main() -> int:
+    global LOG_FILE, HEARTBEAT, CONFIG_PATH
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true",
                     help="Observe-only: fetch real data, evaluate signals, log what WOULD happen, "
                          "but never place real orders. Also honored via DRY_RUN=1 env var.")
     ap.add_argument("--log-level", default="INFO")
+    # Multi-instance flags — let the Donchian leg use its own config, state.db,
+    # log file, and heartbeat without touching the v1 instance's files.
+    ap.add_argument("--config", default=None,
+                    help="Path to params YAML (default: config/params.yaml).")
+    ap.add_argument("--state-db", default=None,
+                    help="Path to SQLite state.db (default: data/state.db).")
+    ap.add_argument("--log-file", default=None,
+                    help="Path to JSONL log file (default: logs/bot.jsonl).")
+    ap.add_argument("--heartbeat", default=None,
+                    help="Path to heartbeat file (default: data/heartbeat).")
     args = ap.parse_args()
+
+    # Apply path overrides BEFORE the rest of main runs — state import is
+    # already a module-level reference so we must call its setter.
+    if args.config:
+        CONFIG_PATH = type(CONFIG_PATH)(args.config)
+    if args.state_db:
+        state.set_db_path(args.state_db)
+    if args.log_file:
+        LOG_FILE = type(LOG_FILE)(args.log_file)
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if args.heartbeat:
+        HEARTBEAT = type(HEARTBEAT)(args.heartbeat)
+        HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
 
     dry_run = args.dry_run or os.environ.get("DRY_RUN") in ("1", "true", "yes")
 
-    params = load_params()
+    params = load_params(args.config)
     log = _setup_logging(args.log_level)
+    log.info("snapback-btc booting strategy=%s config=%s state=%s log=%s",
+             resolve_strategy_name(params),
+             args.config or "default",
+             state.DB_PATH, LOG_FILE)
     env = get_env()
     log.info("snapback-btc booting env=%s dry_run=%s", env, dry_run)
     if env == "mainnet" and not dry_run:

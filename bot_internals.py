@@ -14,6 +14,7 @@ import pandas as pd
 
 from strategy.live_multifactor_v1 import evaluate_signal
 from strategy.live_v3all_wider4 import evaluate_signal_v3all_wider4
+from strategy.live_donchian_v3 import evaluate_signal_donchian_v3
 
 
 def resolve_strategy_name(params: dict) -> str:
@@ -73,20 +74,34 @@ def evaluate_for_strategy(
 ) -> SignalDecision:
     """Dispatch to the live signal evaluator for the configured strategy.
 
-    Two paths today:
+    Three paths today:
       - "v3-all-wider-4": evaluator returns (side, sl_dist, tp_dist, dbg) — SL/TP
         are already in price units from ATR×k math.
+      - "donchian-v3": Donchian-cons breakout on 4h bars. Returns (side, sl_dist,
+        tp_dist, dbg). SL = 1.5×ATR; TP = 5×ATR (approximation of channel-exit).
       - default ("multifactor-v1"): evaluator returns (side, dbg); SL/TP come
         from fixed-pct multipliers in params (`sl_pct`, `tp_pct`) applied to
         the close price.
 
-    The price fallback (`float(df["Close"].iloc[-1])`) handles the case where
-    a strategy returns a non-dict debug (legacy path, kept for safety).
+    The `bars_15m` argument name is historical — for donchian-v3 the bot passes
+    4h bars in this slot (entry timeframe from config). Each strategy reads
+    whatever its config says to.
     """
     fallback_price = float(bars_15m["Close"].iloc[-1])
 
     if strategy_name == "v3-all-wider-4":
         side, sl_dist, tp_dist, dbg = evaluate_signal_v3all_wider4(
+            bars_15m, funding_rate, params)
+        price = (dbg.get("cur_close", fallback_price)
+                 if isinstance(dbg, dict) else fallback_price)
+        return SignalDecision(
+            side=side, price=price,
+            sl_distance=float(sl_dist), tp_distance=float(tp_dist),
+            debug=dbg if isinstance(dbg, dict) else {},
+        )
+
+    if strategy_name == "donchian-v3":
+        side, sl_dist, tp_dist, dbg = evaluate_signal_donchian_v3(
             bars_15m, funding_rate, params)
         price = (dbg.get("cur_close", fallback_price)
                  if isinstance(dbg, dict) else fallback_price)

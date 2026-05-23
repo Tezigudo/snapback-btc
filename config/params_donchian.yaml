@@ -1,0 +1,85 @@
+# Tunable strategy params for Donchian-v3 cons — the second leg in the
+# combined 50/50 deploy. v1 stays in config/params.yaml.
+#
+# Locked 2026-05-23 per realistic 50/50 sim showing $101 → $812.79 over
+# 6.7-year backtest analogue (Sharpe 0.85, peak-DD −33%, kill-switch
+# survives by wide margin). See FULL_HISTORY.html §7.
+#
+# IMPORTANT: this config is intended for a SECOND bot process running
+# in parallel with the v1 bot on the SAME Binance Futures account in
+# HEDGE MODE with ISOLATED margin per position. See DEPLOY_COMBINED.md
+# for the one-time exchange setup.
+
+symbol: BTC/USDT:USDT
+
+# Donchian-v3 cons strategy (resurrected from git bf4a9dc on 2026-05-23).
+# 80/20 channel + slope-gate ON @ 3% + ATR-SL 1.5× + time-stop 48 bars on 4h.
+# Backtest evidence: realistic sim 2019-09 → 2026-05 at $50.50 base
+# → $675 final, Sharpe 0.86, 99.4% fire rate of 177 signals.
+strategy_name: donchian-v3
+
+timeframes:
+  entry: 4h           # Donchian-v3 runs on 4h, NOT 15m
+  trend: 4h           # single-TF (channel computed on same entry TF)
+
+strategy:
+  # Donchian channels (Turtle-style breakout) — read by strategy/live_donchian_v3.py
+  donchian_period_entry: 80   # cons params (80-bar entry channel)
+  donchian_period_exit: 20    # cons params (20-bar exit channel)
+
+  # Directional regime gate — block longs in downtrend, shorts in uptrend.
+  # 0.03 = require EMA-slope > +3% (long) or < -3% (short).
+  regime_ema_period: 120
+  regime_slope_window: 30
+  slope_trend_threshold_pct: 0.03
+
+  # ATR-based stop-loss (no TP — let Donchian channel exit close the trade)
+  atr_period: 20              # ATR(20) on 4h
+  atr_sl_multiple: 1.5        # SL distance = 1.5 × ATR
+  atr_tp_multiple: 1.5        # kept for compat; not used by Donchian
+  atr_trail_multiple: 0.0     # 0 = no trailing stop (cons params disabled it)
+
+  # Time stop — flatten after 48 bars (8 days on 4h) if neither SL nor channel-exit fires
+  time_stop_bars: 48
+  max_hold_bars: 48
+
+  # v1-style fields kept for YAML loader compatibility — unused by Donchian
+  rsi_period: 14
+  rsi_long_threshold: 40
+  rsi_short_threshold: 70
+  ema_period: 200
+  mf_trend_ema_period: 200
+  volume_ma_period: 20
+  volume_multiple: 1.0
+  funding_extreme_threshold: 0.0005
+  require_funding_not_extreme: false   # Donchian does NOT use funding gate
+  funding_long_max: -0.0003
+  funding_short_min: 0.0003
+  sl_pct: 0.015
+  tp_pct: 0.030
+  require_trend: false
+  require_candlestick: false
+  require_macd: false
+
+sizing:
+  risk_per_trade_pct: 2.75     # match v1 leg
+  leverage: 20                  # ceiling. Risk-based sizing → effective ~1.83×.
+
+execution:
+  order_type: limit             # same as v1
+  limit_offset_bps: 0.0
+  limit_timeout_s: 20.0
+  poll_interval_s: 60           # 4h bars — polling every 60s is plenty (vs v1's 5s)
+  reconcile_on_boot: true
+
+# clientOrderId prefix — tags fills for attribution.
+# `hedge.enabled` is FALSE: sub-account deploy gives true per-bot isolation.
+# Each sub-account runs in Binance default one-way mode.
+hedge:
+  enabled: false
+  client_order_id_prefix: "snap-d3-"
+
+deploy:
+  kill_switch_equity_fraction: 0.645   # match v1 leg
+  daily_status_email_hour_utc: 0
+  min_capital_warn_usdt: 50.0          # Donchian leg's logical equity = $50.50

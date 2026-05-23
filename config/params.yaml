@@ -64,9 +64,17 @@ strategy:
   require_macd: false           # disabled in production (redundant)
 
 sizing:
-  risk_per_trade_pct: 2.0       # 2% of equity per trade (fixed-fractional)
-  leverage: 20                  # ceiling. Risk-based sizing → ~1.33x effective.
+  risk_per_trade_pct: 2.75      # 2.75% of equity per trade (raised from 2.0 on 2026-05-23 for combined-deploy yield target).
+  leverage: 20                  # ceiling. Risk-based sizing → ~1.83x effective at 2.75%.
                                 # risk.py MAX_LEVERAGE matches this hard ceiling.
+
+# clientOrderId prefix — tags this leg's fills for attribution.
+# `hedge.enabled` is intentionally FALSE: sub-account deploy gives true
+# isolation (each bot in its own sub-account, one-way mode within each).
+# Keep the prefix so fills are clearly labeled "SBV1-..." in the exchange ledger.
+hedge:
+  enabled: false
+  client_order_id_prefix: "snap-v1-"
 
 execution:
   order_type: limit             # market | limit  (2026-05-19: enabled limit-order entry)
@@ -89,10 +97,10 @@ execution:
 # Deploy gates (read by bot.py)
 deploy:
   # If equity drops to this fraction of deploy_start_equity → HALT + email + flatten.
-  # 0.82 = -18% drawdown ceiling. Widened from -15% per 2026 Q1 analysis:
-  # 2024 H2 (winning window) had max DD -14.23% mid-window. -15% would have
-  # killed a winner. -18% gives ~4pp cushion above worst recoverable observed DD.
-  kill_switch_equity_fraction: 0.82
+  # 0.645 = -35.5% drawdown ceiling. Widened from -18% on 2026-05-23 for combined-deploy:
+  # at risk 2.75% the per-leg start-anchored DD worst-case is around -22% (v1 leg, Nov 2019),
+  # so -35.5% leaves ~14pp cushion. Realistic-sim verified kill never fires.
+  kill_switch_equity_fraction: 0.645
   # Send daily status email at this UTC hour.
   daily_status_email_hour_utc: 0
   # Warn (don't block) when starting equity is below this. Below $100 USDT,

@@ -1,0 +1,35 @@
+[Unit]
+Description=snapback-btc Donchian-v3 cons leg (4h, parallel with v1)
+After=network-online.target snapback-btc.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=snapback
+Group=snapback
+WorkingDirectory=/root/snapback-btc
+# IMPORTANT: this MUST point at the sub-account's env file with its own
+# BINANCE_API_KEY / BINANCE_API_SECRET. The main account's keys won't have
+# access to the sub-account's wallet.
+EnvironmentFile=/root/snapback-btc/.env.donchian
+# Donchian leg uses its own config, state.db, log, and heartbeat. Shares the
+# same Binance Futures account with v1 via hedge mode + positionSide=SHORT/LONG.
+ExecStart=/root/snapback-btc/.venv/bin/python /root/snapback-btc/bot.py \
+  --config /root/snapback-btc/config/params_donchian.yaml \
+  --state-db /root/snapback-btc/data/state_donchian.db \
+  --log-file /root/snapback-btc/logs/donchian.jsonl \
+  --heartbeat /root/snapback-btc/data/heartbeat_donchian
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/snapback-btc/donchian_stdout.log
+StandardError=append:/var/log/snapback-btc/donchian_stderr.log
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/root/snapback-btc/data /root/snapback-btc/logs /root/snapback-btc/reports /var/log/snapback-btc
+
+[Install]
+WantedBy=multi-user.target
