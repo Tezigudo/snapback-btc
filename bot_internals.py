@@ -122,3 +122,144 @@ def evaluate_for_strategy(
         sl_distance=sl_pct * price, tp_distance=tp_pct * price,
         debug=dbg if isinstance(dbg, dict) else {},
     )
+
+
+def gate_status(strategy_name: str, decision: SignalDecision, params: dict) -> dict:
+    """Build a structured 'what's true now, what are we waiting for' snapshot
+    from a strategy evaluator's debug output. The bot logs this on every bar
+    evaluation and includes it in heartbeat-event payloads pushed to consolidate,
+    so the dashboard can answer 'why isn't this firing?' without you SSHing
+    into the droplet.
+
+    Returns a dict with stable JSON-serializable shape:
+      {
+        "strategy": "<name>",
+        "would_fire": "long" | "short" | None,
+        "values":  {<indicator name>: <numeric>},
+        "thresholds": {<threshold name>: <numeric>},
+        "gates_long":  {<gate name>: <bool>},
+        "gates_short": {<gate name>: <bool>},
+        "missing_long":  [<gate name>, ...],
+        "missing_short": [<gate name>, ...],
+        "waiting_for": "<human-readable summary>",
+      }
+    """
+    dbg = decision.debug or {}
+    s = params.get("strategy", {}) if isinstance(params, dict) else {}
+
+    if strategy_name == "multifactor-v1":
+        rsi = dbg.get("rsi")
+        close = dbg.get("cur_close")
+        ema = dbg.get("trend_ema")
+        vol_sma = dbg.get("vol_sma")
+        cur_vol = dbg.get("cur_vol")
+        funding = dbg.get("funding_rate")
+
+        rsi_lt_long = float(s.get("rsi_long_threshold", 40))
+        rsi_gt_short = float(s.get("rsi_short_threshold", 70))
+        vol_mult = float(s.get("volume_multiple", 2.0))
+        funding_extreme = float(s.get("funding_extreme_threshold", 0.0005))
+        require_funding = bool(s.get("require_funding_not_extreme", True))
+
+        def _safe_lt(a, b):
+            return a is not None and b is not None and a < b
+        def _safe_gt(a, b):
+            return a is not None and b is not None and a > b
+
+        gates_long = {
+            "rsi_oversold":  _safe_lt(rsi, rsi_lt_long),
+            "trend_up":      _safe_gt(close, ema),
+            "volume_spike":  _safe_gt(cur_vol, vol_mult * vol_sma) if vol_sma else False,
+            "funding_ok":    (not require_funding) or (funding is not None and funding <= funding_extreme),
+        }
+        gates_short = {
+            "rsi_overbought": _safe_gt(rsi, rsi_gt_short),
+            "trend_down":     _safe_lt(close, ema),
+            "volume_spike":   gates_long["volume_spike"],  # same volume rule
+            "funding_ok":     (not require_funding) or (funding is not None and funding >= -funding_extreme),
+        }
+        missing_long  = [k for k, v in gates_long.items()  if not v]
+        missing_short = [k for k, v in gates_short.items() if not v]
+        vol_ratio = (cur_vol / vol_sma) if (cur_vol is not None and vol_sma) else None
+        return {
+            "strategy": strategy_name,
+            "would_fire": decision.side,
+            "values": {
+                "rsi":          float(rsi) if rsi is not None else None,
+                "close":        float(close) if close is not None else None,
+                "ema200":       float(ema) if ema is not None else None,
+                "vol_ratio":    float(vol_ratio) if vol_ratio is not None else None,
+                "funding_rate": float(funding) if funding is not None else None,
+            },
+            "thresholds": {
+                "rsi_long_lt":   rsi_lt_long,
+                "rsi_short_gt":  rsi_gt_short,
+                "vol_multiple":  vol_mult,
+                "funding_extreme": funding_extreme,
+            },
+            "gates_long":  gates_long,
+            "gates_short": gates_short,
+            "missing_long":  missing_long,
+            "missing_short": missing_short,
+            "waiting_for": _format_waiting(missing_long, missing_short, decision.side),
+        }
+
+    if strategy_name == "donchian-v3":
+        close = dbg.get("cur_close")
+        upper = dbg.get("upper")
+        lower = dbg.get("lower")
+        slope = dbg.get("slope")
+        slope_thr = (dbg.get("slope_threshold")
+                     if dbg.get("slope_threshold") is not None
+                     else float(s.get("slope_trend_threshold_pct", 0.03)))
+        gate_on = bool(dbg.get("gate_on", True))
+
+        breakout_ok = close is not None and upper is not None and close > upper
+        breakdown_ok = close is not None and lower is not None and close < lower
+        slope_long_ok  = (not gate_on) or (slope is not None and slope >=  slope_thr)
+        slope_short_ok = (not gate_on) or (slope is not None and slope <= -slope_thr)
+
+        gates_long  = {"breakout_above_80bar": breakout_ok,  "slope_up":   slope_long_ok}
+        gates_short = {"breakdown_below_80bar": breakdown_ok, "slope_down": slope_short_ok}
+        missing_long  = [k for k, v in gates_long.items()  if not v]
+        missing_short = [k for k, v in gates_short.items() if not v]
+        return {
+            "strategy": strategy_name,
+            "would_fire": decision.side,
+            "values": {
+                "close":      float(close) if close is not None else None,
+                "upper_80bar": float(upper) if upper is not None else None,
+                "lower_80bar": float(lower) if lower is not None else None,
+                "slope":       float(slope) if slope is not None else None,
+            },
+            "thresholds": {
+                "slope_threshold": float(slope_thr),
+                "gate_on":         gate_on,
+            },
+            "gates_long":  gates_long,
+            "gates_short": gates_short,
+            "missing_long":  missing_long,
+            "missing_short": missing_short,
+            "waiting_for": _format_waiting(missing_long, missing_short, decision.side),
+        }
+
+    # Unknown strategy — return minimal envelope so the dashboard doesn't blow up.
+    return {
+        "strategy": strategy_name,
+        "would_fire": decision.side,
+        "values": {},
+        "thresholds": {},
+        "gates_long": {},
+        "gates_short": {},
+        "missing_long": [],
+        "missing_short": [],
+        "waiting_for": "no gate introspection available for this strategy",
+    }
+
+
+def _format_waiting(missing_long: list, missing_short: list, fired: str | None) -> str:
+    if fired:
+        return f"signal fired: {fired}"
+    long_part = "long ready" if not missing_long else "long waiting on " + ", ".join(missing_long)
+    short_part = "short ready" if not missing_short else "short waiting on " + ", ".join(missing_short)
+    return f"{long_part} | {short_part}"

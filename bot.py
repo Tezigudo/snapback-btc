@@ -53,6 +53,7 @@ from alerts import send_alert
 from bot_internals import (
     SignalDecision,
     evaluate_for_strategy,
+    gate_status,
     limit_entry_price,
     resolve_strategy_name,
 )
@@ -209,6 +210,12 @@ class Bot:
         # 30s is well under consolidate's 60s healthy-threshold.
         self._push_interval_s = 30.0
         self._last_push_ts: float = 0.0
+        # Most recent gate-status snapshot from the live evaluator. Updated on
+        # every bar-close evaluation. Pushed to consolidate as part of the
+        # heartbeat payload so the dashboard can show "what's true now / waiting
+        # on what" without you SSHing in.
+        self._latest_gates: dict | None = None
+        self._last_waiting_for: str | None = None
         if self.dry_run:
             self.log.warning("DRY-RUN MODE: no real orders will be placed")
 
@@ -319,11 +326,18 @@ class Bot:
         if not consolidate_push.is_configured():
             return  # don't even enqueue heartbeats if no consumer
         try:
+            payload: dict = {"halt_present": is_halted(),
+                             "outbox_size_before_drain": state.outbox_size()}
+            # Include the most recent gate-status snapshot so the dashboard
+            # can show "what's true now / waiting on what" without operator
+            # intervention. Falls back to absent key when no bar has been
+            # evaluated yet (first 5-10s of boot).
+            if self._latest_gates is not None:
+                payload["gates"] = self._latest_gates
             state.enqueue_bot_event(
                 "heartbeat",
                 equity_usd=float(equity) if equity is not None else None,
-                payload={"halt_present": is_halted(),
-                         "outbox_size_before_drain": state.outbox_size()},
+                payload=payload,
             )
             result = consolidate_push.drain()
             if result.get("error"):
@@ -380,6 +394,18 @@ class Bot:
         funding = self.client.fetch_funding_rate(self.symbol)
         decision = evaluate_for_strategy(self.strategy_name, df, funding, self.params)
         self._last_signal_ts = last_ts
+
+        # Snapshot the gate state for heartbeat-payload + log. Computed on every
+        # bar evaluation so the dashboard's "current state" panel can always
+        # answer "why isn't this firing?". Log only when the waiting-for
+        # summary *changes*, to avoid spamming the JSONL with identical lines
+        # bar after bar in long quiet stretches.
+        self._latest_gates = gate_status(self.strategy_name, decision, self.params)
+        cur_waiting = self._latest_gates.get("waiting_for", "")
+        if cur_waiting and cur_waiting != self._last_waiting_for:
+            self.log.info("gates: %s", cur_waiting)
+            self._last_waiting_for = cur_waiting
+
         if decision.side is None:
             return
 
