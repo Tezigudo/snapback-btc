@@ -28,7 +28,11 @@ from exchange import state
 
 log = logging.getLogger(__name__)
 
-SOURCE = "snapback-btc"
+# Source identifier in the consolidate /bot-event payload. Each running bot
+# instance needs a DISTINCT source so the dashboard can show them as separate
+# bot cards. Default is "snapback-btc" (the original v1 leg, unchanged).
+# The Donchian leg sets CONSOLIDATE_SOURCE=snapback-btc-donchian in its env.
+SOURCE = (os.environ.get("CONSOLIDATE_SOURCE") or "snapback-btc").strip()
 DEFAULT_TIMEOUT_S = 3.0
 DEFAULT_BATCH_LIMIT = 50
 

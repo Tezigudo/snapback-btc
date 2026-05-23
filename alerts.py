@@ -48,7 +48,13 @@ def is_configured() -> bool:
     )
 
 
-def send_alert(subject: str, body: str, *, tag: str = "snapback-btc") -> bool:
+def _default_tag() -> str:
+    """Subject prefix for alerts. Each bot instance overrides via ALERT_TAG env
+    so the Donchian leg's emails thread separately from v1's in Gmail."""
+    return (os.environ.get("ALERT_TAG") or "snapback-btc").strip()
+
+
+def send_alert(subject: str, body: str, *, tag: str | None = None) -> bool:
     """
     Send an email alert. Returns True on success, False on any failure.
 
@@ -58,8 +64,9 @@ def send_alert(subject: str, body: str, *, tag: str = "snapback-btc") -> bool:
         log.warning("alerts: SMTP not configured; skipping send (subject=%r)", subject)
         return False
 
+    effective_tag = tag if tag is not None else _default_tag()
     msg = EmailMessage()
-    msg["Subject"] = f"[{tag}] {subject}"
+    msg["Subject"] = f"[{effective_tag}] {subject}"
     msg["From"] = _env("ALERT_EMAIL_FROM")
     msg["To"] = _env("ALERT_EMAIL_TO")
     msg.set_content(body)
