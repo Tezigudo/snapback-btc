@@ -230,6 +230,10 @@ class Bot:
         # on what" without you SSHing in.
         self._latest_gates: dict | None = None
         self._last_waiting_for: str | None = None
+        # Last observed position side, used by _detect_bracket_exit to spot
+        # open→flat transitions. "unknown" until the first loop call so we
+        # don't emit a spurious exit alert for a historical entry in state.db.
+        self._last_position_side: str = "unknown"
         if self.dry_run:
             self.log.warning("DRY-RUN MODE: no real orders will be placed")
 
@@ -265,7 +269,7 @@ class Bot:
             self.log.info("Recorded deploy_start_equity=%.2f USDT", equity)
             mode = "DRY-RUN" if self.dry_run else "LIVE"
             send_alert(
-                f"Bot deploy start [{self.instance}] [{mode}]",
+                f"Bot deploy start [{mode}]",
                 self._format_deploy_summary(equity, mode),
             )
             start_eq = equity
@@ -579,6 +583,97 @@ class Bot:
             orders=orders, dbg=decision.debug,
         )
 
+    def _detect_bracket_exit(self, equity: float) -> None:
+        """Bracket SL/TP fills close the position on Binance's side without
+        a bot-initiated close. Detect open→flat transitions and emit an
+        exit alert with PnL.
+
+        Conditions for an alert:
+          - Not dry-run (no real brackets in dry-run mode).
+          - Current position is flat.
+          - Latest fill row is `reason='entry'` — i.e., no bot-initiated
+            close (time_stop, kill, halt) has been recorded since the entry.
+          - We can find the matching opposite-side trade on Binance.
+
+        Skipped silently (with warning log) on any ccxt error so an outage
+        in fetch_my_trades doesn't crash the loop.
+        """
+        if self.dry_run:
+            return
+        try:
+            pos = self.client.fetch_position(self.symbol)
+            current = pos.side
+            # First observation since boot — initialise state without
+            # emitting. A historical "entry" row in state.db whose position
+            # already closed on the exchange must not trigger an alert.
+            if self._last_position_side == "unknown":
+                self._last_position_side = current
+                return
+            had_open = self._last_position_side != "flat"
+            self._last_position_side = current
+            if not had_open or current != "flat":
+                return
+            with sqlite3.connect(state.DB_PATH) as c:
+                row = c.execute(
+                    "SELECT reason, side, qty, price, client_order_id_root "
+                    "FROM fills ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            if not row or row[0] != "entry":
+                return
+            _, entry_side, entry_qty, entry_price, signal_id = row
+            entry_qty = float(entry_qty)
+            entry_price = float(entry_price)
+
+            opposite = "sell" if entry_side == "long" else "buy"
+            trades = self.client.ex.fetch_my_trades(self.symbol, limit=10)
+            exit_trade = next(
+                (t for t in reversed(trades) if t.get("side") == opposite),
+                None,
+            )
+            if exit_trade is None:
+                self.log.warning(
+                    "bracket-exit: no opposite-side trade found for signal_id=%s",
+                    signal_id,
+                )
+                return
+            exit_price = float(exit_trade.get("price") or 0.0)
+            if exit_price <= 0:
+                return
+
+            if entry_side == "long":
+                pnl = (exit_price - entry_price) * entry_qty
+            else:
+                pnl = (entry_price - exit_price) * entry_qty
+            notional = entry_price * entry_qty
+            pnl_pct = (pnl / notional) * 100.0 if notional > 0 else 0.0
+
+            state.record_fill(
+                side="close", qty=entry_qty, price=exit_price,
+                pnl_usd=pnl, reason="bracket_exit",
+                equity_after=equity, client_order_id_root=signal_id,
+            )
+            state.enqueue_bot_event(
+                "exit", signal_id=signal_id, side=entry_side,
+                qty=float(entry_qty), price_usd=float(exit_price),
+                equity_usd=float(equity),
+                payload={"reason": "bracket_exit",
+                         "entry_price": float(entry_price),
+                         "exit_price": float(exit_price),
+                         "pnl_usd": float(pnl),
+                         "pnl_pct": float(pnl_pct)},
+            )
+            send_alert(
+                f"Bot {entry_side.upper()} exit",
+                f"{entry_side.upper()} {entry_qty:.4f} BTC closed "
+                f"by bracket (SL or TP)\n"
+                f"Entry: {entry_price:,.2f}  Exit: {exit_price:,.2f}\n"
+                f"PnL: ${pnl:+,.2f} ({pnl_pct:+.2f}%)\n"
+                f"Equity now: ${equity:,.2f}\n"
+                f"signal_id: {signal_id or '(untagged)'}",
+            )
+        except Exception as e:
+            self.log.warning("bracket-exit detection failed: %s", e)
+
     def _maybe_time_stop(self, equity: float) -> None:
         pos = self.client.fetch_position(self.symbol)
         if pos.side == "flat":
@@ -663,6 +758,7 @@ class Bot:
                             client_order_id_root=root, close_leg="k")
                     return 0
 
+                self._detect_bracket_exit(equity)
                 self._maybe_time_stop(equity)
                 self._maybe_enter(equity)
                 self._maybe_push_consolidate(equity)
@@ -744,6 +840,10 @@ def main() -> int:
     # Overlay .env.{instance} (donchian's sub-account API key, cnh_short's
     # ALERT_TAG, etc.) on top of the base .env loaded at exchange.env import.
     instance_env_path = load_env_for_instance(args.instance)
+    # Make the instance name discoverable by anything that emits alerts
+    # later (alerts.send_alert prepends it to the subject so every leg's
+    # mail threads cleanly in Gmail).
+    os.environ["SNAPBACK_INSTANCE"] = args.instance
 
     dry_run = args.dry_run or os.environ.get("DRY_RUN") in ("1", "true", "yes")
 

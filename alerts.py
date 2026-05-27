@@ -54,6 +54,13 @@ def _default_tag() -> str:
     return (os.environ.get("ALERT_TAG") or "snapback-btc").strip()
 
 
+def _instance_tag() -> str:
+    """Per-leg identifier for the subject. bot.main() sets SNAPBACK_INSTANCE
+    right after argparse; tools that send alerts outside the bot (watchdog,
+    preflight) can set it explicitly to route to the right thread."""
+    return (os.environ.get("SNAPBACK_INSTANCE") or "").strip()
+
+
 def send_alert(subject: str, body: str, *, tag: str | None = None) -> bool:
     """
     Send an email alert. Returns True on success, False on any failure.
@@ -65,8 +72,13 @@ def send_alert(subject: str, body: str, *, tag: str | None = None) -> bool:
         return False
 
     effective_tag = tag if tag is not None else _default_tag()
+    instance = _instance_tag()
+    # Subject form: [{ALERT_TAG}] [{instance}] {subject}. When SNAPBACK_INSTANCE
+    # is unset (legacy callers, ad-hoc CLI usage), the instance bracket is
+    # omitted entirely so we don't ship "[ ] ..." with empty brackets.
+    prefix = f"[{effective_tag}]" if not instance else f"[{effective_tag}] [{instance}]"
     msg = EmailMessage()
-    msg["Subject"] = f"[{effective_tag}] {subject}"
+    msg["Subject"] = f"{prefix} {subject}"
     msg["From"] = _env("ALERT_EMAIL_FROM")
     msg["To"] = _env("ALERT_EMAIL_TO")
     msg.set_content(body)
