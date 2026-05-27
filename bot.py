@@ -66,7 +66,7 @@ from exchange.constraints import (
     passes_minimums,
     round_qty_down,
 )
-from exchange.env import REPO_ROOT, get_env, is_halted
+from exchange.env import REPO_ROOT, get_env, is_halted, load_env_for_instance
 from risk import (
     RiskBreach,
     check_leverage,
@@ -183,11 +183,13 @@ def compute_qty_from_distance(equity: float, price: float, sl_distance: float,
 
 # --- Main loop ---------------------------------------------------------------
 class Bot:
-    def __init__(self, params: dict, dry_run: bool = False) -> None:
+    def __init__(self, params: dict, dry_run: bool = False,
+                 instance: str = "v1") -> None:
         self.params = params
         self.symbol = params["symbol"]
         self.strategy_name = resolve_strategy_name(params)
         self.dry_run = dry_run
+        self.instance = instance
         self.log = logging.getLogger("snapback.bot")
         # Hedge mode + clientOrderId prefix come from `hedge` block in params YAML.
         # When unset, behaves exactly like the legacy single-bot deploy.
@@ -262,11 +264,10 @@ class Bot:
             state.set_meta("deploy_start_ts", datetime.now(UTC).isoformat())
             self.log.info("Recorded deploy_start_equity=%.2f USDT", equity)
             mode = "DRY-RUN" if self.dry_run else "LIVE"
-            send_alert(f"Bot deploy start [{mode}]",
-                       f"snapback-btc started ({mode}).\nenv={self.client.env}\n"
-                       f"deploy_start_equity={equity:.2f} USDT\n"
-                       f"kill_switch at {(self.kill_fraction*100):.0f}% = "
-                       f"{equity * self.kill_fraction:.2f} USDT")
+            send_alert(
+                f"Bot deploy start [{self.instance}] [{mode}]",
+                self._format_deploy_summary(equity, mode),
+            )
             start_eq = equity
         else:
             self.log.info("Resuming deploy. start=%.2f current=%.2f (%+.2f%%)",
@@ -325,6 +326,58 @@ class Bot:
     def _heartbeat(self) -> None:
         HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
         HEARTBEAT.touch()
+
+    def _format_deploy_summary(self, equity: float, mode: str) -> str:
+        kill_pct = self.kill_fraction * 100.0
+        kill_usd = equity * self.kill_fraction
+        max_hold = int(
+            (self.params.get("strategy") or {}).get("max_hold_bars", 0)
+        )
+        max_hold_days = (max_hold * self.bar_seconds) / 86400.0 if max_hold else 0.0
+        dedup_bars = int(
+            (self.params.get("strategy") or {}).get("dedup_bars", 0)
+        )
+        consolidate_source = (os.environ.get("CONSOLIDATE_SOURCE") or "").strip() or "(default snapback-btc)"
+        return (
+            f"snapback-btc deploy start\n"
+            f"=========================\n"
+            f"Instance      : {self.instance}\n"
+            f"Strategy      : {self.strategy_name}\n"
+            f"Symbol        : {self.symbol}\n"
+            f"Config        : {CONFIG_PATH.relative_to(REPO_ROOT)}\n"
+            f"Mode          : {mode}\n"
+            f"Environment   : {self.client.env}\n"
+            f"PID           : {os.getpid()}\n"
+            f"Boot ts (UTC) : {datetime.now(UTC).isoformat(timespec='seconds')}\n"
+            f"\n"
+            f"Capital\n"
+            f"  Start equity   : ${equity:,.2f} USDT\n"
+            f"  Min recommended: ${self.min_capital_warn:,.2f} USDT"
+            + ("  ⚠ BELOW FLOOR" if equity < self.min_capital_warn else "")
+            + f"\n"
+            f"  Kill switch    : {kill_pct:.1f}% → exit at ${kill_usd:,.2f} USDT\n"
+            f"\n"
+            f"Risk\n"
+            f"  Per trade      : {self.risk_pct:.2f}% equity\n"
+            f"  Leverage       : {self.leverage}x\n"
+            f"  Hedge mode     : {'on' if self.hedge_enabled else 'off'}\n"
+            + (f"  Dedup          : {dedup_bars} bars\n" if dedup_bars else "")
+            + f"\n"
+            f"Timing\n"
+            f"  Entry timeframe: {self.entry_tf} ({self.bar_seconds}s/bar)\n"
+            f"  Poll interval  : {self.poll_s:.0f}s\n"
+            + (f"  Max hold       : {max_hold} bars ({max_hold_days:.1f} days)\n"
+               if max_hold else "")
+            + f"\n"
+            f"Routing\n"
+            f"  Consolidate src: {consolidate_source}\n"
+            f"  Alert tag      : {os.environ.get('ALERT_TAG', '(default snapback-btc)')}\n"
+            f"\n"
+            f"Paths\n"
+            f"  State DB       : {state.DB_PATH.relative_to(REPO_ROOT)}\n"
+            f"  Log file       : {LOG_FILE.relative_to(REPO_ROOT)}\n"
+            f"  Heartbeat      : {HEARTBEAT.relative_to(REPO_ROOT)}\n"
+        )
 
     def _maybe_push_consolidate(self, equity: float | None) -> None:
         """If enough time elapsed since last push: enqueue a heartbeat event
@@ -688,6 +741,10 @@ def main() -> int:
     HEARTBEAT = heartbeat_path
     HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
 
+    # Overlay .env.{instance} (donchian's sub-account API key, cnh_short's
+    # ALERT_TAG, etc.) on top of the base .env loaded at exchange.env import.
+    instance_env_path = load_env_for_instance(args.instance)
+
     dry_run = args.dry_run or os.environ.get("DRY_RUN") in ("1", "true", "yes")
 
     params = load_params(config_path)
@@ -695,6 +752,9 @@ def main() -> int:
     log.info("snapback-btc booting instance=%s strategy=%s config=%s state=%s log=%s",
              args.instance, resolve_strategy_name(params),
              config_path, state.DB_PATH, LOG_FILE)
+    if instance_env_path is not None:
+        log.info("snapback-btc loaded per-instance env: %s",
+                 instance_env_path.relative_to(REPO_ROOT))
     env = get_env()
     log.info("snapback-btc booting env=%s dry_run=%s", env, dry_run)
     if env == "mainnet" and not dry_run:
@@ -702,7 +762,7 @@ def main() -> int:
         log.warning("MAINNET LIVE MODE. Real money at risk.")
         log.warning("=" * 60)
 
-    bot = Bot(params, dry_run=dry_run)
+    bot = Bot(params, dry_run=dry_run, instance=args.instance)
     signal.signal(signal.SIGINT, bot.stop)
     signal.signal(signal.SIGTERM, bot.stop)
     bot.boot()

@@ -29,6 +29,26 @@ LOCKFILE = REPO_ROOT / "confirm_mainnet.lock"
 load_dotenv(REPO_ROOT / ".env", override=False)
 
 
+def load_env_for_instance(instance: str) -> Path | None:
+    """Overlay per-instance secrets on top of the base .env.
+
+    Each leg of the multi-leg deploy (donchian, cnh_short) has its own Binance
+    sub-account API key, ALERT_TAG, and CONSOLIDATE_SOURCE in `.env.{instance}`.
+    Without this overlay, every leg launched via `python -m bot --instance X`
+    would silently inherit v1's `.env`, place orders against the wrong account,
+    push events under the wrong source, and email under the wrong subject tag.
+
+    Returns the path that was loaded, or None if the per-instance file is
+    absent (which is the correct behavior for v1: the base .env is its env).
+    """
+    candidate = REPO_ROOT / f".env.{instance}"
+    if candidate.exists():
+        # override=True so instance values WIN over the base .env load above.
+        load_dotenv(candidate, override=True)
+        return candidate
+    return None
+
+
 class EnvError(RuntimeError):
     pass
 
