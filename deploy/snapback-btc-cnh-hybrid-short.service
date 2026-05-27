@@ -11,6 +11,13 @@ WorkingDirectory=/root/snapback-btc
 # IMPORTANT: this MUST point at the sub-account's env file with its own
 # BINANCE_API_KEY / BINANCE_API_SECRET. Each leg runs in a separate Binance
 # sub-account for true position-level isolation (see DEPLOY_COMBINED.md).
+#
+# .env.cnh_short ALSO MUST set:
+#   CONSOLIDATE_SOURCE=snapback-btc-cnh-short
+#   ALERT_TAG=snapback-cnh-short
+# Without CONSOLIDATE_SOURCE, this leg's events push as the default
+# 'snapback-btc' source and silently collide with the v1 leg on the dashboard.
+# Without ALERT_TAG, email subjects don't distinguish the legs.
 EnvironmentFile=/root/snapback-btc/.env.cnh_short
 # cnh-short leg uses its own config, state.db, log, and heartbeat — all
 # derived from --instance cnh_short. The HYBRID short strategy is documented

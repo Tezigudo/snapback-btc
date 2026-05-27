@@ -266,15 +266,25 @@ def gate_status(strategy_name: str, decision: SignalDecision, params: dict) -> d
         atr_v = dbg.get("atr")
         last_admitted = dbg.get("last_admitted_pattern")
         pattern_fired = dbg.get("pattern")   # "DT" | "ICNH" | None
-        cross_down = dbg.get("ema24_cross_down")
+        cross_down = dbg.get("entry_ema_cross_down")
 
         # HYBRID is SHORT-only; "would_fire" is short or None.
         tp_slot_ok = (close is not None and ema100 is not None
                       and ema100 < close)
+        # "Admission actionable this bar" — true for DT when admission happened
+        # at the current bar (the only window DT can fire), and true for ICnH
+        # whenever the evaluator chose to fire (admission is in the lookback +
+        # cross-down just happened). The earlier `last_admitted.ts == dbg.ts`
+        # check was always False for ICnH entries because ICnH admits at the
+        # handle-end bar, not the cross-down bar — so the dashboard reported
+        # "waiting on pattern_admitted_this_bar" while simultaneously firing.
         gates_short = {
             "pattern_admitted_this_bar": bool(
                 last_admitted is not None
-                and last_admitted.get("ts") == dbg.get("ts")
+                and (
+                    last_admitted.get("ts") == dbg.get("ts")
+                    or pattern_fired == "ICNH"
+                )
             ),
             "tp_slot_below_entry":  tp_slot_ok,
             "icnh_lookback_ema_xd": bool(cross_down) if cross_down is not None else False,

@@ -36,6 +36,16 @@ from strategy.live_cnh_hybrid_short import (  # noqa: E402
 
 DATA = ROOT / "data" / "historical" / "BTC_USDT_USDT_4h.parquet"
 
+# These tests load real 4h BTC history from a parquet that lives outside the
+# repo (it's gitignored — bulk data). On a fresh clone or CI without that file
+# present, skip the whole module instead of erroring out at import time.
+if not DATA.exists():
+    pytest.skip(
+        f"Historical data file not available at {DATA}; "
+        "skipping cnh-hybrid-short tests. Re-run after producing the parquet.",
+        allow_module_level=True,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -220,8 +220,14 @@ def evaluate_signal_cnh_hybrid_short(
         base_debug["icnh_blocked_by_dedup"] = True
 
     # ---- 2) ICnH path: look for an ADMITTED ICnH within the lookback ----
-    cross_down = is_ema_breakdown(df, i, ENTRY_EMA)
-    base_debug["ema24_cross_down"] = cross_down
+    # Respect cfg.entry_emas[0] (defaults to ENTRY_EMA via HybridConfig) so
+    # changing the YAML's entry_emas: actually changes the trigger. The debug
+    # key is intentionally abstract ("entry_ema_cross_down") so downstream
+    # gate_status doesn't have to know which EMA is configured.
+    entry_ema = cfg.entry_emas[0] if cfg.entry_emas else ENTRY_EMA
+    cross_down = is_ema_breakdown(df, i, entry_ema)
+    base_debug["entry_ema"] = entry_ema
+    base_debug["entry_ema_cross_down"] = cross_down
     if cross_down:
         lookback_start = i - cfg.entry_max_bars_after_handle
         # Walk admitted patterns backward — they're sorted ascending by index.
