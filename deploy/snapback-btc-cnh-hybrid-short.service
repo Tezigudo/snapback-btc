@@ -1,0 +1,32 @@
+[Unit]
+Description=snapback-btc cnh-hybrid-short-v1 leg (4h, parallel with v1 + Donchian)
+After=network-online.target snapback-btc.service snapback-btc-donchian.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=snapback
+Group=snapback
+WorkingDirectory=/root/snapback-btc
+# IMPORTANT: this MUST point at the sub-account's env file with its own
+# BINANCE_API_KEY / BINANCE_API_SECRET. Each leg runs in a separate Binance
+# sub-account for true position-level isolation (see DEPLOY_COMBINED.md).
+EnvironmentFile=/root/snapback-btc/.env.cnh_short
+# cnh-short leg uses its own config, state.db, log, and heartbeat — all
+# derived from --instance cnh_short. The HYBRID short strategy is documented
+# in HYBRID_SHORT_PLAN.md.
+ExecStart=/root/snapback-btc/.venv/bin/python -m bot --instance cnh_short
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/snapback-btc/cnh_short_stdout.log
+StandardError=append:/var/log/snapback-btc/cnh_short_stderr.log
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/root/snapback-btc/data /root/snapback-btc/logs /root/snapback-btc/reports /var/log/snapback-btc
+
+[Install]
+WantedBy=multi-user.target

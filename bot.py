@@ -102,6 +102,12 @@ INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
         "log_file":  REPO_ROOT / "logs" / "donchian.jsonl",
         "heartbeat": REPO_ROOT / "data" / "heartbeat_donchian",
     },
+    "cnh_short": {
+        "config":    REPO_ROOT / "config" / "params_cnh_hybrid_short.yaml",
+        "state_db":  REPO_ROOT / "data" / "state_cnh_short.db",
+        "log_file":  REPO_ROOT / "logs" / "cnh_short.jsonl",
+        "heartbeat": REPO_ROOT / "data" / "heartbeat_cnh_short",
+    },
 }
 
 # Console logs display in Bangkok time (GMT+7) for human readability.
