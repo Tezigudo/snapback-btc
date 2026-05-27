@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from strategy.live_cnh_hybrid_short import evaluate_signal_cnh_hybrid_short
 from strategy.live_donchian_v3 import evaluate_signal_donchian_v3
 from strategy.live_multifactor_v1 import evaluate_signal
 from strategy.live_v3all_wider4 import evaluate_signal_v3all_wider4
@@ -104,6 +105,21 @@ def evaluate_for_strategy(
         side, sl_dist, tp_dist, dbg = evaluate_signal_donchian_v3(
             bars_15m, funding_rate, params)
         price = (dbg.get("cur_close", fallback_price)
+                 if isinstance(dbg, dict) else fallback_price)
+        return SignalDecision(
+            side=side, price=price,
+            sl_distance=float(sl_dist), tp_distance=float(tp_dist),
+            debug=dbg if isinstance(dbg, dict) else {},
+        )
+
+    if strategy_name == "cnh-hybrid-short-v1":
+        # HYBRID short pattern detector on 4h. The bot passes 4h bars in the
+        # bars_15m slot (entry timeframe = 4h per params YAML). Returns
+        # (side, sl_dist, tp_dist, dbg) — SL = sl_atr_mult × ATR(14, 4h),
+        # TP = distance from entry to the configured EMA (default EMA100).
+        side, sl_dist, tp_dist, dbg = evaluate_signal_cnh_hybrid_short(
+            bars_15m, funding_rate, params)
+        price = (dbg.get("close", fallback_price)
                  if isinstance(dbg, dict) else fallback_price)
         return SignalDecision(
             side=side, price=price,
@@ -241,6 +257,62 @@ def gate_status(strategy_name: str, decision: SignalDecision, params: dict) -> d
             "missing_long":  missing_long,
             "missing_short": missing_short,
             "waiting_for": _format_waiting(missing_long, missing_short, decision.side),
+        }
+
+    if strategy_name == "cnh-hybrid-short-v1":
+        close = dbg.get("close")
+        ema24 = dbg.get("ema24")
+        ema100 = dbg.get("ema100")
+        atr_v = dbg.get("atr")
+        last_admitted = dbg.get("last_admitted_pattern")
+        pattern_fired = dbg.get("pattern")   # "DT" | "ICNH" | None
+        cross_down = dbg.get("entry_ema_cross_down")
+
+        # HYBRID is SHORT-only; "would_fire" is short or None.
+        tp_slot_ok = (close is not None and ema100 is not None
+                      and ema100 < close)
+        # "Admission actionable this bar" — true for DT when admission happened
+        # at the current bar (the only window DT can fire), and true for ICnH
+        # whenever the evaluator chose to fire (admission is in the lookback +
+        # cross-down just happened). The earlier `last_admitted.ts == dbg.ts`
+        # check was always False for ICnH entries because ICnH admits at the
+        # handle-end bar, not the cross-down bar — so the dashboard reported
+        # "waiting on pattern_admitted_this_bar" while simultaneously firing.
+        gates_short = {
+            "pattern_admitted_this_bar": bool(
+                last_admitted is not None
+                and (
+                    last_admitted.get("ts") == dbg.get("ts")
+                    or pattern_fired == "ICNH"
+                )
+            ),
+            "tp_slot_below_entry":  tp_slot_ok,
+            "icnh_lookback_ema_xd": bool(cross_down) if cross_down is not None else False,
+        }
+        # The 3rd gate is only meaningful when ICnH is the pending pattern.
+        missing_short = [k for k, v in gates_short.items() if not v]
+        return {
+            "strategy": strategy_name,
+            "would_fire": decision.side,
+            "values": {
+                "close":  float(close) if close is not None else None,
+                "ema24":  float(ema24) if ema24 is not None else None,
+                "ema100": float(ema100) if ema100 is not None else None,
+                "atr":    float(atr_v) if atr_v is not None else None,
+                "last_admitted_pattern": last_admitted,
+                "pattern_fired": pattern_fired,
+            },
+            "thresholds": {
+                "sl_atr_mult": float(s.get("sl_atr_mult", 1.5)),
+                "tp_ema":      (s.get("tp_emas", ["ema100"]) or ["ema100"])[0],
+                "dedup_bars":  int(s.get("dedup_bars", 15)),
+            },
+            # HYBRID has no long side — keep gates_long empty for shape compat.
+            "gates_long":  {},
+            "gates_short": gates_short,
+            "missing_long":  [],
+            "missing_short": missing_short,
+            "waiting_for": _format_waiting([], missing_short, decision.side),
         }
 
     # Unknown strategy — return minimal envelope so the dashboard doesn't blow up.

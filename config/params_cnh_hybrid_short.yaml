@@ -1,0 +1,125 @@
+# Tunable strategy params for cnh-hybrid-short-v1 — the third leg in the
+# combined deploy. v1 stays in config/params.yaml, Donchian-v3 stays in
+# config/params_donchian.yaml.
+#
+# Locked 2026-05-26 per:
+#   Phase 1 walk-forward (tools/hybrid_walkforward.py)
+#   Phase 4 portfolio sim (tools/hybrid_phase4_portfolio.py)
+#   Phase 5 dedup choice (tools/hybrid_phase5_dedup_choice.py)
+#
+# Backtest evidence:
+#   - 12-window in-sample + 4-window OOS walk-forward
+#   - dedup=15 best by Sharpe lift and WR
+#   - Live evaluator at +0.258 portfolio Sharpe lift (vs 2-leg baseline)
+#   - Per-leg cum +86.3% over 2020-2026 at $50 (notional) basis
+#   - Near-zero correlation with v1 and Donchian-v3
+#
+# IMPORTANT: this leg requires ≥$100 starting equity to avoid Binance min-qty
+# skip-rate > 50%. At $50 starting, 100% of OOS signals get rejected by
+# 0.001 BTC min-qty floor (memory: snapback-hybrid-short-phase2-sizing-floor).
+# DO NOT deploy this leg until total Futures capital ≥ $200 (~$50 each
+# for v1+Donchian, ~$100 for this leg).
+
+symbol: BTC/USDT:USDT
+
+# cnh-hybrid-short-v1 strategy — DT + ICnH pattern union on 4h.
+# Backtest: live evaluator over 2020-01 → 2026-05 produces 80 trades,
+# 65.0% WR, +86.3% cum, Sharpe 1.13 (net of 13 bps round-trip friction).
+strategy_name: cnh-hybrid-short-v1
+
+timeframes:
+  entry: 4h           # pattern detection runs on 4h
+  trend: 4h           # single-TF
+
+strategy:
+  # HYBRID pattern detector knobs — read by strategy/live_cnh_hybrid_short.py
+  # via _cfg_from_params. Defaults in HybridConfig match these but YAML wins.
+
+  # Distribution-top (DT) detector
+  uptrend_bars: 16
+  chop_bars: 8
+  min_rise_pct: 2.5
+  max_chop_ratio: 0.55
+  require_chop_at_top: true
+  breakdown_mode: "chop_low_or_ema24"
+
+  # Inverse cup-and-handle (ICnH) detector
+  cup_len: 20
+  handle_len: 4
+  min_r2: 0.50
+  min_cup_depth_atr: 1.0
+  handle_max_depth_frac: 0.70
+  peak_tolerance: 6
+  entry_max_bars_after_handle: 8
+
+  # Entry trigger / SL / TP
+  entry_emas: ["ema24"]
+  sl_atr_mult: 1.5
+  tp_emas: ["ema100"]
+  atr_period: 14
+
+  # Pattern-level dedup (Phase 5 winner = 15: best Sharpe lift + best WR).
+  dedup_bars: 15
+
+  # Time stop — flatten after 96 bars (16 days on 4h) if neither SL nor TP fires.
+  # Per Phase 4 sim, 0 trades hit the time-stop on real data — but the gate
+  # is required for live to avoid stale positions if a pattern fades.
+  time_stop_bars: 96
+  max_hold_bars: 96
+
+  # v1-style fields kept for YAML loader compatibility — unused by HYBRID
+  rsi_period: 14
+  rsi_long_threshold: 40
+  rsi_short_threshold: 70
+  ema_period: 200
+  mf_trend_ema_period: 200
+  volume_ma_period: 20
+  volume_multiple: 1.0
+  funding_extreme_threshold: 0.0005
+  require_funding_not_extreme: false   # HYBRID does NOT use funding gate
+  funding_long_max: -0.0003
+  funding_short_min: 0.0003
+  sl_pct: 0.015                        # unused; SL comes from sl_atr_mult * ATR
+  tp_pct: 0.030                        # unused; TP comes from EMA distance
+  require_trend: false
+  require_candlestick: false
+  require_macd: false
+  # Donchian-style fields (unused, kept for YAML loader)
+  donchian_period_entry: 80
+  donchian_period_exit: 20
+  regime_ema_period: 120
+  regime_slope_window: 30
+  slope_trend_threshold_pct: 0.03
+  atr_sl_multiple: 1.5
+  atr_tp_multiple: 1.5
+  atr_trail_multiple: 0.0
+
+sizing:
+  risk_per_trade_pct: 2.75      # match v1 and Donchian legs
+  leverage: 20                  # ceiling. Risk-based sizing → effective ~1.8×.
+
+execution:
+  # HYBRID enters at the breakdown bar's close — limit-only entry risks
+  # missing the move. Use market orders for entry.
+  order_type: market
+  limit_offset_bps: 0.0
+  limit_timeout_s: 20.0
+  poll_interval_s: 60           # 4h bars — same as Donchian
+  reconcile_on_boot: true
+
+# clientOrderId prefix — tags this leg's fills for attribution.
+# hedge.enabled is FALSE: sub-account deploy gives true per-bot isolation.
+hedge:
+  enabled: false
+  client_order_id_prefix: "snap-cnh-"
+
+deploy:
+  # If equity drops to this fraction of deploy_start_equity → HALT + flatten.
+  # 0.645 = -35.5% — match v1 and Donchian for portfolio-wide consistency.
+  kill_switch_equity_fraction: 0.645
+  daily_status_email_hour_utc: 0
+  # Below $100 USDT this leg's signals will skip in volume due to
+  # min-qty floor (0.001 BTC × $80-100k spot price). Phase 2 sizing
+  # audit verified this. Do NOT lower this number without re-running
+  # `tools/hybrid_friction_sizing.py`.
+  min_capital_warn_usdt: 100.0

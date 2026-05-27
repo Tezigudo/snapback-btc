@@ -102,6 +102,12 @@ INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
         "log_file":  REPO_ROOT / "logs" / "donchian.jsonl",
         "heartbeat": REPO_ROOT / "data" / "heartbeat_donchian",
     },
+    "cnh_short": {
+        "config":    REPO_ROOT / "config" / "params_cnh_hybrid_short.yaml",
+        "state_db":  REPO_ROOT / "data" / "state_cnh_short.db",
+        "log_file":  REPO_ROOT / "logs" / "cnh_short.jsonl",
+        "heartbeat": REPO_ROOT / "data" / "heartbeat_cnh_short",
+    },
 }
 
 # Console logs display in Bangkok time (GMT+7) for human readability.
@@ -197,6 +203,12 @@ class Bot:
         self.order_type = str(exec_cfg.get("order_type", "market")).lower()
         self.limit_offset_bps = float(exec_cfg.get("limit_offset_bps", 0.0))
         self.limit_timeout_s = float(exec_cfg.get("limit_timeout_s", 20.0))
+        # Entry timeframe from the params YAML — drives both fetch_ohlcv and
+        # the time-stop window. v1=15m, donchian=4h, cnh_short=4h. Defaulting
+        # to 15m preserves legacy behavior for any config that omits the block.
+        self.entry_tf = str((params.get("timeframes") or {}).get("entry", "15m"))
+        # parse_timeframe returns seconds — ccxt's standard converter.
+        self.bar_seconds = int(self.client.ex.parse_timeframe(self.entry_tf))
         self.leverage = int(params["sizing"]["leverage"])
         self.risk_pct = float(params["sizing"]["risk_per_trade_pct"])
         self.kill_fraction = float(params["deploy"]["kill_switch_equity_fraction"])
@@ -381,10 +393,13 @@ class Bot:
         if self.client.fetch_position(self.symbol).side != "flat":
             return
 
-        # 1500 bars (~15 days) covers v1 warmup (200-EMA + 50). v3 needs more
-        # for the 30-day daily ATR percentile gate; vol-regime will report
-        # NaN until ~30 days of accumulated data on the exchange side.
-        df = self.client.fetch_ohlcv(self.symbol, "15m", limit=1500)
+        # 1500 bars covers warmup on every supported timeframe:
+        #   15m → ~15 days (v1: 200-EMA + 50 warmup, vol-regime needs ~30d
+        #        of daily ATR — NaN until accumulated)
+        #   4h  → ~250 days (donchian-v3: 80-bar channel, cnh-hybrid: 200-bar
+        #        admission walk)
+        # Binance Futures klines cap at 1500/call so 1500 is also the ceiling.
+        df = self.client.fetch_ohlcv(self.symbol, self.entry_tf, limit=1500)
         if len(df) < 250:
             return
         last_ts = df.index[-1]
@@ -516,7 +531,10 @@ class Bot:
         if pos.side == "flat":
             return
         max_hold = int(self.params["strategy"]["max_hold_bars"])
-        max_hold_s = max_hold * 15 * 60
+        # max_hold_bars is in entry-TF bars, not 15m bars. Multiply by the
+        # entry timeframe's bar duration so 4h strategies don't time-stop 16×
+        # too early.
+        max_hold_s = max_hold * self.bar_seconds
         try:
             with sqlite3.connect(state.DB_PATH) as c:
                 row = c.execute(
