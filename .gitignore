@@ -47,3 +47,7 @@ build/
 
 # uv
 uv.lock
+
+# capitulation alert runtime state
+data/capitulation_alerts.json
+logs/capitulation_watch.log
