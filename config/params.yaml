@@ -26,7 +26,7 @@ timeframes:
 strategy:
   # RSI(14) — standard period (not RSI(2)!). Asymmetric thresholds.
   rsi_period: 14
-  rsi_long_threshold: 40        # buy when RSI(14) < 40 (oversold within uptrend)
+  rsi_long_threshold: 35        # buy when RSI(14) < 35 (was 40; 2026-05-29: OOS EV/trade +0.60% vs +0.35%, more robust in chop; RSI<30 worse — see snapback_v1_rsi_long_35_beats_40 memory)
   rsi_short_threshold: 70       # sell when RSI(14) > 70 (overbought within downtrend)
 
   # EMA on the ENTRY timeframe (15m). multifactor-v1 uses mf_trend_ema_period.
