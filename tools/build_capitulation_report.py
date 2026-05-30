@@ -46,16 +46,21 @@ def _backtest(restrict: bool):
     spans: dict[str, tuple] = {}
     for coin in cw.WATCHLIST:
         df = load_klines(f"{coin}/USDT:USDT", "1h", days_back=365 * 6)
-        if df is None or df.empty:
+        if df is None or df.empty or len(df) < cw.GAIN_WINDOW + cw.ATR_PERIOD + 5:
             continue
-        if restrict:
-            df = df[df.index >= RESEARCH_START]
+        # Enrich on FULL history first so SAR (path-dependent), ATR, and MACD
+        # are warm; then `restrict` filters by ENTRY DATE rather than slicing
+        # the frame — slicing first would cold-start the indicators and break
+        # the very parity the restricted run is meant to demonstrate.
         df = cw._enrich(df.iloc[:-1])
-        spans[coin] = (df.index.min(), df.index.max())
+        idx = df.index
+        spans[coin] = (idx.min(), idx.max())
         mask = cw._signal_mask(df).values
         cd, tr = -1, []
         for i in np.where(mask)[0]:
             if i < cd:
+                continue
+            if restrict and idx[i] < RESEARCH_START:
                 continue
             r = _sim(df, int(i))
             if r is None:
@@ -82,9 +87,11 @@ def main() -> int:
     res, _ = _backtest(restrict=True)
     A, R = _agg(full), _agg(res)
 
+    if not spans:
+        raise SystemExit("no coin data loaded — populate data/historical/*_1h.parquet first")
     g_start = min(s[0] for s in spans.values())
     g_end = max(s[1] for s in spans.values())
-    years = (g_end - g_start).days / 365.25
+    years = max((g_end - g_start).days / 365.25, 1 / 365.25)
 
     rows = ""
     for c in sorted(full, key=lambda k: -sum(full[k])):

@@ -40,7 +40,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -55,6 +55,9 @@ log = logging.getLogger("capitulation_watch")
 GAIN_WINDOW = 48          # bars (~48h) over which the drop is measured
 DROP_THRESHOLD = 0.15     # require <= -15% over the window
 CONFIRM_WINDOW = 3        # SAR flip and MACD cross must be within last N bars
+SCAN_LOOKBACK = 12        # live: catch signals up to N closed bars back, so a
+                          # cron outage of up to ~N hours doesn't lose a signal
+                          # (decoupled from CONFIRM_WINDOW, which gates the signal itself)
 SL_ATR_MULT = 2.0
 TP_ATR_MULT = 3.0
 TIME_STOP_BARS = 24
@@ -91,7 +94,7 @@ def _enrich(df: pd.DataFrame) -> pd.DataFrame:
 def _signal_mask(df: pd.DataFrame) -> pd.Series:
     """Boolean Series, True on each bar where the capitulation signal completes.
 
-    Mirrors long_signals() in /tmp/long_capitulation_walkforward.py exactly.
+    Mirrors the validated walk-forward signal; see reports/CAPITULATION_ALERT.html.
     """
     close = df["close"]
     gain = close / close.shift(GAIN_WINDOW) - 1.0
@@ -165,9 +168,10 @@ def _load_coin(coin: str, *, backfill: bool) -> pd.DataFrame | None:
 def scan(*, backfill: bool = False) -> list[dict]:
     """Return every signal across the watchlist.
 
-    Live mode reports only signals on the most recent CONFIRM_WINDOW closed
-    bars (so a brief cron outage doesn't lose a fresh signal). Backfill mode
-    reports every historical signal — used for reproduction and the report.
+    Live mode reports only signals on the most recent SCAN_LOOKBACK closed
+    bars (so a cron outage of up to ~SCAN_LOOKBACK hours doesn't lose a fresh
+    signal). Backfill mode reports every historical signal — used for
+    reproduction and the report.
     """
     hits: list[dict] = []
     for coin in WATCHLIST:
@@ -180,7 +184,7 @@ def scan(*, backfill: bool = False) -> list[dict]:
         if backfill:
             idxs = list(df.index[mask])
         else:
-            recent = df.index[-CONFIRM_WINDOW:]
+            recent = df.index[-SCAN_LOOKBACK:]
             idxs = [ts for ts in df.index[mask] if ts in recent]
 
         for ts in idxs:
@@ -228,8 +232,9 @@ def run(*, dry_run: bool, backfill: bool) -> int:
         if _in_cooldown(last, bar_ts):
             log.info("%s: signal at %s suppressed (cooldown)", coin, bar_ts)
             continue
-        if last and pd.Timestamp(last) >= bar_ts:
-            continue  # already alerted this bar or newer
+        # NOTE: the cooldown check above already covers "already alerted this
+        # bar or newer" (a last >= bar_ts implies a <48h gap), so no separate
+        # — and crash-prone — re-parse of `last` is needed here.
 
         subject, body = _format_alert(hit)
         if dry_run:
@@ -237,6 +242,10 @@ def run(*, dry_run: bool, backfill: bool) -> int:
         else:
             ok = send_alert(subject, body, tag="snapback-capitulation")
             log.info("%s: alert %s (bar %s)", coin, "sent" if ok else "FAILED", bar_ts)
+            if not ok:
+                # Do NOT advance state on a failed send, or the signal is lost
+                # forever; leave it un-recorded so the next run retries.
+                continue
             state.setdefault(coin, {})["last_alert_ts"] = bar_ts.isoformat()
         fired += 1
 
