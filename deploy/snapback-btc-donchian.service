@@ -1,32 +1,32 @@
 [Unit]
-Description=snapback-btc Donchian-v3 cons leg (4h, parallel with v1)
+Description=snapback-btc Donchian-v3 leg (BTC/USDT perp)
 After=network-online.target snapback-btc.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=snapback
-Group=snapback
+User=root
 WorkingDirectory=/root/snapback-btc
-# IMPORTANT: this MUST point at the sub-account's env file with its own
-# BINANCE_API_KEY / BINANCE_API_SECRET. The main account's keys won't have
-# access to the sub-account's wallet.
-EnvironmentFile=/root/snapback-btc/.env.donchian
-# Donchian leg uses its own config, state.db, log, and heartbeat — all derived
-# from --instance donchian. Runs on a separate Binance sub-account (creds in
-# /root/snapback-btc/.env.donchian) so it cannot conflict with v1's positions.
+# `--instance donchian` makes the bot load /root/snapback-btc/.env.donchian
+# (override=True) on top of the base .env. That file MUST hold the donchian
+# sub-account's own BINANCE_API_KEY / BINANCE_API_SECRET — the main account's
+# keys can't reach the sub-account wallet. The bot loads it itself, so no
+# systemd EnvironmentFile is used.
 ExecStart=/root/snapback-btc/.venv/bin/python -m bot --instance donchian
+# on-failure, NOT always: clean /halt and kill-switch flatten exit 0 and must
+# stay down. RestartSec gives the API a breather between crash retries.
 Restart=on-failure
 RestartSec=10
-StandardOutput=append:/var/log/snapback-btc/donchian_stdout.log
-StandardError=append:/var/log/snapback-btc/donchian_stderr.log
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=snapback-donchian
 
 # Hardening
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/root/snapback-btc/data /root/snapback-btc/logs /root/snapback-btc/reports /var/log/snapback-btc
+ReadWritePaths=/root/snapback-btc/data /root/snapback-btc/logs /root/snapback-btc/reports
+# ProtectHome intentionally unset (deploy lives under /root).
 
 [Install]
 WantedBy=multi-user.target

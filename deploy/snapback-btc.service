@@ -1,26 +1,36 @@
 [Unit]
-Description=snapback-btc Binance Futures BTC perp bot
+Description=snapback-btc multifactor-v1 leg (BTC/USDT perp, 15m)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=snapback
-Group=snapback
-WorkingDirectory=/opt/snapback-btc
-EnvironmentFile=/etc/snapback-btc/.env
-ExecStart=/opt/snapback-btc/.venv/bin/python /opt/snapback-btc/bot.py
+User=root
+WorkingDirectory=/root/snapback-btc
+# The bot self-loads its env: exchange.env calls load_dotenv() on
+# /root/snapback-btc/.env at import, and `--instance v1` overlays .env.v1 if
+# present (none today, so v1 runs on the base .env / main account). No systemd
+# EnvironmentFile is needed or wanted (avoids dotenv-vs-systemd parse drift).
+#
+# LIVE: there is deliberately NO --dry-run flag here. The bot ALSO honors
+# DRY_RUN=1 from .env — so to keep paper-trading, set DRY_RUN=1 in
+# /root/snapback-btc/.env rather than relying on a CLI flag.
+ExecStart=/root/snapback-btc/.venv/bin/python -m bot --instance v1
+# on-failure, NOT always: the bot returns 0 on a clean /halt (data/HALT) or a
+# kill-switch flatten. Restart=always would resurrect a deliberately-halted bot.
 Restart=on-failure
 RestartSec=10
-StandardOutput=append:/var/log/snapback-btc/stdout.log
-StandardError=append:/var/log/snapback-btc/stderr.log
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=snapback-v1
 
 # Hardening
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/opt/snapback-btc/data /opt/snapback-btc/logs /opt/snapback-btc/reports /var/log/snapback-btc
+ReadWritePaths=/root/snapback-btc/data /root/snapback-btc/logs /root/snapback-btc/reports
+# ProtectHome is intentionally NOT set: the deploy lives under /root, which
+# ProtectHome=true would make inaccessible to its own service.
 
 [Install]
 WantedBy=multi-user.target
