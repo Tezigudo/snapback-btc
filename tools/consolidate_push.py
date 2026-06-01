@@ -32,7 +32,16 @@ log = logging.getLogger(__name__)
 # instance needs a DISTINCT source so the dashboard can show them as separate
 # bot cards. Default is "snapback-btc" (the original v1 leg, unchanged).
 # The Donchian leg sets CONSOLIDATE_SOURCE=snapback-btc-donchian in its env.
-SOURCE = (os.environ.get("CONSOLIDATE_SOURCE") or "snapback-btc").strip()
+#
+# Read at CALL time, NOT import time. bot.py imports this module at top level,
+# but load_env_for_instance() overlays the per-instance .env INSIDE main() —
+# AFTER this import. A module-level constant would freeze to the default, so
+# every leg (donchian, cnh_short, …) would push under "snapback-btc" and
+# collide on one dashboard card. Reading os.environ live fixes that.
+def _source() -> str:
+    return (os.environ.get("CONSOLIDATE_SOURCE") or "snapback-btc").strip()
+
+
 DEFAULT_TIMEOUT_S = 3.0
 DEFAULT_BATCH_LIMIT = 50
 
@@ -48,12 +57,12 @@ def is_configured() -> bool:
     return url is not None and token is not None
 
 
-def _build_event(row_id: int, kind: str, payload_str: str) -> dict[str, Any]:
+def _build_event(row_id: int, kind: str, payload_str: str, source: str) -> dict[str, Any]:
     """Translate an outbox row into the /bot-event JSON shape."""
     body = json.loads(payload_str)
     return {
-        "source": SOURCE,
-        "external_id": f"{SOURCE}:{row_id}",
+        "source": source,
+        "external_id": f"{source}:{row_id}",
         "bot_ts_ms": int(body.get("bot_ts_ms", 0)),
         "kind": kind,
         "signal_id": body.get("signal_id"),
@@ -81,11 +90,12 @@ def drain(limit: int = DEFAULT_BATCH_LIMIT, timeout_s: float = DEFAULT_TIMEOUT_S
     if not rows:
         return {"sent": 0, "pending": 0}
 
+    source = _source()
     events: list[dict[str, Any]] = []
     ids: list[int] = []
     for row_id, kind, payload_str, _attempts in rows:
         try:
-            events.append(_build_event(row_id, kind, payload_str))
+            events.append(_build_event(row_id, kind, payload_str, source))
             ids.append(row_id)
         except Exception as e:
             # Malformed payload — should never happen, but tolerate. Mark this
@@ -144,7 +154,7 @@ def drain(limit: int = DEFAULT_BATCH_LIMIT, timeout_s: float = DEFAULT_TIMEOUT_S
     success_ids: list[int] = []
     failed_ids: list[int] = []
     for row_id in ids:
-        ext_id = f"{SOURCE}:{row_id}"
+        ext_id = f"{source}:{row_id}"
         if ext_id in error_external_ids:
             failed_ids.append(row_id)
         else:
