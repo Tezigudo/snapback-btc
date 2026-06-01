@@ -112,7 +112,7 @@ def render_html(db: dict, logs: list[dict]) -> str:
     cur_equity = last_eq_after if last_eq_after is not None else deploy_start_eq
     pnl_pct = ((cur_equity / deploy_start_eq) - 1) * 100 if deploy_start_eq else 0.0
     pnl_usd = cur_equity - deploy_start_eq if deploy_start_eq else 0.0
-    kill_threshold = deploy_start_eq * 0.82 if deploy_start_eq else 0.0
+    kill_threshold = deploy_start_eq * 0.645 if deploy_start_eq else 0.0
 
     if alive:
         status_label, status_class = "ALIVE", "ok"
