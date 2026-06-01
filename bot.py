@@ -284,8 +284,16 @@ class Bot:
             )
             start_eq = equity
         else:
+            drift = equity / start_eq - 1
             self.log.info("Resuming deploy. start=%.2f current=%.2f (%+.2f%%)",
-                          start_eq, equity, (equity/start_eq - 1) * 100)
+                          start_eq, equity, drift * 100)
+            if abs(drift) > 0.5:
+                self.log.warning(
+                    "ANCHOR DRIFT >50%%: deploy_start_equity=%.2f but current=%.2f. "
+                    "Possible stale anchor from a prior deploy. Kill-switch level "
+                    "and dashboard headroom will be wrong until reset.",
+                    start_eq, equity,
+                )
 
         # Push a boot event to consolidate so the dashboard knows the bot
         # is alive and which strategy/env it's running. The deploy-start
