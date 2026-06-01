@@ -108,6 +108,16 @@ INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
         "log_file":  REPO_ROOT / "logs" / "cnh_short.jsonl",
         "heartbeat": REPO_ROOT / "data" / "heartbeat_cnh_short",
     },
+    # NEW LEG (2026-05-30): SOL cnh-hybrid-short. Validated Phase 1-5 on SOL
+    # (memory: snapback-sol-hybrid-short-phase2to5). BLOCKED until risk.py
+    # ALLOWED_SYMBOLS includes "SOL/USDT:USDT" — check_symbol() runs at startup
+    # so this gate blocks even --dry-run. Tier-3 edit (RISK_REVIEW=1 + user OK).
+    "cnh_short_sol": {
+        "config":    REPO_ROOT / "config" / "params_cnh_hybrid_short_sol.yaml",
+        "state_db":  REPO_ROOT / "data" / "state_cnh_short_sol.db",
+        "log_file":  REPO_ROOT / "logs" / "cnh_short_sol.jsonl",
+        "heartbeat": REPO_ROOT / "data" / "heartbeat_cnh_short_sol",
+    },
 }
 
 # Console logs display in Bangkok time (GMT+7) for human readability.

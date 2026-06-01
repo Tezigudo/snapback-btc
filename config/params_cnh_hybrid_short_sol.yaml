@@ -1,0 +1,123 @@
+# Tunable strategy params for cnh-hybrid-short-v1 on SOL — a NEW LEG.
+# Copy of config/params_cnh_hybrid_short.yaml (BTC) with ONLY the symbol,
+# capital floor, and order-id prefix changed. The strategy params are IDENTICAL
+# and stay locked — the validation transfers the BTC-tuned signal to SOL.
+#
+# Validated 2026-05-30 (this session):
+#   Phase 1 gate (tools/cross_coin_backtest.py): SOL OOS +42.44%, 4/4 windows
+#     positive, worst window +3.48% (best of any candidate). Reproduced exactly.
+#   Phase 2 friction (tools/sol_hybrid_phase2to5.py): survives 30 bps (+37%).
+#   Phase 3 sizing: 100% of trades kept at $25/leg — SOL min-notional is $5
+#     (vs BTC $50) and min-qty 0.01 SOL (~$2, vs 0.001 BTC ~$100). SOL is the
+#     CAPITAL-EFFICIENT leg: NO $100/leg floor like BTC has.
+#   Phase 4 diversification: corr vs BTC hybrid-short window returns = -0.03.
+#   Phase 5 dedup: dedup=15 (only dedup with positive IS) — same as BTC.
+#   See memory: snapback-sol-hybrid-short-phase2to5.
+#
+# CAVEATS (carry these into the dry run): 19 OOS trades = thin sample;
+# SOL's 2022 bear is in-sample, so worst-case SOL drawdown is UNTESTED OOS.
+#
+# DEPLOY GATE: requires risk.py ALLOWED_SYMBOLS to include "SOL/USDT:USDT"
+# (a Tier-3 edit needing RISK_REVIEW=1 + explicit user authorization).
+# check_symbol() runs at bot startup, so this gate blocks even --dry-run.
+
+symbol: SOL/USDT:USDT
+
+# cnh-hybrid-short-v1 strategy — DT + ICnH pattern union on 4h.
+strategy_name: cnh-hybrid-short-v1
+
+timeframes:
+  entry: 4h           # pattern detection runs on 4h
+  trend: 4h           # single-TF
+
+strategy:
+  # HYBRID pattern detector knobs — read by strategy/live_cnh_hybrid_short.py
+  # via _cfg_from_params. Defaults in HybridConfig match these but YAML wins.
+
+  # Distribution-top (DT) detector
+  uptrend_bars: 16
+  chop_bars: 8
+  min_rise_pct: 2.5
+  max_chop_ratio: 0.55
+  require_chop_at_top: true
+  breakdown_mode: "chop_low_or_ema24"
+
+  # Inverse cup-and-handle (ICnH) detector
+  cup_len: 20
+  handle_len: 4
+  min_r2: 0.50
+  min_cup_depth_atr: 1.0
+  handle_max_depth_frac: 0.70
+  peak_tolerance: 6
+  entry_max_bars_after_handle: 8
+
+  # Entry trigger / SL / TP
+  entry_emas: ["ema24"]
+  sl_atr_mult: 1.5
+  tp_emas: ["ema100"]
+  atr_period: 14
+
+  # Pattern-level dedup (Phase 5 winner = 15: best Sharpe lift + best WR).
+  dedup_bars: 15
+
+  # Time stop — flatten after 96 bars (16 days on 4h) if neither SL nor TP fires.
+  time_stop_bars: 96
+  max_hold_bars: 96
+
+  # v1-style fields kept for YAML loader compatibility — unused by HYBRID
+  rsi_period: 14
+  rsi_long_threshold: 40
+  rsi_short_threshold: 70
+  ema_period: 200
+  mf_trend_ema_period: 200
+  volume_ma_period: 20
+  volume_multiple: 1.0
+  funding_extreme_threshold: 0.0005
+  require_funding_not_extreme: false   # HYBRID does NOT use funding gate
+  funding_long_max: -0.0003
+  funding_short_min: 0.0003
+  sl_pct: 0.015                        # unused; SL comes from sl_atr_mult * ATR
+  tp_pct: 0.030                        # unused; TP comes from EMA distance
+  require_trend: false
+  require_candlestick: false
+  require_macd: false
+  # Donchian-style fields (unused, kept for YAML loader)
+  donchian_period_entry: 80
+  donchian_period_exit: 20
+  regime_ema_period: 120
+  regime_slope_window: 30
+  slope_trend_threshold_pct: 0.03
+  atr_sl_multiple: 1.5
+  atr_tp_multiple: 1.5
+  atr_trail_multiple: 0.0
+
+sizing:
+  # 2026-05-30 user decision: run this leg at 5% (aggressive end of sane range).
+  # Risk sweep (tools/sol_risk_sweep.py): 5% -> full-hist CAGR +7.8%, OOS ~+2.36%/mo,
+  # maxDD -32%. WARNING: -32% backtested DD is only ~3.5pp from the -35.5% kill
+  # switch below — live (slippage + untested SOL bear regime) could trip it.
+  # A stopped trade loses ~= risk% of equity, so a loss here is ~-5% of the leg.
+  # Was 2.75% (matched v1/Donchian for portfolio consistency); 5% breaks that
+  # parity on purpose to lean into the validated engine. Do NOT raise above 5%
+  # without re-running the sweep — 8% hits -47% DD, 11% trips the kill.
+  risk_per_trade_pct: 5.0
+  leverage: 20                  # ceiling. Risk-based sizing → effective ~1.1× at 5%.
+
+execution:
+  order_type: market
+  limit_offset_bps: 0.0
+  limit_timeout_s: 20.0
+  poll_interval_s: 60           # 4h bars — same as BTC cnh_short
+  reconcile_on_boot: true
+
+# clientOrderId prefix — tags this leg's fills for attribution.
+hedge:
+  enabled: false
+  client_order_id_prefix: "snap-cnh-sol-"
+
+deploy:
+  kill_switch_equity_fraction: 0.645   # -35.5%, portfolio-wide consistency
+  daily_status_email_hour_utc: 0
+  # SOL min-notional is $5 (vs BTC $50) — Phase 3 verified 100% of trades keep
+  # at $25/leg. This leg does NOT have BTC's $100/leg floor. Set warn at $25.
+  min_capital_warn_usdt: 25.0
