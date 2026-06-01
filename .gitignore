@@ -51,3 +51,9 @@ uv.lock
 # capitulation alert runtime state
 data/capitulation_alerts.json
 logs/capitulation_watch.log
+
+# research data dumps + experiment outputs (regenerable, large — never commit)
+data/pumpfade/
+data/*_results.json
+data/*_result.json
+reports/*.csv
