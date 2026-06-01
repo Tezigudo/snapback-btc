@@ -67,16 +67,20 @@ from strategy.signals_multifactor_tuned import (
     V1Floor010,
 )
 # Resurrected 2026-05-23 for v1+Donchian parallel-deploy backtest.
-from strategy.signals_donchian import DonchianBreakoutBTCv3, attach_donchian
+from strategy.signals_donchian import (
+    DonchianBreakoutBTCv3, DonchianRiderV1,
+    attach_donchian, attach_rider,
+)
 
 # multifactor-v1/v2/v3 use a single entry TF (15m); no second-TF prep required.
-# Donchian-v3 is single-TF too (entry_tf == channel TF, typically 4h).
+# Donchian-v3 and rider-v1 are single-TF (entry_tf == channel TF, typically 4h).
 _TF_AGNOSTIC_STRATEGIES = {
     "multifactor-v1",
     "multifactor-v2-loose", "multifactor-v2-strict",
     "multifactor-v3", "v3-dist-ema-only", "v3-vol-regime-only",
     "v3-atr-stops-only", "v3-all",
     "donchian-v3",
+    "rider-v1",
 }
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
@@ -137,6 +141,8 @@ STRATEGIES: dict[str, type[Strategy]] = {
     "v1-deluxe": V1Deluxe,
     # Resurrected 2026-05-23.
     "donchian-v3": DonchianBreakoutBTCv3,
+    # 2026-05-30: 4h native trend-rider (long-only, fixed TP bracket).
+    "rider-v1": DonchianRiderV1,
 }
 
 # No strategy in the current codebase needs regime columns.
@@ -144,6 +150,8 @@ _REGIME_STRATEGIES: set[str] = set()
 # Donchian-v3 needs DonchianUpper/Lower/ExitUpper/ExitLower + ATR_1h columns
 # attached to the entry-TF frame by attach_donchian().
 _DONCHIAN_STRATEGIES: set[str] = {"donchian-v3"}
+# rider-v1 needs native-4h RiderDonHi/RiderEma/RiderAtr attached by attach_rider().
+_RIDER_STRATEGIES: set[str] = {"rider-v1"}
 
 
 # --- Funding accounting ------------------------------------------------------
@@ -280,17 +288,32 @@ def _prepare_tf_agnostic_data(
     donchian_entry: int = 20,
     donchian_exit: int = 10,
     atr_period: int = 20,
+    with_rider: bool = False,
+    rider_donchian_n: int = 55,
+    rider_atr_period: int = 14,
+    rider_ema_period: int = 200,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Pull klines at entry_tf + funding; attach Donchian channels (computed
     on the SAME entry_tf — single-TF Donchian, not multi-TF) if requested.
+    For rider-v1 (with_rider=True), attaches native-4h RiderDonHi/RiderEma/RiderAtr.
 
-    Returns (prepared_df, funding_in_span). Used for carry + donchian
+    Returns (prepared_df, funding_in_span). Used for carry + donchian + rider
     backtests when entry_tf != 15m, where snapback's 15m+1h prep doesn't
     apply.
     """
     # Warm-up buffer: enough bars for the longest indicator window.
-    # donchian_entry bars at entry_tf is the binding constraint.
-    warmup_bars = max(donchian_entry, atr_period) * 3
+    # rider-v1 needs EMA200 (binding constraint = 200 bars * 3 slack).
+    # donchian_entry bars at entry_tf is the standard constraint.
+    if with_rider:
+        # rider-v1: compute indicators on exactly the visible window (no pre-roll).
+        # This matches the standalone validator (rider_port_validate) which slices
+        # first then computes EMA/DonHi/ATR on the slice.  Pre-rolling would warm
+        # EMA200 earlier than the standalone does, adding spurious early-window
+        # trades and inflating trade counts / WR.  NaN bars at the head are skipped
+        # by the isfinite guard in DonchianRiderV1.next().
+        warmup_bars = 0
+    else:
+        warmup_bars = max(donchian_entry, atr_period) * 3
     tf_minutes = {"1m": 1, "5m": 5, "15m": 15, "30m": 30,
                   "1h": 60, "2h": 120, "4h": 240, "1d": 1440}.get(entry_tf, 15)
     warmup = timedelta(minutes=warmup_bars * tf_minutes)
@@ -313,6 +336,13 @@ def _prepare_tf_agnostic_data(
             period_entry=donchian_entry,
             period_exit=donchian_exit,
             atr_period=atr_period,
+        )
+    if with_rider:
+        prepared = attach_rider(
+            prepared,
+            donchian_n=rider_donchian_n,
+            atr_period=rider_atr_period,
+            ema_period=rider_ema_period,
         )
 
     naive_start = start.replace(tzinfo=None) if start.tzinfo else start
@@ -432,13 +462,17 @@ def run_backtest(
                                 getattr(cls, "donchian_period_exit", 10))
 
         if timeframe != "15m" and strategy_name in _TF_AGNOSTIC_STRATEGIES:
-            # Single-TF prep: carry / donchian on arbitrary entry timeframe.
+            # Single-TF prep: carry / donchian / rider on arbitrary entry timeframe.
             data, funding_in_span = _prepare_tf_agnostic_data(
                 symbol, timeframe, start, end,
                 with_donchian=(strategy_name in _DONCHIAN_STRATEGIES),
                 donchian_entry=donchian_entry,
                 donchian_exit=donchian_exit,
                 atr_period=params.atr_period,
+                with_rider=(strategy_name in _RIDER_STRATEGIES),
+                rider_donchian_n=getattr(cls, "rider_donchian_n", 55),
+                rider_atr_period=getattr(cls, "rider_atr_period", 14),
+                rider_ema_period=getattr(cls, "rider_ema_period", 200),
             )
         else:
             if timeframe != "15m":

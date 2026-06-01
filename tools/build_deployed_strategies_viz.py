@@ -28,6 +28,9 @@ from strategy.live_donchian_v3 import (  # noqa: E402
     _ema_slope_signed, evaluate_signal_donchian_v3,
 )
 from strategy.live_multifactor_v1 import evaluate_signal  # noqa: E402
+from strategy.live_cnh_hybrid_short import (  # noqa: E402
+    evaluate_signal_cnh_hybrid_short,
+)
 from strategy.indicators import atr as _atr_helper  # noqa: E402
 from strategy.indicators import ema as _ema_helper  # noqa: E402
 from strategy.indicators import rsi as _rsi_helper  # noqa: E402
@@ -37,7 +40,7 @@ DATA = ROOT / "data" / "historical"
 OUT = ROOT / "DEPLOYED_STRATEGIES.html"
 
 DAYS_15M = 30   # 30 days of 15m bars for v1 chart
-DAYS_4H = 120   # 120 days of 4h bars for donchian chart
+DAYS_4H = 120   # 120 days of 4h bars for donchian + cnh-hybrid chart
 
 
 def load_data():
@@ -128,6 +131,74 @@ def scan_donchian(df4h: pd.DataFrame, params: dict, days: int) -> list[dict]:
             "slope": float(dbg["slope"]) if dbg.get("slope") is not None else None,
         })
     return fires
+
+
+def scan_cnh_hybrid_short(df4h: pd.DataFrame, params: dict, days: int) -> list[dict]:
+    """Replay the live cnh-hybrid-short evaluator bar-by-bar over the recent
+    window, dedup consecutive same-side fires, return a list of fire dicts.
+    """
+    end_ts = df4h.index[-1]
+    start_ts = end_ts - pd.Timedelta(days=days)
+    # Needs 250+ bars of warmup (EMA200 + cup_len + handle_len + buffer).
+    warm = 260
+    warm_start = df4h.index[max(0, df4h.index.get_indexer([start_ts], method="bfill")[0] - warm)]
+    sub = df4h.loc[warm_start:end_ts].rename(columns=str.capitalize)
+
+    fires: list[dict] = []
+    last_pattern_idx: int | None = None
+    for i in range(warm, len(sub)):
+        slice_df = sub.iloc[:i + 1]
+        ts = sub.index[i]
+        if ts < start_ts:
+            continue
+        side, sl_d, tp_d, dbg = evaluate_signal_cnh_hybrid_short(slice_df, 0.0, params)
+        if side is None:
+            continue
+        # Dedup at the pattern-bar level — evaluator already does pattern-level
+        # dedup, but multiple bars within an ICnH lookback can all fire if the
+        # admitted ICnH pattern's bar is within entry_max_bars_after_handle.
+        pattern_bar_str = dbg.get("pattern_bar") or dbg.get("ts")
+        if pattern_bar_str == last_pattern_idx:
+            continue
+        last_pattern_idx = pattern_bar_str
+        fires.append({
+            "ts": ts, "side": side,
+            "price": float(dbg["close"]),
+            "ema24": float(dbg["ema24"]),
+            "ema100": float(dbg["ema100"]),
+            "atr": float(dbg["atr"]),
+            "sl_dist": float(sl_d), "tp_dist": float(tp_d),
+            "pattern": dbg.get("pattern", "?"),
+            "pattern_bar": dbg.get("pattern_bar", ""),
+        })
+    return fires
+
+
+def build_cnh_chart_data(df4h: pd.DataFrame, params: dict, days: int) -> dict:
+    """4h candles + EMA(24)/EMA(100)/EMA(200) overlays + ATR(14) panel.
+    The EMA stack is the visual proxy for the regime context the
+    cnh-hybrid-short detectors operate in (uptrend → chop → breakdown for DT;
+    cup → handle → cross for ICnH)."""
+    end_ts = df4h.index[-1]
+    start_ts = end_ts - pd.Timedelta(days=days)
+    warm_start = start_ts - pd.Timedelta(days=40)
+    sub = df4h.loc[warm_start:end_ts].copy()
+    sub["ema24"] = _ema_helper(sub["close"], 24)
+    sub["ema100"] = _ema_helper(sub["close"], 100)
+    sub["ema200"] = _ema_helper(sub["close"], 200)
+    sub["atr14"] = _atr_helper(sub["high"], sub["low"], sub["close"], 14)
+    sub = sub.loc[start_ts:]
+    return {
+        "ts": [t.isoformat() for t in sub.index],
+        "open": sub["open"].round(2).tolist(),
+        "high": sub["high"].round(2).tolist(),
+        "low": sub["low"].round(2).tolist(),
+        "close": sub["close"].round(2).tolist(),
+        "ema24": sub["ema24"].round(2).tolist(),
+        "ema100": sub["ema100"].round(2).tolist(),
+        "ema200": sub["ema200"].round(2).tolist(),
+        "atr14": sub["atr14"].round(2).tolist(),
+    }
 
 
 def build_v1_chart_data(df15: pd.DataFrame, funding: pd.DataFrame,
@@ -221,11 +292,28 @@ def fmt_signal_annot(fire: dict, kind: str) -> dict:
             "color": color, "symbol": symbol, "label": label, "side": fire["side"]}
 
 
-def build_html(v1_chart: dict, don_chart: dict,
+def build_html(v1_chart: dict, don_chart: dict, cnh_chart: dict,
                v1_fires: list[dict], don_fires: list[dict],
-               v1_params: dict, don_params: dict) -> str:
+               cnh_fires: list[dict],
+               v1_params: dict, don_params: dict, cnh_params: dict) -> str:
     v1_annots = [fmt_signal_annot(f, "v1") for f in v1_fires]
     don_annots = [fmt_signal_annot(f, "don") for f in don_fires]
+    cnh_annots = [fmt_signal_annot(f, "cnh") for f in cnh_fires]
+
+    cnh_fires_table = "\n".join(
+        f"<tr><td>{f['ts'].strftime('%Y-%m-%d %H:%M')} UTC</td>"
+        f"<td style='color:#c62828;font-weight:600'>SHORT</td>"
+        f"<td><b>{f['pattern']}</b></td>"
+        f"<td class='num'>${f['price']:,.0f}</td>"
+        f"<td class='num'>${f['ema24']:,.0f}</td>"
+        f"<td class='num'>${f['ema100']:,.0f}</td>"
+        f"<td class='num'>${f['atr']:,.0f}</td>"
+        f"<td class='num'>${f['sl_dist']:,.0f}</td>"
+        f"<td class='num'>${f['tp_dist']:,.0f}</td></tr>"
+        for f in cnh_fires
+    )
+    if not cnh_fires_table:
+        cnh_fires_table = "<tr><td colspan='9' style='text-align:center;color:#999'>No signals in this window — cnh-hybrid-short fires ~7–10 times per year by design.</td></tr>"
 
     v1_fires_table = "\n".join(
         f"<tr><td>{f['ts'].strftime('%Y-%m-%d %H:%M')} UTC</td>"
@@ -258,6 +346,7 @@ def build_html(v1_chart: dict, don_chart: dict,
 
     v1_s = v1_params["strategy"]
     don_s = don_params["strategy"]
+    cnh_s = cnh_params.get("strategy", {})
 
     return f"""<!doctype html>
 <html><head><meta charset="utf-8">
@@ -282,6 +371,7 @@ def build_html(v1_chart: dict, don_chart: dict,
               text-transform: uppercase; }}
   .leg-v1 {{ background: #1976d2; color: white; }}
   .leg-don {{ background: #f57c00; color: white; }}
+  .leg-cnh {{ background: #00838f; color: white; }}
   .leg-both {{ background: #6a1b9a; color: white; }}
   table {{ border-collapse: collapse; width: 100%; background: #fff; margin: 8px 0; }}
   th, td {{ padding: 8px 12px; border-bottom: 1px solid #eee; text-align: left; }}
@@ -290,6 +380,7 @@ def build_html(v1_chart: dict, don_chart: dict,
   .gate-box {{ background: #f9f9f9; border-left: 3px solid #1976d2;
                padding: 8px 14px; margin: 6px 0; font-size: 13px; }}
   .gate-box.don {{ border-left-color: #f57c00; }}
+  .gate-box.cnh {{ border-left-color: #00838f; }}
   .gate-name {{ font-weight: 700; color: #444; }}
   .gate-rule {{ color: #666; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }}
   .thesis-box {{ background: #f1f8e9; border-left: 3px solid #2e7d32;
@@ -307,22 +398,61 @@ def build_html(v1_chart: dict, don_chart: dict,
 <body>
 
 <h1>Snapback BTC — Deployed Strategies</h1>
-<p class="sub">How the two live bots make decisions. As of {pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M')} UTC.
-Each strategy runs in its own Binance sub-account, isolated wallet, $50.50 leg, dry-run.</p>
+<p class="sub">How the three live bots make decisions. As of {pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M')} UTC.
+Each strategy runs in its own Binance sub-account, isolated wallet, dry-run.
+The newest leg — <span class="leg-tag leg-cnh">cnh-hybrid-short</span> —
+went live 2026-05-27 on the third sub-account.</p>
 
-<h2>The pair, at a glance</h2>
+<h2>The trio, at a glance</h2>
 <table class="compare-table">
-<tr><th></th><th><span class="leg-tag leg-v1">multifactor-v1</span></th><th><span class="leg-tag leg-don">donchian-v3 cons</span></th></tr>
-<tr><th>Live file</th><td><code>strategy/live_multifactor_v1.py</code></td><td><code>strategy/live_donchian_v3.py</code></td></tr>
-<tr><th>Config</th><td><code>config/params.yaml</code></td><td><code>config/params_donchian.yaml</code></td></tr>
-<tr><th>Signal class</th><td>Mean reversion <i>within</i> trend</td><td>Breakout follow-through</td></tr>
-<tr><th>Timeframe</th><td>15-minute bars</td><td>4-hour bars</td></tr>
-<tr><th>Time-stop</th><td>{v1_s['time_stop_bars']} bars = 14 days</td><td>{don_s['time_stop_bars']} bars = 8 days</td></tr>
-<tr><th>SL method</th><td>Fixed % ({v1_s['sl_pct']*100:.1f}%)</td><td>{don_s['atr_sl_multiple']}× ATR(20)</td></tr>
-<tr><th>TP method</th><td>Fixed % ({v1_s['tp_pct']*100:.1f}%, 2:1 R:R)</td><td>5× ATR(20) (~3.3:1 R:R)</td></tr>
-<tr><th>Hit rate (backtest)</th><td>~55%</td><td>~40%</td></tr>
-<tr><th>Fires/year (live estimate)</th><td>~100</td><td>~25</td></tr>
-<tr><th>Live P&amp;L correlation</th><td colspan="2" style="text-align:center"><b>−0.01</b> (essentially zero — true diversification)</td></tr>
+<tr><th></th>
+  <th><span class="leg-tag leg-v1">multifactor-v1</span></th>
+  <th><span class="leg-tag leg-don">donchian-v3 cons</span></th>
+  <th><span class="leg-tag leg-cnh">cnh-hybrid-short-v1</span></th></tr>
+<tr><th>Live file</th>
+  <td><code>strategy/live_multifactor_v1.py</code></td>
+  <td><code>strategy/live_donchian_v3.py</code></td>
+  <td><code>strategy/live_cnh_hybrid_short.py</code></td></tr>
+<tr><th>Config</th>
+  <td><code>config/params.yaml</code></td>
+  <td><code>config/params_donchian.yaml</code></td>
+  <td><code>config/params_cnh_hybrid_short.yaml</code></td></tr>
+<tr><th>Signal class</th>
+  <td>Mean reversion <i>within</i> trend</td>
+  <td>Breakout follow-through</td>
+  <td>Pattern-based short (DT + ICnH)</td></tr>
+<tr><th>Direction</th>
+  <td>Long &amp; short</td>
+  <td>Long &amp; short</td>
+  <td>Short-only</td></tr>
+<tr><th>Timeframe</th>
+  <td>15-minute bars</td>
+  <td>4-hour bars</td>
+  <td>4-hour bars</td></tr>
+<tr><th>Time-stop</th>
+  <td>{v1_s['time_stop_bars']} bars = 14 days</td>
+  <td>{don_s['time_stop_bars']} bars = 8 days</td>
+  <td>{cnh_s.get('max_hold_bars', 96)} bars = 16 days</td></tr>
+<tr><th>SL method</th>
+  <td>Fixed % ({v1_s['sl_pct']*100:.1f}%)</td>
+  <td>{don_s['atr_sl_multiple']}× ATR(20)</td>
+  <td>1.5× ATR(14)</td></tr>
+<tr><th>TP method</th>
+  <td>Fixed % ({v1_s['tp_pct']*100:.1f}%, 2:1 R:R)</td>
+  <td>5× ATR(20) (~3.3:1 R:R)</td>
+  <td>Distance to EMA(100) (skip if EMA100 ≥ entry)</td></tr>
+<tr><th>Hit rate (backtest)</th>
+  <td>~55%</td>
+  <td>~40%</td>
+  <td>~60% (sparse but high-quality fires)</td></tr>
+<tr><th>Fires/year (live estimate)</th>
+  <td>~100</td>
+  <td>~25</td>
+  <td>~9</td></tr>
+<tr><th>Phase-1 OOS cum (BTC)</th>
+  <td>+21.5%</td>
+  <td>-26.9% (overfit warning)</td>
+  <td>+18.8% (3/4 windows positive)</td></tr>
 </table>
 
 <h2><span class="leg-tag leg-v1">multifactor-v1</span> Confluence on 15-minute bars</h2>
@@ -445,29 +575,205 @@ Triangles mark actual signal fires from the live evaluator over this window.</p>
 {don_fires_table}
 </table>
 
-<h2><span class="leg-tag leg-both">Why the pair works</span></h2>
+<h2><span class="leg-tag leg-cnh">cnh-hybrid-short-v1</span> Pattern-based short on 4-hour bars</h2>
 
 <div class="strategy-box">
-<p>The two strategies are <b>structurally orthogonal</b> on five axes. They occupy different points in strategy-space:</p>
+<h3>The newest leg, in one sentence</h3>
+<p>
+Looks for <b>two specific chart patterns</b> on the 4h timeframe — <b>Distribution Top</b> (DT)
+and <b>Inverse Cup-and-Handle</b> (ICnH) — and shorts BTC when one fires. Stop-loss is
+1.5× ATR(14) above entry; take-profit is the distance down to EMA(100); the trade is
+<i>skipped</i> if EMA(100) sits above the current close (no valid SHORT TP target).
+Each pattern is given a single shot per 15-bar (~2.5-day) window — repeats inside
+that window are ignored, even if they would have fired on their own.
+</p>
 
+<h3>Pattern 1 — Distribution Top (DT)</h3>
+<p class="sub">"Uptrend → chop → breakdown" — classic topping structure on a multi-bar scale.</p>
+
+<div class="gate-box cnh">
+<div class="gate-name">Rule 1 — Uptrend phase</div>
+<div class="gate-rule">close[i − {cnh_s.get('uptrend_bars', 16)} − {cnh_s.get('chop_bars', 8)}] → close[i − {cnh_s.get('chop_bars', 8)}] rises ≥ {cnh_s.get('min_rise_pct', 2.5):.1f}%</div>
+<p>Over the {cnh_s.get('uptrend_bars', 16)} bars (= {cnh_s.get('uptrend_bars', 16)*4} hours ≈ {cnh_s.get('uptrend_bars', 16)*4/24:.1f} days) before the chop window, price rose at least
+{cnh_s.get('min_rise_pct', 2.5):.1f}%. Filters out range-bound noise — DT only makes sense as the
+exhaustion of a prior up-move.</p>
+</div>
+
+<div class="gate-box cnh">
+<div class="gate-name">Rule 2 — Chop phase at the top</div>
+<div class="gate-rule">range(close, last {cnh_s.get('chop_bars', 8)} bars) ≤ {cnh_s.get('max_chop_ratio', 0.55):.2f} × range(close, prior uptrend bars)</div>
+<p>The last {cnh_s.get('chop_bars', 8)} bars (= {cnh_s.get('chop_bars', 8)*4} hours ≈ {cnh_s.get('chop_bars', 8)*4/24:.1f} days) drift sideways — narrow range relative to the uptrend that came
+before. This is the "distribution" — smart money offloading without driving price further
+up. Optionally requires the chop to actually be at the local peak of the uptrend.</p>
+</div>
+
+<div class="gate-box cnh">
+<div class="gate-name">Rule 3 — Breakdown trigger on the firing bar</div>
+<div class="gate-rule">close[i] &lt; min(chop_lows)  OR  close[i] &lt; EMA(24)[i]</div>
+<p>Current 4h close breaks below either the chop range's low <i>or</i> the 24-bar EMA
+(= 4 days of price). Either condition counts ("<code>chop_low_or_ema24</code>" mode in
+the config). The break is the "actually selling now" confirmation — without it,
+the chop is just chop.</p>
+</div>
+
+<h3>Pattern 2 — Inverse Cup-and-Handle (ICnH)</h3>
+<p class="sub">A bullish-looking cup that <i>fails</i>. The handle's failed retest is the short signal.</p>
+
+<div class="gate-box cnh">
+<div class="gate-name">Rule 1 — Cup shape ({cnh_s.get('cup_len', 20)} bars)</div>
+<div class="gate-rule">parabolic R² ≥ {cnh_s.get('min_r2', 0.50):.2f}  AND  depth ≥ {cnh_s.get('min_cup_depth_atr', 1.0)}× ATR  AND  rim heights within ±{cnh_s.get('peak_tolerance', 6)} bars</div>
+<p>Fit a parabola to the last {cnh_s.get('cup_len', 20)} bars (= {cnh_s.get('cup_len', 20)*4} hours ≈ {cnh_s.get('cup_len', 20)*4/24:.1f} days). The fit's R² must be ≥ {cnh_s.get('min_r2', 0.50):.2f} (it's actually parabolic, not just noisy), the trough must be
+at least 1.0 ATR below both rims (real depth), and the two rims must be within ±{cnh_s.get('peak_tolerance', 6)} bars of each other (symmetric, not a one-sided slope).</p>
+</div>
+
+<div class="gate-box cnh">
+<div class="gate-name">Rule 2 — Handle ({cnh_s.get('handle_len', 4)} bars)</div>
+<div class="gate-rule">handle depth ≤ {cnh_s.get('handle_max_depth_frac', 0.70)*100:.0f}% of cup depth</div>
+<p>The {cnh_s.get('handle_len', 4)} bars right after the cup must form a "handle" — a shallower retracement (≤ {cnh_s.get('handle_max_depth_frac', 0.70)*100:.0f}% of the cup's depth).
+Visually: the cup tries to recover, the handle gives a bit back. Bullish setup —
+which is exactly why fading it works when the pattern <i>fails</i>.</p>
+</div>
+
+<div class="gate-box cnh">
+<div class="gate-name">Rule 3 — EMA-cross trigger (lookback)</div>
+<div class="gate-rule">close[i] crosses below EMA({(cnh_s.get('entry_emas') or ['ema24'])[0].replace('ema','')})  AND  an ICnH pattern was admitted within the last 8 bars</div>
+<p>ICnH doesn't fire on the pattern bar itself — it waits up to 8 bars (= {8*4} hours ≈ {8*4/24:.0f} days) for a close
+below EMA(24) to confirm that the cup is failing. If that cross doesn't happen
+inside the lookback, the setup expires.</p>
+</div>
+
+<h3>Stop, take-profit, and the skip rule</h3>
+
+<div class="gate-box cnh">
+<div class="gate-name">Stop-loss</div>
+<div class="gate-rule">SL = 1.5 × ATR(14) above entry</div>
+<p>Adaptive volatility-scaled stop. At a typical BTC ATR of ~$1,500/4h, that's a ~$2,250 stop —
+roughly 2-3% of price. Bigger than donchian's stop, smaller than v1's fixed-percent stop.</p>
+</div>
+
+<div class="gate-box cnh">
+<div class="gate-name">Take-profit</div>
+<div class="gate-rule">TP = distance from entry down to EMA(100)</div>
+<p>EMA(100) over 4h ≈ 16 days of average price. The trade closes when price retraces back to
+that mean — variable distance depending on how stretched the breakdown is. Long-tailed
+trades (where price keeps going) catch the EMA on the way down.</p>
+</div>
+
+<div class="gate-box cnh">
+<div class="gate-name">Skip-no-TP rule</div>
+<div class="gate-rule">if EMA(100) ≥ close: skip the trade entirely</div>
+<p>If the take-profit target sits <i>above</i> the entry price, there's no valid downside target —
+the trade would be opened with TP unreachable. The evaluator returns <code>side=None</code> with
+<code>reason="dt_admitted_but_no_tp"</code> or <code>"icnh_admitted_but_no_tp"</code>. Costs us
+some signals but the alternative (no take-profit) is unacceptable for a short.</p>
+</div>
+
+<h3>Stateful pattern-level dedup (the load-bearing innovation)</h3>
+<div class="thesis-box">
+<p>Both DT and ICnH detectors can fire on consecutive bars during a single
+exhaustion event. Without dedup, the same topping structure produces 4-6 entries
+back-to-back, all hitting the same drawdown. The Phase 3b validation showed
+this caused <b>~40% over-fire</b> versus the backtest's intended behaviour,
+dragging portfolio Sharpe by -0.36.</p>
+
+<p>The fix: <b>once a pattern is admitted, no further pattern (DT or ICnH) is
+admitted for {cnh_s.get('dedup_bars', 15)} bars (= {cnh_s.get('dedup_bars', 15)*4/24:.1f} days)</b>. This is
+tracked stateful inside the live evaluator by replaying the admission state from
+the visible bars window each call — matching <code>find_hybrid_patterns</code>'s
+backtest behaviour exactly. Phase 4 portfolio sim confirmed: stateful dedup
+restores the +0.26 live Sharpe lift that the BTC validation locked in.</p>
+</div>
+
+<div class="thesis-box">
+<b>Edge thesis:</b> short-only on a long-biased asset is contrarian — most of
+crypto is in uptrend, so unconditional shorts lose. But topping structures (DT +
+ICnH) appear <i>only</i> at exhaustion, when the rally is structurally over for
+a few days. Catching those moments — and only those — gives ~60% win rate at
+1.5×ATR vs EMA(100) R:R. Validated in Phase 1 walk-forward with all 3 dedup
+variants passing the +18.8% / 4-window-positive gate; dedup=15 won on Sharpe
+and worst-window.
+</div>
+
+<div class="fail-box">
+<b>Failure modes:</b>
+<ul style="margin: 6px 0 0 20px">
+<li><b>No TP slot</b>: in a downtrend, EMA(100) often sits above current close. Strategy correctly skips, but you lose what would have been valid pattern fires.</li>
+<li><b>Strong uptrend resumes</b>: pattern fires, price snaps back, SL hits at 1.5×ATR. Happens ~40% of the time (the lose rate).</li>
+<li><b>Pattern-level dedup blocks a real second signal</b>: rare but possible — two genuinely distinct topping structures within 15 bars get reduced to one fire.</li>
+<li><b>Cross-coin transfer is uneven</b>: same params on ETH/ADA fail Phase 1; SOL/WLD pass cleanly. The pattern detector is asset-sensitive in a way that v1's RSI/funding gates are not.</li>
+</ul>
+</div>
+</div>
+
+<h3>Live indicator panel — last {DAYS_4H} days of 4h bars</h3>
+<p class="sub">Price + EMA(24)/EMA(100)/EMA(200) overlays + ATR(14) panel. Triangles mark
+actual SHORT fires from the live evaluator over this window, labeled by the pattern
+type that admitted them (DT or ICnH).</p>
+<div class="chart" id="cnh-chart" style="height: 720px;"></div>
+
+<h3>Signal fires this window</h3>
 <table>
-<tr><th>Axis</th><th>v1</th><th>donchian-v3</th></tr>
-<tr><td>Timeframe</td><td>15m (fast)</td><td>4h (slow)</td></tr>
-<tr><td>Signal direction</td><td>Counter (fade the dip)</td><td>With (ride the breakout)</td></tr>
-<tr><td>R:R</td><td>2:1 (symmetric)</td><td>~3.3:1 (asymmetric, fat tail)</td></tr>
-<tr><td>SL method</td><td>Fixed % of price</td><td>Adaptive to current ATR</td></tr>
-<tr><td>Fire rate</td><td>~100/year</td><td>~25/year</td></tr>
+<tr><th>Timestamp</th><th>Side</th><th>Pattern</th><th>Price</th><th>EMA(24)</th><th>EMA(100)</th><th>ATR(14)</th><th>SL dist</th><th>TP dist</th></tr>
+{cnh_fires_table}
 </table>
 
-<p>The empirical proof of orthogonality: <b>daily P&amp;L correlation of −0.01</b>
-in the realistic 6.7-year simulation (n=2,025 common trading days). The two
-legs win and lose at different times.</p>
+<h2><span class="leg-tag leg-both">Why the trio works</span></h2>
 
-<p>This matters because losing strategies that are independent
-can be <i>combined</i> into a winning portfolio — and winning strategies that are
-independent <i>compound</i> beyond their individual contributions. Adding a 3rd
-leg in this codebase requires correlation &lt; ~0.3 to add real diversification
-beyond what's already here.</p>
+<div class="strategy-box">
+<p>The three strategies are <b>structurally orthogonal</b> on six axes — each occupies
+a different point in strategy-space. v1 is a short-bar counter-trend trader; donchian-v3
+is a long-bar trend-follower; cnh-hybrid-short is a long-bar pattern-fade short.</p>
+
+<table>
+<tr><th>Axis</th>
+  <th><span class="leg-tag leg-v1">v1</span></th>
+  <th><span class="leg-tag leg-don">donchian-v3</span></th>
+  <th><span class="leg-tag leg-cnh">cnh-hybrid-short</span></th></tr>
+<tr><td>Timeframe</td>
+  <td>15m (fast)</td>
+  <td>4h (slow)</td>
+  <td>4h (slow)</td></tr>
+<tr><td>Signal direction</td>
+  <td>Counter (fade the dip)</td>
+  <td>With (ride the breakout)</td>
+  <td>Counter (fade the top)</td></tr>
+<tr><td>Allowed sides</td>
+  <td>Long + short</td>
+  <td>Long + short</td>
+  <td><b>Short only</b></td></tr>
+<tr><td>Signal logic</td>
+  <td>Indicator confluence</td>
+  <td>Channel breakout + slope</td>
+  <td>Multi-bar pattern shape</td></tr>
+<tr><td>R:R</td>
+  <td>2:1 (symmetric)</td>
+  <td>~3.3:1 (asymmetric, fat tail)</td>
+  <td>~2:1 (entry-to-EMA100)</td></tr>
+<tr><td>SL method</td>
+  <td>Fixed % of price</td>
+  <td>Adaptive ATR(20)</td>
+  <td>Adaptive ATR(14)</td></tr>
+<tr><td>Fire rate</td>
+  <td>~100/year</td>
+  <td>~25/year</td>
+  <td>~9/year</td></tr>
+</table>
+
+<p>The empirical proof of orthogonality for the v1 ↔ donchian-v3 pair:
+<b>daily P&amp;L correlation of −0.01</b> in the realistic 6.7-year simulation
+(n=2,025 common trading days). The cnh-hybrid-short leg is too new for a live
+correlation measurement, but its Phase 4 portfolio sim measured a
+<b>+0.26 Sharpe lift</b> on top of the existing pair — meaning it adds
+diversification, not redundancy.</p>
+
+<p>Losing strategies that are independent can be <i>combined</i> into a winning
+portfolio — and winning strategies that are independent <i>compound</i> beyond
+their individual contributions. A potential 4th leg in this codebase would need
+correlation &lt; ~0.3 with all three current legs to add real diversification.
+The Phase-1 cross-coin scan (<code>tools/cross_coin_backtest.py</code>) flagged
+<b>SOL × cnh-hybrid-short</b> as the strongest candidate
+(4/4 OOS positive, +42% cum); ETH/ADA on the same strategy didn't transfer
+cleanly and would need per-coin param tuning.</p>
 </div>
 
 <h3>What runs every 5 seconds (bot loop)</h3>
@@ -490,13 +796,21 @@ beyond what's already here.</p>
 
     log_to_jsonl()
     push_consolidate_event()                 # 6. dashboard heartbeat
-    sleep(poll_interval_s)                   # 5s for v1, 60s for donchian
+    sleep(poll_interval_s)                   # 5s for v1; 60s for donchian + cnh-short
 </pre>
 
-<p>Both legs run this same loop. The only difference is which <code>evaluate_for_strategy</code>
-branch executes (selected by <code>strategy_name</code> in the config). The bot is otherwise
-strategy-agnostic — adding a future leg would only require a new
-<code>strategy/live_*.py</code> module and one branch in <code>bot_internals.py</code>.</p>
+<p>All three legs run this same loop. The only difference is which
+<code>evaluate_for_strategy</code> branch executes (selected by <code>strategy_name</code>
+in the config) and which <code>.env.&lt;instance&gt;</code> file supplies the
+sub-account API key. The bot is otherwise strategy-agnostic — adding a 4th
+leg requires only:</p>
+<ul>
+<li>A new <code>strategy/live_*.py</code> module + dispatch branch in <code>bot_internals.py</code></li>
+<li>A new entry in <code>bot.INSTANCE_PROFILES</code> (config / state DB / log / heartbeat paths)</li>
+<li>A new <code>.env.&lt;instance&gt;</code> with the new sub-account's keys</li>
+<li>A new entry in <code>tools.watchdog.LEGS</code></li>
+<li>A new <code>BotSource</code> union entry in the consolidate web dashboard</li>
+</ul>
 
 <p class="footer">Generated by tools/build_deployed_strategies_viz.py. Source: BTC/USDT:USDT, Binance Futures USDM.</p>
 
@@ -505,8 +819,10 @@ mermaid.initialize({{startOnLoad: true, theme: 'default'}});
 
 const V1 = {json.dumps(v1_chart)};
 const DON = {json.dumps(don_chart)};
+const CNH = {json.dumps(cnh_chart)};
 const V1_ANNOTS = {json.dumps(v1_annots)};
 const DON_ANNOTS = {json.dumps(don_annots)};
+const CNH_ANNOTS = {json.dumps(cnh_annots)};
 
 // ===== v1 multi-panel chart =====
 // Panel 1 (60%): candles + EMA200
@@ -636,6 +952,49 @@ const DON_ANNOTS = {json.dumps(don_annots)};
   }};
   Plotly.newPlot('don-chart', donTraces, donLayout, {{displayModeBar: false, responsive: true}});
 }}
+
+// ===== cnh-hybrid-short multi-panel chart =====
+// Panel 1 (75%): candles + EMA(24) + EMA(100) + EMA(200)
+// Panel 2 (25%): ATR(14) line
+{{
+  const cnhTraces = [
+    {{type:'candlestick', name:'BTC 4h',
+      x:CNH.ts, open:CNH.open, high:CNH.high, low:CNH.low, close:CNH.close,
+      increasing:{{line:{{color:'#26a69a'}}}}, decreasing:{{line:{{color:'#ef5350'}}}},
+      xaxis:'x', yaxis:'y'}},
+    {{type:'scatter', name:'EMA(24)', x:CNH.ts, y:CNH.ema24,
+      mode:'lines', line:{{color:'#00838f', width:1.5}}, xaxis:'x', yaxis:'y'}},
+    {{type:'scatter', name:'EMA(100)', x:CNH.ts, y:CNH.ema100,
+      mode:'lines', line:{{color:'#f57c00', width:1.5, dash:'dash'}}, xaxis:'x', yaxis:'y'}},
+    {{type:'scatter', name:'EMA(200)', x:CNH.ts, y:CNH.ema200,
+      mode:'lines', line:{{color:'#6a1b9a', width:1.2, dash:'dot'}}, xaxis:'x', yaxis:'y'}},
+    {{type:'scatter', name:'ATR(14)', x:CNH.ts, y:CNH.atr14,
+      mode:'lines', line:{{color:'#1976d2', width:1.4}},
+      fill:'tozeroy', fillcolor:'rgba(25,118,210,0.1)',
+      xaxis:'x', yaxis:'y2'}},
+  ];
+
+  // SHORT-only annotations: red ▼ on the entry bar.
+  for (const a of CNH_ANNOTS) {{
+    cnhTraces.push({{type:'scatter', x:[a.ts], y:[a.price],
+      mode:'markers+text', text:[a.symbol], textposition:'top center',
+      textfont:{{size:28, color:a.color}},
+      marker:{{size:18, color:a.color, line:{{color:'#fff', width:1.5}}}},
+      name: a.label, xaxis:'x', yaxis:'y', showlegend:false}});
+  }}
+
+  const cnhLayout = {{
+    grid: {{rows: 2, columns: 1, pattern: 'independent', rowheights: [0.75, 0.25]}},
+    margin: {{t: 10, r: 10, b: 30, l: 60}},
+    showlegend: true,
+    legend: {{x: 0.01, y: 0.99, bgcolor: 'rgba(255,255,255,0.85)'}},
+    xaxis: {{rangeslider: {{visible: false}}, anchor: 'y'}},
+    xaxis2: {{matches: 'x', anchor: 'y2'}},
+    yaxis: {{title: 'BTC/USDT', side: 'left'}},
+    yaxis2: {{title: 'ATR (USDT)', side: 'left'}},
+  }};
+  Plotly.newPlot('cnh-chart', cnhTraces, cnhLayout, {{displayModeBar: false, responsive: true}});
+}}
 </script>
 </body></html>
 """
@@ -645,6 +1004,7 @@ def main() -> int:
     df15, df4h, funding = load_data()
     v1_params = yaml.safe_load(open(ROOT / "config" / "params.yaml"))
     don_params = yaml.safe_load(open(ROOT / "config" / "params_donchian.yaml"))
+    cnh_params = yaml.safe_load(open(ROOT / "config" / "params_cnh_hybrid_short.yaml"))
 
     print(f"Data: 15m {len(df15):,} bars, 4h {len(df4h):,} bars, funding {len(funding):,} settlements")
     print(f"Window: 15m last {DAYS_15M}d, 4h last {DAYS_4H}d")
@@ -657,12 +1017,21 @@ def main() -> int:
     don_fires = scan_donchian(df4h, don_params, DAYS_4H)
     print(f"  found {len(don_fires)} donchian first-fire signals (deduped)")
 
+    print("Scanning cnh-hybrid-short signals...")
+    cnh_fires = scan_cnh_hybrid_short(df4h, cnh_params, DAYS_4H)
+    print(f"  found {len(cnh_fires)} cnh-hybrid-short pattern-deduped fires")
+
     print("Building chart data...")
     v1_chart = build_v1_chart_data(df15, funding, v1_params, DAYS_15M)
     don_chart = build_donchian_chart_data(df4h, don_params, DAYS_4H)
+    cnh_chart = build_cnh_chart_data(df4h, cnh_params, DAYS_4H)
 
     print("Composing HTML...")
-    html = build_html(v1_chart, don_chart, v1_fires, don_fires, v1_params, don_params)
+    html = build_html(
+        v1_chart, don_chart, cnh_chart,
+        v1_fires, don_fires, cnh_fires,
+        v1_params, don_params, cnh_params,
+    )
     OUT.write_text(html, encoding="utf-8")
     print(f"wrote {OUT.relative_to(ROOT)} ({len(html):,} chars)")
     return 0

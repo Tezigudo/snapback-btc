@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 from backtesting import Strategy
 
-from strategy.indicators import atr
+from strategy.indicators import atr, ema
 
 
 def attach_donchian(
@@ -276,3 +276,107 @@ class DonchianBreakoutBTCv3(DonchianBreakoutBTC):
                 self._entry_bar = len(self.data)
                 self._high_water = 0.0
                 self._low_water = low_v
+
+
+# ---------------------------------------------------------------------------
+# Donchian Trend-Rider v1  (native 4h, LONG-only, fixed TP bracket)
+# ---------------------------------------------------------------------------
+
+def attach_rider(
+    df: pd.DataFrame,
+    donchian_n: int = 55,
+    atr_period: int = 14,
+    ema_period: int = 200,
+) -> pd.DataFrame:
+    """Attach RiderDonHi / RiderEma / RiderAtr columns to a capitalised, tz-naive
+    DataFrame (native 4h bars).
+
+    RiderDonHi = rolling max of HIGH over `donchian_n` bars, shifted 1 (channel
+    excludes the current bar — mirrors hiwr build_breakout and rider_port_validate).
+    RiderEma   = EMA(close, ema_period).
+    RiderAtr   = Wilder ATR(atr_period) on High/Low/Close.
+
+    Prefixed names avoid any collision with the existing DonchianUpper/ATR_1h
+    columns used by donchian-v3.
+    """
+    out = df.copy()
+    out["RiderDonHi"] = out["High"].rolling(donchian_n, min_periods=donchian_n).max().shift(1)
+    out["RiderEma"] = ema(out["Close"], ema_period)
+    out["RiderAtr"] = atr(out["High"], out["Low"], out["Close"], atr_period)
+    return out
+
+
+class DonchianRiderV1(Strategy):
+    """4h Donchian trend-rider: long-only, small ATR stop, large fixed ATR TP.
+
+    Entry:    close > RiderDonHi  AND  close > RiderEma
+    Stop:     sl = close_v - rider_sl_atr * ATR(14)   (anchored to signal-bar close)
+    Target:   tp = close_v + rider_tp_atr * ATR(14)   (fixed bracket — no trailing exit)
+    Trail:    optional chandelier (rider_trail_atr >= 5); default off (0.0)
+    Time-stop: rider_time_stop_bars bars
+
+    Sizing mirrors donchian-v3: risk_per_trade_pct of equity / sl_distance,
+    capped at leverage * equity * 0.95 / price.
+
+    Default leverage=3 — this strategy targets -29% maxDD at 3x; it is NOT a
+    20x strategy regardless of the global leverage ceiling.
+    """
+
+    # All params are rider-prefixed so _apply_params_to_class cannot
+    # accidentally clobber them with values from params.yaml.
+    rider_sl_atr: float = 1.0
+    rider_tp_atr: float = 8.0
+    rider_trail_atr: float = 0.0       # 0 = no trail; >=5 = chandelier
+    rider_time_stop_bars: int = 200
+    rider_donchian_n: int = 55
+    rider_atr_period: int = 14
+    rider_ema_period: int = 200
+    rider_risk_per_trade_pct: float = 2.0  # prefixed to avoid apply-list clobber
+    # leverage IS set by run_backtest via STRATEGIES[name].leverage = eff_leverage
+    leverage: int = 3
+
+    def init(self) -> None:
+        self._entry_bar: int | None = None
+        self._high_water: float = 0.0
+
+    def _position_units(self, sl_distance: float, price: float) -> int:
+        if sl_distance <= 0 or not np.isfinite(sl_distance) or price <= 0:
+            return 0
+        risk_amount = self.equity * (self.rider_risk_per_trade_pct / 100.0)
+        target = risk_amount / sl_distance
+        cap = (self.equity * self.leverage * 0.95) / price
+        return max(int(min(target, cap)), 0)
+
+    def next(self) -> None:
+        close_v = self.data.Close[-1]
+        high_v = self.data.High[-1]
+        don_hi = self.data.RiderDonHi[-1]
+        ema_v = self.data.RiderEma[-1]
+        atr_v = self.data.RiderAtr[-1]
+
+        if any(v is None or not np.isfinite(v) for v in (don_hi, ema_v, atr_v)):
+            return
+
+        if self.position:
+            if self.rider_time_stop_bars > 0 and self._entry_bar is not None:
+                if (len(self.data) - self._entry_bar) >= self.rider_time_stop_bars:
+                    self.position.close()
+                    self._entry_bar = None
+                    return
+            if self.rider_trail_atr > 0 and self.trades:
+                self._high_water = max(self._high_water, high_v)
+                new_sl = self._high_water - self.rider_trail_atr * atr_v
+                tr = self.trades[-1]
+                if tr.sl is None or new_sl > tr.sl:
+                    tr.sl = new_sl
+            return
+
+        if close_v > don_hi and close_v > ema_v:
+            sl_dist = self.rider_sl_atr * atr_v
+            sl = close_v - sl_dist
+            tp = close_v + self.rider_tp_atr * atr_v
+            units = self._position_units(sl_dist, close_v)
+            if units > 0 and sl < close_v:
+                self.buy(size=units, sl=sl, tp=tp)
+                self._entry_bar = len(self.data)
+                self._high_water = high_v

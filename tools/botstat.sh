@@ -60,19 +60,35 @@ for kv in $HB_SPEC; do
   fi
 done
 
+# Mode per leg: scan running bot procs. A live leg has --instance NAME and
+# NO --dry-run flag; dry has --dry-run; absent process = down.
+for kv in $HB_SPEC; do
+  name="${kv%%=*}"
+  pline=$(ps -eo args 2>/dev/null | grep -- "--instance ${name}" | grep -v grep | head -1)
+  if   [ -z "$pline" ];                                then echo "MODE ${name} down"
+  elif printf '%s' "$pline" | grep -q -- '--dry-run';  then echo "MODE ${name} dry"
+  else                                                      echo "MODE ${name} live"
+  fi
+done
+
 python3 - <<PYEOF 2>/dev/null
 import os, sqlite3
 for entry in os.environ.get("DB_SPEC", "").split():
     name, db = entry.split("=", 1)
     if not os.path.exists(db):
-        print(f"OB {name} -1"); continue
+        print(f"OB {name} -1"); print(f"FILLS {name} -1"); continue
     try:
         c = sqlite3.connect(db)
         n = c.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
-        c.close()
         print(f"OB {name} {n}")
+        try:
+            fz = c.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
+        except Exception:
+            fz = -1
+        print(f"FILLS {name} {fz}")
+        c.close()
     except Exception:
-        print(f"OB {name} -1")
+        print(f"OB {name} -1"); print(f"FILLS {name} -1")
 PYEOF
 
 for kv in $LOG_SPEC; do
@@ -99,11 +115,13 @@ BTC=$(curl -s --max-time 3 'https://api.binance.com/api/v3/ticker/price?symbol=B
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["price"])' 2>/dev/null || echo "?")
 
 # ─── Parse remote output into HB[] / OB[] ───
-declare -A HB OB
+declare -A HB OB FILLS MODE
 while IFS= read -r line; do
   case "$line" in
-    "HB "*)   read -r _ n v <<<"$line"; HB[$n]=$v ;;
-    "OB "*)   read -r _ n v <<<"$line"; OB[$n]=$v ;;
+    "HB "*)    read -r _ n v <<<"$line"; HB[$n]=$v ;;
+    "OB "*)    read -r _ n v <<<"$line"; OB[$n]=$v ;;
+    "FILLS "*) read -r _ n v <<<"$line"; FILLS[$n]=$v ;;
+    "MODE "*)  read -r _ n v <<<"$line"; MODE[$n]=$v ;;
   esac
 done <<<"$REMOTE_OUT"
 
@@ -141,9 +159,16 @@ if [ -t 1 ]; then
   done
   printf "%sBTC \$%s%s\n" "$CYAN" "$BTC" "$R"
 
-  # Per-leg detail lines (heartbeat + outbox)
+  # Per-leg detail lines (mode + heartbeat + fills + outbox)
   for n in "${LEGS_NAMES[@]}"; do
-    printf "%s%-9s%s hb %ss · outbox %s\n" "$BLUE" "$n" "$R" "${HB[$n]:-?}" "${OB[$n]:-?}"
+    case "${MODE[$n]:-?}" in
+      live) mt="${GREEN}LIVE${R}" ;;
+      dry)  mt="${GRAY}dry ${R}" ;;
+      down) mt="${RED}DOWN${R}" ;;
+      *)    mt="${GRAY}?   ${R}" ;;
+    esac
+    printf "%s%-9s%s %s · hb %ss · fills %s · outbox %s\n" \
+      "$BLUE" "$n" "$R" "$mt" "${HB[$n]:-?}" "${FILLS[$n]:-?}" "${OB[$n]:-?}"
   done
   echo
   printf "%sStrategy gates — what each leg is waiting on%s\n" "$B" "$R"
@@ -207,8 +232,8 @@ echo "---"
 for n in "${LEGS_NAMES[@]}"; do
   icon=$(icon_for_age "${HB[$n]:-9999}")
   c=$(swiftbar_color_for_icon "$icon")
-  printf "%-9s heartbeat %ss · outbox %s pending | color=%s font=Menlo\n" \
-    "$n" "${HB[$n]:-?}" "${OB[$n]:-?}" "$c"
+  printf "%-9s [%s] hb %ss · fills %s · outbox %s pending | color=%s font=Menlo\n" \
+    "$n" "${MODE[$n]:-?}" "${HB[$n]:-?}" "${FILLS[$n]:-?}" "${OB[$n]:-?}" "$c"
 done
 printf "BTC \$%s | color=#38bdf8 font=Menlo\n" "$BTC"
 

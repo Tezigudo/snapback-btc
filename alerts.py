@@ -84,7 +84,15 @@ def send_alert(subject: str, body: str, *, tag: str | None = None) -> bool:
     msg.set_content(body)
 
     host = _env("SMTP_HOST")
-    port = int(_env("SMTP_PORT", "587"))
+    # Parse the port defensively: is_configured() only checks SMTP_PORT is
+    # non-empty, so a non-numeric value would make int() raise ValueError —
+    # which the send try/except below does NOT catch, breaking the "never
+    # raises" contract and crashing cron callers (the watchers).
+    try:
+        port = int(_env("SMTP_PORT", "587"))
+    except ValueError:
+        log.warning("alerts: SMTP_PORT=%r is not an integer; skipping send", _env("SMTP_PORT"))
+        return False
     user = _env("SMTP_USER")
     password = _env("SMTP_PASSWORD")
 
