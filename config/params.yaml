@@ -1,11 +1,26 @@
 # Tunable strategy params for multifactor-v1 (the deployable strategy).
 # NOT a safety surface — see risk.py for hard ceilings.
 #
-# Locked 2026-05-17 for 90-day testnet deploy per PATH2_RESULTS.html.
-# Backtest evidence: 5 OOS windows 2022 H1 – 2025 H1, 262 trades,
-# +55.73% compounded equity. 4 of 5 windows positive. Worst window
-# 2024 H1 = -12.56% (chop year). DO NOT TUNE THESE VALUES WITHOUT
-# explicit re-validation across all 5 OOS windows.
+# Re-locked 2026-06-02 with 4H EMA200 regime gate. See:
+#   reports/LEVER1_SIGNOFF_DEPLOY.html
+#   reports/MULTIFACTOR_4H_GATE_DECISION.html
+#   reports/multifactor_v1_4h_gate_revalidation.json
+#   reports/multifactor_4h_parity_validation.json
+#   reports/multifactor_v1_4h_gate_walk_forward.json
+#
+# Backtest evidence: 5 OOS windows 2022 H1 – 2025 H1 at $1M cash →
+# +77.9314% compounded equity (was +50.48% pre-gate). 5 of 5 windows
+# positive. Worst window 2024 H2 max DD = -16.72% (kill-switch buffer
+# stays at -35.5%). Walk-forward 2020-2026 (25 quarterly windows):
+# 20/25 = 80% positive, +243.81% compounded. Live↔backtest parity 100%
+# across 25,702 evaluated bars.
+#
+# Prior locked claim (2026-05-17 / pre-4H-gate / PATH2_RESULTS.html):
+# +55.73% compounded across same 5 OOS, 262 trades, 4/5 wins. SUPERSEDED
+# by this re-lock.
+#
+# DO NOT TUNE THESE VALUES WITHOUT explicit re-validation across all 5
+# OOS windows + the parity harness at tools/multifactor_validate.py.
 
 symbol: BTC/USDT:USDT
 
@@ -62,6 +77,17 @@ strategy:
   require_trend: true           # close on correct side of EMA(200)
   require_candlestick: false    # disabled in production (too rare on 15m)
   require_macd: false           # disabled in production (redundant)
+
+  # 4H EMA200 regime gate (added 2026-06-02 per LEVER1_SIGNOFF_DEPLOY.html).
+  # Long entries require 15m close > 4H EMA(200) at the most-recent CLOSED
+  # 4H bar; short entries mirror. Lookahead-safe alignment via merge_asof
+  # on bar-close timestamps. See:
+  #   strategy/signals_multifactor.py::_build_4h_ema_aligned
+  #   strategy/live_multifactor_v1.py::_compute_4h_ema_at_15m_close
+  # +27.45pp compounded lift vs pre-gate baseline; PSR 0.978 (only ablation
+  # variant clearing evidence_of_edge per Bailey & López de Prado 2012).
+  use_mtf_4h_gate: true
+  mtf_4h_ema_period: 200
 
 sizing:
   risk_per_trade_pct: 2.75      # 2.75% of equity per trade (raised from 2.0 on 2026-05-23 for combined-deploy yield target).
