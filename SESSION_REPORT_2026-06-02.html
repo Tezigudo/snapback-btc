@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session Report · 2026-06-02 · snapback-btc + Shanghai prep</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a1f29;
+    --panel-2: #232936;
+    --ink: #e4e8ec;
+    --ink-dim: #8a95a4;
+    --accent: #6fdc8c;
+    --warn: #ffb454;
+    --bad: #f47174;
+    --good: #6fdc8c;
+    --link: #7cc4ff;
+    --border: #2a3142;
+    --code: #2d3343;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+    padding: 32px 24px 96px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 20px; margin: 36px 0 12px; letter-spacing: -0.01em; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 16px; margin: 20px 0 8px; color: var(--ink-dim); font-weight: 600; }
+  p { margin: 8px 0; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre { font-family: var(--mono); }
+  code { background: var(--code); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  pre { background: var(--code); padding: 12px 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+  .meta { color: var(--ink-dim); font-size: 14px; margin-bottom: 24px; }
+  .hero {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 20px 0 24px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .stat .label { color: var(--ink-dim); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .stat .val { font-size: 22px; font-weight: 600; line-height: 1.2; }
+  .stat .sub { color: var(--ink-dim); font-size: 13px; margin-top: 4px; }
+  .ok { color: var(--good); }
+  .warn { color: var(--warn); }
+  .bad { color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--ink-dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  ul { margin: 6px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 12px 0;
+  }
+  .card.win { border-left: 4px solid var(--good); }
+  .card.flag { border-left: 4px solid var(--warn); }
+  .card.bad { border-left: 4px solid var(--bad); }
+  .pill {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .pill.shelf { background: rgba(244,113,116,0.15); color: var(--bad); }
+  .pill.blocked { background: rgba(255,180,84,0.15); color: var(--warn); }
+  .pill.promote { background: rgba(111,220,140,0.15); color: var(--good); }
+  .pill.done { background: rgba(124,196,255,0.15); color: var(--link); }
+  hr.thin { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  .footnote { color: var(--ink-dim); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>Session report · snapback-btc + Shanghai prep</h1>
+<div class="meta">2026-06-02 (Tue) · 19:00–21:50 ICT · Operator: god@godjangg.com</div>
+
+<div class="hero">
+  <div class="stat">
+    <div class="label">Bot</div>
+    <div class="val ok">GREEN</div>
+    <div class="sub">3 legs active · v1 LIVE mainnet · 0 errors</div>
+  </div>
+  <div class="stat">
+    <div class="label">Locked strategy</div>
+    <div class="val ok">+77.952%</div>
+    <div class="sub">measurement-validated · PSR 0.9776 · 5/5</div>
+  </div>
+  <div class="stat">
+    <div class="label">Live↔backtest parity</div>
+    <div class="val ok">100%</div>
+    <div class="sub">8,736 bars, 90 days</div>
+  </div>
+  <div class="stat">
+    <div class="label">TODO_LEGs validated</div>
+    <div class="val">0 / 5</div>
+    <div class="sub">all SHELF or DATA_BLOCKED</div>
+  </div>
+  <div class="stat">
+    <div class="label">Tokens spent</div>
+    <div class="val">~1.8M</div>
+    <div class="sub">Most expensive workflow: 752k (validation panel)</div>
+  </div>
+  <div class="stat">
+    <div class="label">Shanghai food extras</div>
+    <div class="val ok">15.9 KB</div>
+    <div class="sub">6 breakfast + supper + snacks, verified</div>
+  </div>
+</div>
+
+<h2>🎯 Big wins (read these first)</h2>
+
+<div class="card win">
+  <h3>1. Locked +77.93% is now <em>measurement-validated</em>, not just math-validated</h3>
+  <p>The PRICE_SCALE methodology debt from the prior fractional-sizing refactor was the last meaningful gap blocking confidence in the locked claim. Patched <code>tools/_postfrac_mf_4h_btc_run.py</code> to scale both the 15m OHLC slice <em>and</em> the 4H parquet (via a pre-scaled temp file under <code>reports/_tmp/</code>). Re-ran 5 OOS windows on the corrected harness.</p>
+  <table>
+    <thead><tr><th>Metric</th><th>Re-measured</th><th>Locked claim</th><th>Match?</th></tr></thead>
+    <tbody>
+      <tr><td>Compounded</td><td><strong>+77.952%</strong></td><td>+77.93%</td><td>✓ within noise</td></tr>
+      <tr><td>Trades</td><td>121</td><td>121</td><td>✓ exact</td></tr>
+      <tr><td>PSR vs 0 hurdle</td><td>0.9776</td><td>0.978</td><td>✓</td></tr>
+      <tr><td>Windows positive</td><td>5/5</td><td>5/5</td><td>✓</td></tr>
+      <tr><td>Worst window DD (2024 H2)</td><td>-17.03%</td><td>-16.72%</td><td>✓ noise</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card win">
+  <h3>2. Live↔backtest parity holds at 100%</h3>
+  <p><code>tools/multifactor_validate.py</code> ran over 8,736 bars (90 days, 2025 Q2). Both stages PASS:</p>
+  <ul>
+    <li><strong>Stage 1</strong> impl cross-check: 14/14 trades common</li>
+    <li><strong>Stage 2</strong> live evaluator vs backtest: 12 long + 0 short fires, identical</li>
+  </ul>
+  <p>Combined with measurement-validation: the deployed code is on the strongest possible footing.</p>
+</div>
+
+<div class="card flag">
+  <h3>3. Yellow flag — cost-sensitivity on the deployed strategy</h3>
+  <p>Built <code>tools/cost_stress_psr.py</code> to test how PSR behaves under elevated commission. The deployed strategy's edge is real but <strong>thin at higher costs</strong>:</p>
+  <table>
+    <thead><tr><th>Commission (bps)</th><th>PSR</th><th>Interpretation</th></tr></thead>
+    <tbody>
+      <tr><td>5 (base)</td><td class="ok">0.9776</td><td>evidence_of_edge</td></tr>
+      <tr><td>10</td><td>0.9490</td><td>insufficient_evidence</td></tr>
+      <tr><td>15</td><td>0.8984</td><td>insufficient_evidence</td></tr>
+      <tr><td>20</td><td>0.8208</td><td>insufficient_evidence</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Not a deploy blocker</strong> at the current $101.95 capital — real slippage is tiny on 0.001 BTC orders. <strong>Flags concern at scale</strong> — if you push capital past ~$25k, the strategy's edge robustness shrinks. Memory: <code>multifactor_v1_4h_gate_cost_sensitivity</code>.</p>
+</div>
+
+<div class="card win">
+  <h3>4. AdaptiveTrend single-feature overlay search is EXHAUSTED</h3>
+  <p>8 ablations failed in a row (3 V1 prior + 3 here + 2 V2 patterns). Future work on AdaptiveTrend must explore <em>multi-feature combos</em> or pivot off it entirely. Individual single-feature gates are dead ends.</p>
+  <ul>
+    <li>ADX(14)&gt;25 entry gate — SHELF (-16.43pp, gate kept the worse half of trades)</li>
+    <li>H1 EMA50 confirmation — SHELF (-5.05pp, too redundant with H6 MOM)</li>
+    <li>half_out at +1R — SHELF (-11.73pp, capping right tail costs more than smoother equity buys)</li>
+    <li>regime_gate_vol — SHELF (-30.6pp)</li>
+    <li>time_stop_24h — SHELF (-43.3pp)</li>
+    <li>session_volume_filter — SHELF (delta only +1.08pp, PSR flat)</li>
+  </ul>
+</div>
+
+<div class="card win">
+  <h3>5. Shanghai food extras filed in second-brain</h3>
+  <p><code>/Users/god/Desktop/second-brain/travel/shanghai-food-extras.md</code> (15.9 KB), Thai-leading bilingual voice, anchored to BAIhome.</p>
+  <ul>
+    <li><strong>6 breakfast spots</strong>: Da Hu Chun (Yunnan South Rd Michelin Bib), Xiao Shaoxing (white-cut chicken congee), Jia Jia Tang Bao at <strong>#127 Huanghe Rd NOT #90 — #90 is the imposter Jia Le</strong>, Nanxiang Mantou Dian Bund branch (same street as hotel, 10 min walk east), Yunnan South cart cluster (06:00–09:30 strict), Wang Jia Sha backup</li>
+    <li><strong>Late-night supper</strong> for after dinner</li>
+    <li><strong>Bring-home snacks</strong> with Thai customs guardrails — <strong>HARD BAN on pork jerky / bak kwa / cured meats (ASF)</strong> · list has substitutes</li>
+  </ul>
+</div>
+
+<h2>Live bot state at 20:31 ICT</h2>
+<table>
+  <thead><tr><th>Leg</th><th>Mode</th><th>State</th><th>Heartbeat</th><th>Equity anchor</th></tr></thead>
+  <tbody>
+    <tr><td>v1 (multifactor-v1 + 4H gate)</td><td><strong>LIVE mainnet</strong></td><td class="ok">active</td><td>3s</td><td>$101.95</td></tr>
+    <tr><td>donchian</td><td>DRY</td><td class="ok">active</td><td>22s</td><td>$50.50</td></tr>
+    <tr><td>cnh_short</td><td>DRY</td><td class="ok">active</td><td>16s</td><td>$80.50</td></tr>
+  </tbody>
+</table>
+<p>Since deploy 19:07 ICT (commit <code>b83e20f</code>): <strong>0 ERRORs · 0 mtf_4h_gate_nan · 0 new tracebacks</strong> (count of 2 in logs is pre-deploy from 2026-05-19, network-transient).</p>
+
+<h2>Strategy validation arc — full tally</h2>
+<table>
+  <thead><tr><th>#</th><th>Candidate</th><th>Verdict</th><th>PSR</th><th>Compounded</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>KC squeeze breakout</td><td><span class="pill shelf">SHELF</span></td><td>0.0048</td><td>-83.31%</td><td>0/5 windows · revive needs HTF gate not param tuning</td></tr>
+    <tr><td>2</td><td>TSMOM intraday (half-day)</td><td><span class="pill shelf">SHELF</span></td><td>0.069</td><td>-10.45%</td><td>Scaled half-hour effect to half-day — wrong horizon</td></tr>
+    <tr><td>3</td><td>Funding-extreme contrarian</td><td><span class="pill shelf">SHELF</span></td><td>0.736</td><td>+2.46%</td><td>Both 2024 windows negative — carry-decay null not rejected</td></tr>
+    <tr><td>4</td><td>OI vs price divergence</td><td><span class="pill blocked">DATA_BLOCKED</span></td><td>—</td><td>—</td><td>Binance public API capped ~30d for OI · vendor needed</td></tr>
+    <tr><td>5</td><td>Taker-flow imbalance</td><td><span class="pill blocked">DATA_BLOCKED</span></td><td>—</td><td>—</td><td><code>exchange/data.py</code> patched but cache still 5-col · needs re-fetch</td></tr>
+  </tbody>
+</table>
+
+<h3>AdaptiveTrend V1 ablation closure</h3>
+<table>
+  <thead><tr><th>Lever</th><th>Verdict</th><th>Compounded delta</th><th>PSR delta</th><th>Insight</th></tr></thead>
+  <tbody>
+    <tr><td>regime_gate_adx</td><td><span class="pill shelf">SHELF</span></td><td>-16.43pp</td><td>-0.057</td><td>Gate kept the worse half</td></tr>
+    <tr><td>mtf_h1_confirmation</td><td><span class="pill shelf">SHELF</span></td><td>-5.05pp</td><td>-0.003</td><td>H1 EMA50 too redundant with H6 MOM</td></tr>
+    <tr><td>half_out_at_1R</td><td><span class="pill shelf">SHELF</span></td><td>-11.73pp</td><td>-0.006</td><td>Right-skewed tail dominates · don't propose partial-exits for trend systems</td></tr>
+    <tr><td>regime_gate_vol</td><td><span class="pill shelf">SHELF</span></td><td>-30.60pp</td><td>—</td><td>Another single-feature gate</td></tr>
+    <tr><td>time_stop_24h</td><td><span class="pill shelf">SHELF</span></td><td>-43.27pp</td><td>—</td><td>Exits before profitable trail-out</td></tr>
+    <tr><td>session_volume_filter</td><td><span class="pill shelf">SHELF</span></td><td>+1.08pp</td><td>flat</td><td>Doesn't clear +5pp bar · PSR not improving</td></tr>
+  </tbody>
+</table>
+<p><strong>Conclusion</strong>: AdaptiveTrend V1 single-feature overlay search is closed. Either stack multiple features simultaneously (e.g., vol_gate × session_volume) or pivot off the strategy entirely.</p>
+
+<h2>What needs your approval</h2>
+
+<div class="card flag">
+  <h3>A. Push the Shanghai AFK package to droplet</h3>
+  <p>Files staged locally on <code>main</code>, <strong>NOT committed yet</strong>:</p>
+  <ul>
+    <li><code>monitor.py</code> — real implementation (was <code>NotImplementedError</code> stub)</li>
+    <li><code>daily_digest.py</code> — new 08:00 ICT daily rollup email</li>
+    <li><code>SHANGHAI_TRIP_RUNBOOK.md</code> — phone-friendly alert reference for the trip</li>
+    <li><code>AFK_PACKAGE_DEPLOY.md</code> — deploy checklist + risks + SMTP smoke test</li>
+    <li><code>tools/test_monitor_smoke.py</code> — sandboxed smoke test that disables SMTP cleanly</li>
+  </ul>
+  <p><strong>Both Python files parse cleanly + smoke test PASSes</strong> with SMTP forcibly disabled. Read <code>AFK_PACKAGE_DEPLOY.md</code> for the full deploy sequence.</p>
+  <p class="footnote">⚠ Small confession: during the smoke development, one early test run inherited your shell's SMTP creds and sent <strong>3 false-positive "NO HEARTBEAT" alerts to godjangg@gmail.com</strong>. Those are NOT real bot issues — the bot is fine. The new sandboxed smoke test fixes the env-leak.</p>
+</div>
+
+<div class="card flag">
+  <h3>B. Push 4 other local commits</h3>
+  <ul>
+    <li><code>tools/_postfrac_mf_4h_btc_run.py</code> — PRICE_SCALE patch (research only, no live-runtime impact)</li>
+    <li><code>tools/cost_stress_psr.py</code> — new cost-sensitivity tool</li>
+    <li><code>tools/test_monitor_smoke.py</code> — sandboxed smoke runner</li>
+    <li><code>exchange/data.py</code> — keeps <code>taker_buy_base/quote</code> + <code>n_trades</code> + <code>quote_vol</code> · backward-compat · live bot only picks this up on restart</li>
+    <li><code>strategy/indicators.py</code> — added <code>bollinger_bands()</code> + <code>keltner_channel()</code> helpers (backward-compat additions)</li>
+    <li>11 new strategy files + 11 new runners under <code>strategy/</code> + <code>tools/</code> for validations (TODO_LEG + AdaptiveTrend ablations)</li>
+  </ul>
+</div>
+
+<div class="card flag">
+  <h3>C. Optional cheap next move</h3>
+  <p><strong>Rebuild the 15m parquet</strong> with the patched <code>exchange/data.py</code> to unblock taker-flow TODO_LEG. Est: 5–10 min wall + ~50k tokens. <strong>The only TODO_LEG with a viable path forward</strong> (everything else is shelved or vendor-blocked).</p>
+</div>
+
+<h2>What I left alone on purpose</h2>
+<ul>
+  <li><strong>Did not push anything to <code>origin</code></strong> — all local commits unpushed</li>
+  <li><strong>Did not deploy <code>monitor.py</code> to droplet</strong> — staged only</li>
+  <li><strong>Did not edit <code>risk.py</code></strong> — CLAUDE.md hard rule</li>
+  <li><strong>Did not propose mainnet promotion of anything</strong> — SOL stays WAIT_FOR_MORE_DATA, ETH stays SHELF</li>
+  <li><strong>Did not pursue OI divergence beyond the data-block</strong> — vendor procurement ($500-$2k) not worth it given divergence family base rate</li>
+  <li><strong>Did not merge the 3 4H-gate timeline memory files</strong> into one canonical — historical snapshots have value</li>
+</ul>
+
+<h2>Files inventory · everything written this session</h2>
+
+<div class="grid2">
+<div>
+<h3>Repo (local, NOT pushed)</h3>
+<pre>monitor.py                                    [staged]
+daily_digest.py                               [new]
+SHANGHAI_TRIP_RUNBOOK.md                      [new]
+AFK_PACKAGE_DEPLOY.md                         [new]
+AFK_DASHBOARD.md                              [new]
+SESSION_REPORT_2026-06-02.html                [this file]
+PHASE3_VALIDATION_SYNTHESIS.md                [new]
+exchange/data.py                              [patched]
+strategy/indicators.py                        [+ bollinger_bands + keltner_channel]
+strategy/signals_kc_squeeze_breakout.py       [new]
+strategy/signals_tsmom_intraday.py            [new]
+strategy/signals_funding_extreme_contrarian.py [new]
+strategy/signals_taker_flow.py                [new, guarded]
+strategy/signals_adaptive_trend_v1_*          [5 new subclasses]
+tools/_postfrac_mf_4h_btc_run.py              [patched]
+tools/_postfrac_kc_squeeze.py                 [new]
+tools/_postfrac_tsmom_intraday.py             [new]
+tools/_postfrac_funding_extreme.py            [new]
+tools/_postfrac_adaptrend_v1_*                [5 new runners]
+tools/cost_stress_psr.py                      [new]
+tools/test_monitor_smoke.py                   [new]
+reports/postfrac_*.json + CSVs                [~40 files]
+reports/multifactor_4h_parity_validation.json [refreshed]
+reports/_tmp/BTC_USDT_USDT_4h_scaled_*.parquet [generated]</pre>
+</div>
+<div>
+<h3>Second-brain wiki</h3>
+<pre>travel/shanghai-food-extras.md                [new, 15.9K]
+wiki/concepts/concept-snapback-droplet-deploy-procedure.md
+wiki/entities/entity-snapback-btc-droplet.md
+wiki/log.md                                   [appended]
+wiki/index.md                                 [updated]
+wiki/concepts/_index.md                       [updated]
+wiki/entities/_index.md                       [updated]</pre>
+
+<h3>Auto-memory (16 entries now)</h3>
+<pre>multifactor_v1_4h_gate_deployed_mainnet.md
+multifactor_v1_4h_gate_measurement_validated.md
+multifactor_v1_4h_gate_cost_sensitivity.md
+phase3_validation_synthesis.md
+todo_leg_kc_squeeze_validation_result.md
+todo_leg_tsmom_intraday_validation_result.md
+todo_leg_funding_extreme_validation_result.md
+todo_leg_oi_divergence_validation_result.md
+todo_leg_taker_flow_validation_result.md
+adaptrend_v1_adx_ablation_result.md
+adaptrend_v1_h1_conf_ablation_result.md
+adaptrend_v1_half_out_1r_ablation_result.md
+adaptrend_v1_regime_gate_vol_ablation_result.md
+adaptrend_v1_time_stop_24h_ablation_result.md
+adaptrend_v1_session_volume_ablation_result.md
++ 5 TODO_LEG candidate specs from earlier
++ stale-claim fixes + permanent_shelf tags</pre>
+</div>
+</div>
+
+<h2>Token spend &amp; agent activity</h2>
+<table>
+  <thead><tr><th>Phase</th><th>Tokens</th><th>Agents</th><th>Outcome</th></tr></thead>
+  <tbody>
+    <tr><td>Main loop (handoff + deploy + slash-command fix + main-loop work)</td><td>~130k</td><td>—</td><td>Deploy executed, 4 commits</td></tr>
+    <tr><td>Round 1 subagents (wiki, memory, strategy-invention, 3 ablations)</td><td>~360k</td><td>6</td><td>3 ablation SHELFs + 5 TODO_LEG candidates filed</td></tr>
+    <tr><td>KC squeeze validation (first TODO_LEG test)</td><td>75k</td><td>1</td><td>SHELF · sets precedent rules</td></tr>
+    <tr><td>Workflow <code>wus0bdtx7</code> (validation panel)</td><td>752k</td><td>12</td><td>0/7 promoted · AdaptiveTrend search exhausted</td></tr>
+    <tr><td>Workflow <code>w0wllfw4z</code> (Shanghai food)</td><td>305k</td><td>7</td><td>15.9K markdown filed to second-brain</td></tr>
+    <tr><td>Main loop misc (cost-stress, smoke tests, memory + dashboard updates)</td><td>~50k</td><td>—</td><td>Tooling + index work</td></tr>
+    <tr><td><strong>Total session</strong></td><td><strong>~1.67M</strong></td><td><strong>26+</strong></td><td></td></tr>
+  </tbody>
+</table>
+
+<h2>Three things worth saying out loud</h2>
+
+<div class="card win">
+  <p><strong>The deployed strategy is on the strongest possible footing.</strong> We now have: (a) math validation from the original lock, (b) measurement validation under the corrected fractional harness, (c) 100% live↔backtest parity over 90 days, and (d) a cost-sensitivity profile that's healthy at current capital. Pre-deploy claim survives all four lenses.</p>
+</div>
+
+<div class="card flag">
+  <p><strong>The strategy graveyard regression-to-mean is steep.</strong> 8 of 9 prior strategies were SHELVED before this session. This session added 5 more SHELFs + 2 DATA_BLOCKED. That's a 0-for-13 streak on revival attempts. The only strategies surviving meaningful validation in the entire research arc are multifactor-v1 (deployed) and AdaptiveTrend V1 bare (PSR 0.93, walk-forward 56% — under the 70% promotion bar, holds as ITERATE).</p>
+</div>
+
+<div class="card flag">
+  <p><strong>Future research should pivot.</strong> Single-feature overlays on AdaptiveTrend are dead. Single-source TODO_LEG candidates from public literature have a brutal base rate. The two TODO_LEGs that survived <em>any</em> early signal (funding-extreme, taker-flow) are both microstructure / positioning plays — but funding-extreme failed the carry-decay null, and taker-flow needs a cache rebuild before it can be measured. <strong>The most leveraged next move</strong> is the taker-flow cache rebuild + real backtest. Everything else is high-cost low-yield.</p>
+</div>
+
+<h2>Shanghai trip · 4 days out</h2>
+<ul>
+  <li>Bookings + itinerary already cover Day 1 lunch → Day 5 final meal (10 restaurants in <code>itinerary.json</code>).</li>
+  <li><strong>NEW today</strong>: <code>shanghai-food-extras.md</code> covers the gaps — breakfast near BAIhome, late-night supper, bring-home snacks. All in your Thai-leading voice. Customs guardrails baked in (no pork products).</li>
+  <li><strong>Most important navigational fact</strong>: Jia Jia Tang Bao is at <strong>#127 Huanghe Rd, NOT #90</strong>. #90 is the impostor "Jia Le Tang Bao". Don't get the wrong one.</li>
+  <li><strong>Easy win</strong>: Nanxiang Mantou Dian's Bund branch is on the same Fuzhou Rd as the hotel — zero navigation, 10-min walk east.</li>
+</ul>
+
+<hr class="thin">
+
+<p class="footnote">Generated locally · <code>/Users/god/Desktop/work/snapback-btc/SESSION_REPORT_2026-06-02.html</code> · All times ICT (GMT+7) unless marked UTC · Bot stores UTC internally.</p>
+
+</body>
+</html>

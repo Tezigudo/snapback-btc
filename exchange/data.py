@@ -115,9 +115,16 @@ def fetch_klines(
         ],
     )
     df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
-    for col in ("open", "high", "low", "close", "volume"):
+    for col in ("open", "high", "low", "close", "volume",
+                "quote_vol", "taker_buy_base", "taker_buy_quote", "n_trades"):
         df[col] = pd.to_numeric(df[col])
-    return df.set_index("open_time")[["open", "high", "low", "close", "volume"]]
+    # Retain microstructure columns (taker_buy_base/quote, n_trades, quote_vol)
+    # so candidates that depend on them (e.g. taker-flow imbalance) can use
+    # historical bars. Existing callers select by name and ignore the extras.
+    return df.set_index("open_time")[
+        ["open", "high", "low", "close", "volume",
+         "quote_vol", "taker_buy_base", "taker_buy_quote", "n_trades"]
+    ]
 
 
 def fetch_funding(symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
