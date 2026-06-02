@@ -72,12 +72,26 @@ def _now_ict() -> str:
 
 
 def _load_state() -> dict[str, Any]:
+    """Load monitor state. On first run, initialize log offsets to current
+    EOF so we don't re-fire alerts on historical events (e.g. pre-deploy
+    KILL_SWITCH or Tracebacks from days/weeks ago). The first cron tick
+    establishes the baseline; alerts start firing on the SECOND tick.
+    """
     try:
         if STATE_PATH.exists():
             return json.loads(STATE_PATH.read_text())
     except (OSError, json.JSONDecodeError) as e:
         log.warning("monitor: state file unreadable, starting fresh: %s", e)
-    return {"alerts": {}, "log_offsets": {}}
+    # First run — pin offsets to current EOF per leg so historical events
+    # don't trigger false-positive alerts.
+    initial_offsets: dict[str, int] = {}
+    for leg in LEGS:
+        log_path = LOGS / leg["log"]
+        if log_path.exists():
+            initial_offsets[f"offset:{leg['name']}"] = log_path.stat().st_size
+        else:
+            initial_offsets[f"offset:{leg['name']}"] = 0
+    return {"alerts": {}, "log_offsets": initial_offsets}
 
 
 def _save_state(state: dict[str, Any]) -> None:
@@ -180,7 +194,7 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
     try:
         import sqlite3
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0) as conn:
-            cur = conn.execute("SELECT key, value FROM meta WHERE key IN ('deploy_start_equity',)")
+            cur = conn.execute("SELECT key, value FROM meta WHERE key = ?", ("deploy_start_equity",))
             rows = dict(cur.fetchall())
         anchor = float(rows.get("deploy_start_equity", 0) or 0) or None
         return anchor, anchor  # current ≈ anchor unless we parse logs; bot log line "Resuming deploy" has it
