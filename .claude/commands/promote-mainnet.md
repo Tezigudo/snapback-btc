@@ -4,6 +4,8 @@ description: Guided pre-mainnet checklist — testnet to real money
 
 **This command moves the bot to REAL MONEY. Stop if any item below is unchecked.**
 
+**Time display rule:** any timestamps in the checklist output (deploy timestamp, first-heartbeat-on-mainnet, alert times) are shown to the user in GMT+7 ICT. UTC stays in the bot/config.
+
 Pre-flight:
 1. `verify_identity(action_type="bot_mainnet")` — if BLOCKED, STOP and ask the user.
 2. Confirm 7+ days of clean testnet operation: `/status` shows ≥10 trades, zero unhandled errors, heartbeat continuous.
