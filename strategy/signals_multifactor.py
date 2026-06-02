@@ -41,6 +41,8 @@ Exit rules:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from backtesting import Strategy
@@ -54,6 +56,59 @@ from strategy.indicators import (
     rsi,
     sma,
 )
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_4H_PARQUET_DEFAULT = _REPO_ROOT / "data" / "historical" / "BTC_USDT_USDT_4h.parquet"
+
+
+def _build_4h_ema_aligned(
+    dates_15m: pd.DatetimeIndex,
+    parquet_path: Path,
+    ema_period: int = 200,
+) -> np.ndarray:
+    """Load 4H bars, compute EMA(N), align to 15m timestamps with lookahead safety.
+
+    TIMING CONVENTION (critical):
+        The parquet index is bar-OPEN time. A 4H bar opening at T closes at T+4h.
+        We may only use the EMA of that bar at 15m timestamps >= T+4h.
+
+    Implementation mirrors strategy/signals_divergence_v2._build_4h_ema200_aligned:
+        1. Load FULL 4H parquet (all history → ensures EMA(200) is warmed up
+           before any OOS window begins).
+        2. Compute EMA(N) on 4H closes.
+        3. Re-index the EMA series by CLOSE timestamps (open_time + 4h).
+        4. pd.merge_asof(direction="backward") against the 15m index — each 15m
+           bar receives the EMA of the most-recently CLOSED 4H bar. The EMA of
+           the still-open 4H bar is unreachable, hence no lookahead.
+        5. Both indices stripped to tz-naive + datetime64[us] precision (pandas
+           refuses merges across mixed precision / tz).
+
+    Returns an ndarray aligned 1:1 to dates_15m (NaN during warm-up).
+    """
+    df4h = pd.read_parquet(parquet_path)
+    if df4h.index.tz is not None:
+        df4h.index = df4h.index.tz_localize(None)
+    # parquet columns are lowercased on disk; backtesting.py capitalises for
+    # the 15m frame but we read 4H directly here so use the on-disk name.
+    close_col = "close" if "close" in df4h.columns else "Close"
+    ema_4h = ema(df4h[close_col], ema_period).values
+
+    close_times = df4h.index + pd.Timedelta(hours=4)
+    close_times_us = pd.DatetimeIndex(close_times.astype("datetime64[us]"))
+
+    left_idx_raw = dates_15m
+    if left_idx_raw.tz is not None:
+        left_idx_raw = left_idx_raw.tz_localize(None)
+    left_idx = pd.DatetimeIndex(left_idx_raw.astype("datetime64[us]"))
+
+    right = pd.DataFrame({"ema4h": ema_4h}, index=close_times_us).sort_index()
+    left = pd.DataFrame(index=left_idx)
+    merged = pd.merge_asof(
+        left, right,
+        left_index=True, right_index=True,
+        direction="backward",
+    )
+    return merged["ema4h"].values
 
 
 class DayTradeMultiFactorBTC(Strategy):
@@ -93,6 +148,14 @@ class DayTradeMultiFactorBTC(Strategy):
     leverage = 20
     allow_shorts = True
 
+    # --- 4H EMA200 regime gate (additive; deepening 2026-06-02 → +27.45pp) ---
+    # Lookahead-safe alignment: see _build_4h_ema_aligned() module docstring.
+    # Long entries require 15m close > 4H EMA(200); shorts require close <.
+    # Disable by setting use_mtf_4h_gate=False (or passing False via bt.run).
+    use_mtf_4h_gate = True
+    mtf_4h_ema_period = 200
+    mtf_4h_parquet_path = str(_4H_PARQUET_DEFAULT)
+
     def init(self) -> None:
         close = pd.Series(self.data.Close)
         open_ = pd.Series(self.data.Open)
@@ -110,7 +173,25 @@ class DayTradeMultiFactorBTC(Strategy):
         self._hammer = hammer(open_, high, low, close).values
         self._entry_bar: int | None = None
 
+        # 4H EMA(N) regime filter (additive). Loaded from the FULL 4H parquet so
+        # the EMA is warmed-up before any backtest slice begins. Aligned to the
+        # 15m index via backward merge_asof on bar-CLOSE timestamps — same
+        # convention as strategy/signals_divergence_v2.py.
+        if self.use_mtf_4h_gate:
+            dates = pd.DatetimeIndex(self.data.index)
+            self._ema_4h_200 = _build_4h_ema_aligned(
+                dates,
+                Path(self.mtf_4h_parquet_path),
+                self.mtf_4h_ema_period,
+            )
+        else:
+            self._ema_4h_200 = None
+
     def _position_units(self, price: float, sl_distance: float) -> int:
+        # NOTE: backtesting.py 0.6.5 only accepts integer units.
+        # Fractional 0.001-BTC sizing is implemented via HARNESS-level price
+        # scaling (see tools/_fractional_run.py). Under scaling: 1 returned
+        # "unit" == 0.001 BTC, matching Binance USDT-M perp qty_step.
         if sl_distance <= 0 or not np.isfinite(sl_distance) or price <= 0:
             return 0
         risk_amount = self.equity * (self.risk_per_trade_pct / 100.0)
@@ -148,6 +229,13 @@ class DayTradeMultiFactorBTC(Strategy):
                     return False
             except (AttributeError, IndexError):
                 pass
+        # 7. 4H EMA(N) regime gate — added 2026-06-02. Closes the loop on the
+        # "trend gate" already present (15m EMA200) by also requiring the higher
+        # timeframe regime to agree. Long requires 15m close > 4H EMA(200).
+        if self.use_mtf_4h_gate and self._ema_4h_200 is not None:
+            ema_4h_v = self._ema_4h_200[i]
+            if not (np.isfinite(ema_4h_v) and self.data.Close[-1] > ema_4h_v):
+                return False
         return True
 
     def _short_signal(self, i: int) -> bool:
@@ -176,6 +264,11 @@ class DayTradeMultiFactorBTC(Strategy):
                     return False
             except (AttributeError, IndexError):
                 pass
+        # 7. 4H EMA(N) regime gate (short mirror). Short requires 15m close < EMA.
+        if self.use_mtf_4h_gate and self._ema_4h_200 is not None:
+            ema_4h_v = self._ema_4h_200[i]
+            if not (np.isfinite(ema_4h_v) and self.data.Close[-1] < ema_4h_v):
+                return False
         return True
 
     def next(self) -> None:

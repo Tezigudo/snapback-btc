@@ -1,0 +1,68 @@
+{
+  "strategy": "multifactor-v1+4h-gate",
+  "stage1_impl_cross_check": {
+    "stage": 1,
+    "window": [
+      "2024-01-01",
+      "2024-06-30"
+    ],
+    "trades_path_a_in_class": 14,
+    "trades_path_b_subclass": 14,
+    "trades_common": 14,
+    "trades_only_in_path_a": [],
+    "trades_only_in_path_b": [],
+    "stats_a_return_pct": 0.8011899160249507,
+    "stats_b_return_pct": 0.8011899160249507,
+    "verdict": "PASS"
+  },
+  "stage2_live_vs_backtest": {
+    "stage": 2,
+    "window": [
+      "2025-04-01",
+      "2025-06-30"
+    ],
+    "warmup_bars": 205,
+    "evaluable_bars": 8531,
+    "bars_in_agreement": 8531,
+    "agreement_pct": 100.0,
+    "parity_gate_pct": 99.5,
+    "backtest_long_fires": 12,
+    "backtest_short_fires": 0,
+    "live_long_fires": 12,
+    "live_short_fires": 0,
+    "mismatches_sample": [],
+    "verdict": "PASS"
+  },
+  "overall_verdict": "PASS",
+  "stage2_2022H1_bear_regime": {
+    "window": [
+      "2022-01-01",
+      "2022-06-30"
+    ],
+    "evaluable_bars": 17171,
+    "bars_in_agreement": 17171,
+    "agreement_pct": 100.0,
+    "backtest_long_fires": 16,
+    "backtest_short_fires": 8,
+    "live_long_fires": 16,
+    "live_short_fires": 8,
+    "mismatches_sample": [],
+    "verdict": "PASS"
+  },
+  "live_load_klines_smoke": {
+    "tested_at": "2026-06-02",
+    "four_h_bars_fetched": 1080,
+    "four_h_tz": "UTC",
+    "four_h_columns": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "four_h_range_days": 180,
+    "ema_4h_200_computed": 76182.18,
+    "gate_eval_path": "load_klines REST -> _compute_4h_ema_at_15m_close -> regime gate",
+    "verdict": "PASS \u2014 live self-fetch path is functional end-to-end (no bot.py change required)"
+  }
+}

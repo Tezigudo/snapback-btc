@@ -1,0 +1,189 @@
+{
+  "config": "multifactor-v1 + 4H EMA200 gate (gate ON)",
+  "method": "rolling 90-day test windows, advance quarterly (no train phase \u2014 locked config)",
+  "start_date": "2020-01-01",
+  "end_date": "2026-02-28",
+  "test_window_count": 25,
+  "windows_positive": 20,
+  "windows_positive_pct": 80.0,
+  "gate_threshold_pct": 70.0,
+  "gate_pass": true,
+  "compounded_pct": 243.8111,
+  "per_window": [
+    {
+      "start": "2020-01-01",
+      "end": "2020-03-31",
+      "trades": 7,
+      "return_pct": 2.9623,
+      "max_dd_pct": -4.1262
+    },
+    {
+      "start": "2020-03-31",
+      "end": "2020-06-29",
+      "trades": 17,
+      "return_pct": 24.8836,
+      "max_dd_pct": -9.2067
+    },
+    {
+      "start": "2020-06-29",
+      "end": "2020-09-27",
+      "trades": 12,
+      "return_pct": 3.299,
+      "max_dd_pct": -5.5254
+    },
+    {
+      "start": "2020-09-27",
+      "end": "2020-12-26",
+      "trades": 15,
+      "return_pct": 8.4635,
+      "max_dd_pct": -9.2803
+    },
+    {
+      "start": "2020-12-26",
+      "end": "2021-03-26",
+      "trades": 3,
+      "return_pct": 8.8523,
+      "max_dd_pct": -3.5856
+    },
+    {
+      "start": "2021-03-26",
+      "end": "2021-06-24",
+      "trades": 6,
+      "return_pct": -2.4743,
+      "max_dd_pct": -7.6032
+    },
+    {
+      "start": "2021-06-24",
+      "end": "2021-09-22",
+      "trades": 12,
+      "return_pct": 7.2486,
+      "max_dd_pct": -8.805
+    },
+    {
+      "start": "2021-09-22",
+      "end": "2021-12-21",
+      "trades": 10,
+      "return_pct": 6.7678,
+      "max_dd_pct": -10.6997
+    },
+    {
+      "start": "2021-12-21",
+      "end": "2022-03-21",
+      "trades": 13,
+      "return_pct": 7.2358,
+      "max_dd_pct": -6.9179
+    },
+    {
+      "start": "2022-03-21",
+      "end": "2022-06-19",
+      "trades": 6,
+      "return_pct": 13.2329,
+      "max_dd_pct": -6.4514
+    },
+    {
+      "start": "2022-06-19",
+      "end": "2022-09-17",
+      "trades": 6,
+      "return_pct": 3.8442,
+      "max_dd_pct": -4.397
+    },
+    {
+      "start": "2022-09-17",
+      "end": "2022-12-16",
+      "trades": 7,
+      "return_pct": -2.838,
+      "max_dd_pct": -6.1775
+    },
+    {
+      "start": "2022-12-16",
+      "end": "2023-03-16",
+      "trades": 16,
+      "return_pct": 10.8459,
+      "max_dd_pct": -11.9716
+    },
+    {
+      "start": "2023-03-16",
+      "end": "2023-06-14",
+      "trades": 15,
+      "return_pct": 8.255,
+      "max_dd_pct": -11.1738
+    },
+    {
+      "start": "2023-06-14",
+      "end": "2023-09-12",
+      "trades": 7,
+      "return_pct": 5.6473,
+      "max_dd_pct": -7.3517
+    },
+    {
+      "start": "2023-09-12",
+      "end": "2023-12-11",
+      "trades": 21,
+      "return_pct": 8.202,
+      "max_dd_pct": -4.4465
+    },
+    {
+      "start": "2023-12-11",
+      "end": "2024-03-10",
+      "trades": 9,
+      "return_pct": -3.6199,
+      "max_dd_pct": -7.2692
+    },
+    {
+      "start": "2024-03-10",
+      "end": "2024-06-08",
+      "trades": 7,
+      "return_pct": 1.6216,
+      "max_dd_pct": -4.6661
+    },
+    {
+      "start": "2024-06-08",
+      "end": "2024-09-06",
+      "trades": 11,
+      "return_pct": -11.5811,
+      "max_dd_pct": -12.7696
+    },
+    {
+      "start": "2024-09-06",
+      "end": "2024-12-05",
+      "trades": 20,
+      "return_pct": 8.1046,
+      "max_dd_pct": -7.0411
+    },
+    {
+      "start": "2024-12-05",
+      "end": "2025-03-05",
+      "trades": 13,
+      "return_pct": 6.3336,
+      "max_dd_pct": -9.0848
+    },
+    {
+      "start": "2025-03-05",
+      "end": "2025-06-03",
+      "trades": 5,
+      "return_pct": 7.9244,
+      "max_dd_pct": -4.4731
+    },
+    {
+      "start": "2025-06-03",
+      "end": "2025-09-01",
+      "trades": 11,
+      "return_pct": -5.2145,
+      "max_dd_pct": -7.5038
+    },
+    {
+      "start": "2025-09-01",
+      "end": "2025-11-30",
+      "trades": 9,
+      "return_pct": 12.5351,
+      "max_dd_pct": -5.752
+    },
+    {
+      "start": "2025-11-30",
+      "end": "2026-02-28",
+      "trades": 7,
+      "return_pct": 1.9372,
+      "max_dd_pct": -4.9486
+    }
+  ]
+}

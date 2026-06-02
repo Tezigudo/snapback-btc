@@ -1,0 +1,83 @@
+{
+  "gate_off_baseline": {
+    "per_window": {
+      "2022H1": {
+        "trades": 28,
+        "return_pct": 1.6415289968249505,
+        "max_dd_pct": -11.530308295058022,
+        "win_rate_pct": 25.0
+      },
+      "2023H1": {
+        "trades": 43,
+        "return_pct": 28.730851614224935,
+        "max_dd_pct": -14.866193769281766,
+        "win_rate_pct": 34.883720930232556
+      },
+      "2024H1": {
+        "trades": 22,
+        "return_pct": 4.202659399674903,
+        "max_dd_pct": -9.812354532503441,
+        "win_rate_pct": 27.27272727272727
+      },
+      "2024H2": {
+        "trades": 42,
+        "return_pct": 3.060015336550097,
+        "max_dd_pct": -14.88368958612668,
+        "win_rate_pct": 23.809523809523807
+      },
+      "2025H1": {
+        "trades": 33,
+        "return_pct": 7.092072306799935,
+        "max_dd_pct": -9.361401629661737,
+        "win_rate_pct": 30.303030303030305
+      }
+    },
+    "compounded_pct": 50.4805,
+    "windows_positive": "5/5",
+    "total_trades": 168,
+    "target": 50.4805,
+    "within_2pp": true
+  },
+  "gate_on_revalidation": {
+    "per_window": {
+      "2022H1": {
+        "trades": 19,
+        "return_pct": 19.74899769615,
+        "max_dd_pct": -8.200072084541432,
+        "win_rate_pct": 36.84210526315789
+      },
+      "2023H1": {
+        "trades": 34,
+        "return_pct": 32.9249144404751,
+        "max_dd_pct": -11.989398801313722,
+        "win_rate_pct": 41.17647058823529
+      },
+      "2024H1": {
+        "trades": 14,
+        "return_pct": 0.8011899160249507,
+        "max_dd_pct": -9.412087263233104,
+        "win_rate_pct": 28.57142857142857
+      },
+      "2024H2": {
+        "trades": 34,
+        "return_pct": 1.9690713433751257,
+        "max_dd_pct": -16.724048333209474,
+        "win_rate_pct": 23.52941176470588
+      },
+      "2025H1": {
+        "trades": 20,
+        "return_pct": 8.752723169349949,
+        "max_dd_pct": -9.11356778770469,
+        "win_rate_pct": 40.0
+      }
+    },
+    "compounded_pct": 77.9314,
+    "windows_positive": "5/5",
+    "total_trades": 121,
+    "target": 77.93,
+    "within_2pp": true,
+    "trade_count_target": 121,
+    "trade_count_pct_off": 0.0
+  },
+  "lift_pp": 27.4509
+}

@@ -1,0 +1,659 @@
+{
+  "strategy": "multifactor-v1",
+  "cash": 1000000.0,
+  "commission": 0.0005,
+  "margin": 0.05,
+  "windows": [
+    "2022H1",
+    "2023H1",
+    "2024H1",
+    "2024H2",
+    "2025H1"
+  ],
+  "locked_config": {
+    "rsi_period": 14,
+    "rsi_long_threshold": 35.0,
+    "rsi_short_threshold": 70.0,
+    "volume_ma_period": 20,
+    "volume_multiple": 2.0,
+    "mf_trend_ema_period": 200,
+    "require_trend": true,
+    "require_candlestick": false,
+    "require_macd": false,
+    "require_funding_not_extreme": true,
+    "funding_extreme_threshold": 0.0005,
+    "sl_pct": 0.015,
+    "tp_pct": 0.03,
+    "max_hold_bars": 1344,
+    "risk_per_trade_pct": 2.75,
+    "leverage": 20,
+    "allow_shorts": true
+  },
+  "variants": {
+    "baseline": {
+      "label": "baseline",
+      "summary": {
+        "n_trades": 168,
+        "compounded_pct": 50.4805,
+        "windows_positive": "5/5",
+        "per_window_return_pct": [
+          1.6415,
+          28.7309,
+          4.2027,
+          3.06,
+          7.0921
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 28,
+          "return_pct": 1.6415289968249505,
+          "max_dd_pct": -11.530308295058022,
+          "win_rate_pct": 25.0,
+          "equity_final": 1016415.2899682495
+        },
+        "2023H1": {
+          "trades": 43,
+          "return_pct": 28.730851614224935,
+          "max_dd_pct": -14.866193769281766,
+          "win_rate_pct": 34.883720930232556,
+          "equity_final": 1287308.5161422493
+        },
+        "2024H1": {
+          "trades": 22,
+          "return_pct": 4.202659399674903,
+          "max_dd_pct": -9.812354532503441,
+          "win_rate_pct": 27.27272727272727,
+          "equity_final": 1042026.593996749
+        },
+        "2024H2": {
+          "trades": 42,
+          "return_pct": 3.060015336550097,
+          "max_dd_pct": -14.88368958612668,
+          "win_rate_pct": 23.809523809523807,
+          "equity_final": 1030600.153365501
+        },
+        "2025H1": {
+          "trades": 33,
+          "return_pct": 7.092072306799935,
+          "max_dd_pct": -9.361401629661737,
+          "win_rate_pct": 30.303030303030305,
+          "equity_final": 1070920.7230679994
+        }
+      },
+      "psr": {
+        "n_trades": 168,
+        "point_sharpe": 0.099696,
+        "sr_se_lo": 0.073458,
+        "psr_vs_hurdle": 0.911994,
+        "min_trl": 248,
+        "skew": 0.974677,
+        "kurt": 2.494058,
+        "interpretation": "insufficient_evidence"
+      },
+      "delta_compounded_pp": 0.0
+    },
+    "no_volume": {
+      "label": "no_volume",
+      "summary": {
+        "n_trades": 233,
+        "compounded_pct": 48.913,
+        "windows_positive": "4/5",
+        "per_window_return_pct": [
+          1.1793,
+          17.0892,
+          11.0666,
+          14.3824,
+          -1.0579
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 43,
+          "return_pct": 1.1793335594798322,
+          "max_dd_pct": -17.10429615705603,
+          "win_rate_pct": 23.25581395348837,
+          "equity_final": 1011793.3355947983
+        },
+        "2023H1": {
+          "trades": 52,
+          "return_pct": 17.089221761625005,
+          "max_dd_pct": -17.91456485914482,
+          "win_rate_pct": 30.76923076923077,
+          "equity_final": 1170892.21761625
+        },
+        "2024H1": {
+          "trades": 28,
+          "return_pct": 11.066556223074976,
+          "max_dd_pct": -10.563384522948759,
+          "win_rate_pct": 32.142857142857146,
+          "equity_final": 1110665.5622307498
+        },
+        "2024H2": {
+          "trades": 58,
+          "return_pct": 14.38244483725005,
+          "max_dd_pct": -18.962691458290692,
+          "win_rate_pct": 22.413793103448278,
+          "equity_final": 1143824.4483725005
+        },
+        "2025H1": {
+          "trades": 52,
+          "return_pct": -1.057905643450073,
+          "max_dd_pct": -16.31077587798446,
+          "win_rate_pct": 26.923076923076923,
+          "equity_final": 989420.9435654993
+        }
+      },
+      "psr": {
+        "n_trades": 233,
+        "point_sharpe": 0.075557,
+        "sr_se_lo": 0.062908,
+        "psr_vs_hurdle": 0.884638,
+        "min_trl": 438,
+        "skew": 1.063706,
+        "kurt": 2.714805,
+        "interpretation": "insufficient_evidence"
+      },
+      "delta_compounded_pp": -1.5675
+    },
+    "no_trend": {
+      "label": "no_trend",
+      "summary": {
+        "n_trades": 1151,
+        "compounded_pct": -97.3333,
+        "windows_positive": "0/5",
+        "per_window_return_pct": [
+          -71.1345,
+          -30.3053,
+          -61.3729,
+          -32.0143,
+          -49.523
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 309,
+          "return_pct": -71.13446091793043,
+          "max_dd_pct": -82.5221703469069,
+          "win_rate_pct": 31.3915857605178,
+          "equity_final": 288655.39082069567
+        },
+        "2023H1": {
+          "trades": 214,
+          "return_pct": -30.305333698925192,
+          "max_dd_pct": -46.3800282688235,
+          "win_rate_pct": 34.57943925233645,
+          "equity_final": 696946.6630107481
+        },
+        "2024H1": {
+          "trades": 225,
+          "return_pct": -61.37292322550015,
+          "max_dd_pct": -67.15019583712201,
+          "win_rate_pct": 31.11111111111111,
+          "equity_final": 386270.7677449984
+        },
+        "2024H2": {
+          "trades": 224,
+          "return_pct": -32.014342421599906,
+          "max_dd_pct": -46.381302098643964,
+          "win_rate_pct": 34.375,
+          "equity_final": 679856.5757840009
+        },
+        "2025H1": {
+          "trades": 179,
+          "return_pct": -49.52303580570002,
+          "max_dd_pct": -63.14389989887663,
+          "win_rate_pct": 31.843575418994412,
+          "equity_final": 504769.64194299985
+        }
+      },
+      "psr": {
+        "n_trades": 1151,
+        "point_sharpe": -0.064694,
+        "sr_se_lo": 0.030188,
+        "psr_vs_hurdle": 0.016092,
+        "min_trl": 1000000000,
+        "skew": 0.746913,
+        "kurt": 1.558895,
+        "interpretation": "insufficient_evidence"
+      },
+      "delta_compounded_pp": -147.8138
+    },
+    "no_funding": {
+      "label": "no_funding",
+      "summary": {
+        "n_trades": 172,
+        "compounded_pct": 53.707,
+        "windows_positive": "4/5",
+        "per_window_return_pct": [
+          1.6415,
+          28.7309,
+          9.7778,
+          -0.0764,
+          7.0921
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 28,
+          "return_pct": 1.6415289968249505,
+          "max_dd_pct": -11.530308295058022,
+          "win_rate_pct": 25.0,
+          "equity_final": 1016415.2899682495
+        },
+        "2023H1": {
+          "trades": 43,
+          "return_pct": 28.730851614224935,
+          "max_dd_pct": -14.866193769281766,
+          "win_rate_pct": 34.883720930232556,
+          "equity_final": 1287308.5161422493
+        },
+        "2024H1": {
+          "trades": 25,
+          "return_pct": 9.777790765774972,
+          "max_dd_pct": -8.042191673976905,
+          "win_rate_pct": 32.0,
+          "equity_final": 1097777.9076577497
+        },
+        "2024H2": {
+          "trades": 43,
+          "return_pct": -0.07643357539988356,
+          "max_dd_pct": -14.88368958612668,
+          "win_rate_pct": 23.25581395348837,
+          "equity_final": 999235.6642460012
+        },
+        "2025H1": {
+          "trades": 33,
+          "return_pct": 7.092072306799935,
+          "max_dd_pct": -9.361401629661737,
+          "win_rate_pct": 30.303030303030305,
+          "equity_final": 1070920.7230679994
+        }
+      },
+      "psr": {
+        "n_trades": 172,
+        "point_sharpe": 0.102488,
+        "sr_se_lo": 0.072547,
+        "psr_vs_hurdle": 0.920524,
+        "min_trl": 235,
+        "skew": 0.962365,
+        "kurt": 2.475945,
+        "interpretation": "insufficient_evidence"
+      },
+      "delta_compounded_pp": 3.2265
+    },
+    "rsi_30_70": {
+      "label": "rsi_30_70",
+      "summary": {
+        "n_trades": 71,
+        "compounded_pct": 2.0888,
+        "windows_positive": "4/5",
+        "per_window_return_pct": [
+          0.6043,
+          -6.0381,
+          4.0507,
+          0.8384,
+          2.9292
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 12,
+          "return_pct": 0.604279374400014,
+          "max_dd_pct": -8.204845819511842,
+          "win_rate_pct": 25.0,
+          "equity_final": 1006042.7937440001
+        },
+        "2023H1": {
+          "trades": 19,
+          "return_pct": -6.038050479099969,
+          "max_dd_pct": -16.29586941633988,
+          "win_rate_pct": 26.31578947368421,
+          "equity_final": 939619.4952090003
+        },
+        "2024H1": {
+          "trades": 11,
+          "return_pct": 4.050683027574932,
+          "max_dd_pct": -6.964100435967746,
+          "win_rate_pct": 27.27272727272727,
+          "equity_final": 1040506.8302757493
+        },
+        "2024H2": {
+          "trades": 14,
+          "return_pct": 0.8383843441001022,
+          "max_dd_pct": -10.425428806750304,
+          "win_rate_pct": 28.57142857142857,
+          "equity_final": 1008383.843441001
+        },
+        "2025H1": {
+          "trades": 15,
+          "return_pct": 2.929213651050057,
+          "max_dd_pct": -6.467179640958798,
+          "win_rate_pct": 26.666666666666668,
+          "equity_final": 1029292.1365105006
+        }
+      },
+      "psr": {
+        "n_trades": 71,
+        "point_sharpe": 0.026621,
+        "sr_se_lo": 0.11696,
+        "psr_vs_hurdle": 0.589398,
+        "min_trl": 3710,
+        "skew": 1.092188,
+        "kurt": 2.855363,
+        "interpretation": "insufficient_evidence"
+      },
+      "delta_compounded_pp": -48.3917
+    },
+    "add_candlestick": {
+      "label": "add_candlestick",
+      "summary": {
+        "n_trades": 13,
+        "compounded_pct": -1.6739,
+        "windows_positive": "1/5",
+        "per_window_return_pct": [
+          -1.8632,
+          2.643,
+          0.0,
+          -2.274,
+          -0.1156
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 1,
+          "return_pct": -1.863248479999986,
+          "max_dd_pct": -2.2852931709729574,
+          "win_rate_pct": 0.0,
+          "equity_final": 981367.5152000001
+        },
+        "2023H1": {
+          "trades": 4,
+          "return_pct": 2.643016302349989,
+          "max_dd_pct": -2.7668064205967458,
+          "win_rate_pct": 25.0,
+          "equity_final": 1026430.1630234999
+        },
+        "2024H1": {
+          "trades": 0,
+          "return_pct": 0.0,
+          "max_dd_pct": 0.0,
+          "win_rate_pct": NaN,
+          "equity_final": 1000000.0
+        },
+        "2024H2": {
+          "trades": 6,
+          "return_pct": -2.2739657049999455,
+          "max_dd_pct": -5.436384270124551,
+          "win_rate_pct": 16.666666666666664,
+          "equity_final": 977260.3429500005
+        },
+        "2025H1": {
+          "trades": 2,
+          "return_pct": -0.11564118500000332,
+          "max_dd_pct": -4.8124469746486875,
+          "win_rate_pct": 50.0,
+          "equity_final": 998843.58815
+        }
+      },
+      "psr": {
+        "n_trades": 13,
+        "point_sharpe": -0.06217,
+        "sr_se_lo": 0.293758,
+        "psr_vs_hurdle": 0.419437,
+        "min_trl": 1000000000,
+        "skew": 1.862174,
+        "kurt": 7.257619,
+        "interpretation": "insufficient_evidence"
+      },
+      "delta_compounded_pp": -52.1544
+    },
+    "add_macd": {
+      "label": "add_macd",
+      "summary": {
+        "n_trades": 0,
+        "compounded_pct": 0.0,
+        "windows_positive": "0/5",
+        "per_window_return_pct": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 0,
+          "return_pct": 0.0,
+          "max_dd_pct": 0.0,
+          "win_rate_pct": NaN,
+          "equity_final": 1000000.0
+        },
+        "2023H1": {
+          "trades": 0,
+          "return_pct": 0.0,
+          "max_dd_pct": 0.0,
+          "win_rate_pct": NaN,
+          "equity_final": 1000000.0
+        },
+        "2024H1": {
+          "trades": 0,
+          "return_pct": 0.0,
+          "max_dd_pct": 0.0,
+          "win_rate_pct": NaN,
+          "equity_final": 1000000.0
+        },
+        "2024H2": {
+          "trades": 0,
+          "return_pct": 0.0,
+          "max_dd_pct": 0.0,
+          "win_rate_pct": NaN,
+          "equity_final": 1000000.0
+        },
+        "2025H1": {
+          "trades": 0,
+          "return_pct": 0.0,
+          "max_dd_pct": 0.0,
+          "win_rate_pct": NaN,
+          "equity_final": 1000000.0
+        }
+      },
+      "psr": {
+        "n_trades": 0,
+        "psr_vs_hurdle": 0.0,
+        "interpretation": "insufficient_evidence"
+      },
+      "delta_compounded_pp": -50.4805
+    },
+    "mtf_4h_gate": {
+      "label": "mtf_4h_gate",
+      "summary": {
+        "n_trades": 121,
+        "compounded_pct": 77.9314,
+        "windows_positive": "5/5",
+        "per_window_return_pct": [
+          19.749,
+          32.9249,
+          0.8012,
+          1.9691,
+          8.7527
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 19,
+          "return_pct": 19.74899769615,
+          "max_dd_pct": -8.200072084541432,
+          "win_rate_pct": 36.84210526315789,
+          "equity_final": 1197489.9769615
+        },
+        "2023H1": {
+          "trades": 34,
+          "return_pct": 32.9249144404751,
+          "max_dd_pct": -11.989398801313722,
+          "win_rate_pct": 41.17647058823529,
+          "equity_final": 1329249.144404751
+        },
+        "2024H1": {
+          "trades": 14,
+          "return_pct": 0.8011899160249507,
+          "max_dd_pct": -9.412087263233104,
+          "win_rate_pct": 28.57142857142857,
+          "equity_final": 1008011.8991602495
+        },
+        "2024H2": {
+          "trades": 34,
+          "return_pct": 1.9690713433751257,
+          "max_dd_pct": -16.724048333209474,
+          "win_rate_pct": 23.52941176470588,
+          "equity_final": 1019690.7134337513
+        },
+        "2025H1": {
+          "trades": 20,
+          "return_pct": 8.752723169349949,
+          "max_dd_pct": -9.11356778770469,
+          "win_rate_pct": 40.0,
+          "equity_final": 1087527.2316934995
+        }
+      },
+      "psr": {
+        "n_trades": 121,
+        "point_sharpe": 0.171685,
+        "sr_se_lo": 0.085249,
+        "psr_vs_hurdle": 0.97755,
+        "min_trl": 82,
+        "skew": 0.744673,
+        "kurt": 1.976508,
+        "interpretation": "evidence_of_edge"
+      },
+      "delta_compounded_pp": 27.4509
+    }
+  },
+  "multi_coin": {
+    "ETH": {
+      "label": "ETH",
+      "summary": {
+        "n_trades": 189,
+        "compounded_pct": -31.5631,
+        "windows_positive": "2/5",
+        "per_window_return_pct": [
+          28.2826,
+          -13.8819,
+          -25.1753,
+          15.7557,
+          -28.4777
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 33,
+          "return_pct": 28.28262099083485,
+          "max_dd_pct": -8.69698802326997,
+          "win_rate_pct": 33.33333333333333,
+          "equity_final": 1282826.2099083485
+        },
+        "2023H1": {
+          "trades": 41,
+          "return_pct": -13.881936003835,
+          "max_dd_pct": -22.21812935795522,
+          "win_rate_pct": 21.951219512195124,
+          "equity_final": 861180.63996165
+        },
+        "2024H1": {
+          "trades": 38,
+          "return_pct": -25.17534790705991,
+          "max_dd_pct": -25.84917097911368,
+          "win_rate_pct": 18.421052631578945,
+          "equity_final": 748246.5209294009
+        },
+        "2024H2": {
+          "trades": 39,
+          "return_pct": 15.755659587535028,
+          "max_dd_pct": -13.082409349155188,
+          "win_rate_pct": 38.46153846153847,
+          "equity_final": 1157556.5958753503
+        },
+        "2025H1": {
+          "trades": 38,
+          "return_pct": -28.477748518990026,
+          "max_dd_pct": -39.37224054247005,
+          "win_rate_pct": 13.157894736842104,
+          "equity_final": 715222.5148100997
+        }
+      },
+      "psr": {
+        "n_trades": 189,
+        "point_sharpe": -0.056961,
+        "sr_se_lo": 0.075151,
+        "psr_vs_hurdle": 0.224843,
+        "min_trl": 1000000000,
+        "skew": 1.156289,
+        "kurt": 2.918326,
+        "interpretation": "insufficient_evidence"
+      }
+    },
+    "SOL": {
+      "label": "SOL",
+      "summary": {
+        "n_trades": 149,
+        "compounded_pct": 13.9102,
+        "windows_positive": "2/5",
+        "per_window_return_pct": [
+          -5.5728,
+          18.6479,
+          26.1005,
+          -12.0864,
+          -8.2867
+        ]
+      },
+      "per_window": {
+        "2022H1": {
+          "trades": 28,
+          "return_pct": -5.572848971479933,
+          "max_dd_pct": -19.20438856061778,
+          "win_rate_pct": 28.57142857142857,
+          "equity_final": 944271.5102852007
+        },
+        "2023H1": {
+          "trades": 34,
+          "return_pct": 18.647932945610957,
+          "max_dd_pct": -25.22817848298905,
+          "win_rate_pct": 38.23529411764706,
+          "equity_final": 1186479.3294561096
+        },
+        "2024H1": {
+          "trades": 24,
+          "return_pct": 26.100533711862727,
+          "max_dd_pct": -9.145790006723264,
+          "win_rate_pct": 41.66666666666667,
+          "equity_final": 1261005.3371186273
+        },
+        "2024H2": {
+          "trades": 34,
+          "return_pct": -12.086373831043462,
+          "max_dd_pct": -21.820782363530846,
+          "win_rate_pct": 20.588235294117645,
+          "equity_final": 879136.2616895654
+        },
+        "2025H1": {
+          "trades": 29,
+          "return_pct": -8.286670057014993,
+          "max_dd_pct": -19.38409905041817,
+          "win_rate_pct": 20.689655172413794,
+          "equity_final": 917133.2994298501
+        }
+      },
+      "psr": {
+        "n_trades": 149,
+        "point_sharpe": 0.042418,
+        "sr_se_lo": 0.080567,
+        "psr_vs_hurdle": 0.700115,
+        "min_trl": 1456,
+        "skew": 0.783246,
+        "kurt": 1.841257,
+        "interpretation": "insufficient_evidence"
+      }
+    }
+  }
+}
