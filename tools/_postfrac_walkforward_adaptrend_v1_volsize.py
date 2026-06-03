@@ -33,6 +33,10 @@ sys.path.insert(0, str(ROOT))
 from strategy.signals_adaptive_trend_v1_vol_scaled_sizing import (  # noqa: E402
     AdaptiveTrendV1_vol_scaled_sizing,
 )
+from tools.aggregate import (  # noqa: E402
+    AGGREGATION_VERSION,
+    build_canonical_block,
+)
 from tools.psr_eval import compute_psr  # noqa: E402
 
 PARQUET = ROOT / "data" / "historical" / "BTC_USDT_USDT_15m.parquet"
@@ -224,6 +228,24 @@ def main() -> int:
     agg_csv = ROOT / "reports" / "_postfrac_wf_adaptrend_v1_volsize_AGG.csv"
     pd.DataFrame({"pnl_pct": all_pnl}).to_csv(agg_csv, index=False)
 
+    # Canonical v2 dual-emit — WF FAMILY: tag distinctly so it is NEVER
+    # cross-compared with 5-OOS family numbers.  Per-quarter return_pct is
+    # legitimately prod(1+ReturnPct) here because the underlying engine's
+    # headline spans train+OOS.
+    canon_windows = [
+        {
+            "label": r["label"],
+            "return_pct": r["return_pct"],
+            "trades": r["trades"],
+            "pnl_pct": r.get("pnl_pct", []),
+            "eq_impact_pnl_pct": [],
+        }
+        for r in per_window
+    ]
+    canon = build_canonical_block(
+        canon_windows, aggregation_method="v2_walkforward"
+    )
+
     result = {
         "strategy_id":        "adaptrend_v1_volsize",
         "strategy_class":     "strategy.signals_adaptive_trend_v1_vol_scaled_sizing:"
@@ -247,7 +269,9 @@ def main() -> int:
                 for r in per_window
             ],
         },
-        "psr":                psr,
+        "psr":                psr,           # legacy stitched
+        "canonical":          canon,         # v2 dual-emit (WF-tagged)
+        "aggregation_method": canon["aggregation_method"],
         "verdict":            verdict,
         "verdict_threshold":  "PASSES if >=70% test windows positive",
         "elapsed_sec":        round(time.time() - t0, 2),

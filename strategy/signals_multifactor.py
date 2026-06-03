@@ -156,6 +156,14 @@ class DayTradeMultiFactorBTC(Strategy):
     mtf_4h_ema_period = 200
     mtf_4h_parquet_path = str(_4H_PARQUET_DEFAULT)
 
+    # --- Cross-coin 4H EMA200 veto (additive; portfolio harness 2026-06-02) ---
+    # Optional SECOND 4H gate using a DIFFERENT coin's 4H parquet (e.g. BTC's
+    # 4H trend gating SOL longs/shorts). Empty string = disabled. When set,
+    # entries must clear BOTH the primary mtf_4h gate AND this cross gate.
+    # Same lookahead-safe alignment via _build_4h_ema_aligned. NaN-block
+    # treated as fail (warm-up bars cannot enter).
+    cross_4h_parquet_path = ""
+
     def init(self) -> None:
         close = pd.Series(self.data.Close)
         open_ = pd.Series(self.data.Open)
@@ -186,6 +194,18 @@ class DayTradeMultiFactorBTC(Strategy):
             )
         else:
             self._ema_4h_200 = None
+
+        # Cross-coin 4H EMA veto (additive). Reuses the same lookahead-safe
+        # alignment helper so warm-up + bar-close timing match the primary gate.
+        if self.cross_4h_parquet_path:
+            dates_x = pd.DatetimeIndex(self.data.index)
+            self._ema_4h_cross = _build_4h_ema_aligned(
+                dates_x,
+                Path(self.cross_4h_parquet_path),
+                self.mtf_4h_ema_period,
+            )
+        else:
+            self._ema_4h_cross = None
 
     def _position_units(self, price: float, sl_distance: float) -> int:
         # NOTE: backtesting.py 0.6.5 only accepts integer units.
@@ -236,6 +256,12 @@ class DayTradeMultiFactorBTC(Strategy):
             ema_4h_v = self._ema_4h_200[i]
             if not (np.isfinite(ema_4h_v) and self.data.Close[-1] > ema_4h_v):
                 return False
+            # 7b. Cross-coin 4H EMA veto (optional). Requires the OTHER coin's
+            # 4H trend to also agree before allowing the long entry.
+            if self._ema_4h_cross is not None:
+                ema_4h_x = self._ema_4h_cross[i]
+                if not (np.isfinite(ema_4h_x) and self.data.Close[-1] > ema_4h_x):
+                    return False
         return True
 
     def _short_signal(self, i: int) -> bool:
@@ -269,6 +295,12 @@ class DayTradeMultiFactorBTC(Strategy):
             ema_4h_v = self._ema_4h_200[i]
             if not (np.isfinite(ema_4h_v) and self.data.Close[-1] < ema_4h_v):
                 return False
+            # 7b. Cross-coin 4H EMA veto (short mirror). Requires the OTHER
+            # coin's 4H trend to also agree (close on bear side) before short.
+            if self._ema_4h_cross is not None:
+                ema_4h_x = self._ema_4h_cross[i]
+                if not (np.isfinite(ema_4h_x) and self.data.Close[-1] < ema_4h_x):
+                    return False
         return True
 
     def next(self) -> None:

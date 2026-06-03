@@ -51,6 +51,7 @@ from strategy.signals_adaptive_trend import AdaptiveTrendV1  # noqa: E402
 from strategy.signals_adaptive_trend_v1_funding_skip import (  # noqa: E402
     AdaptiveTrendV1_funding_skip,
 )
+from tools.aggregate import equity_impact_returns  # noqa: E402
 from tools.psr_eval import compute_psr  # noqa: E402
 
 PARQUET = ROOT / "data" / "historical" / "BTC_USDT_USDT_15m.parquet"
@@ -315,10 +316,21 @@ def main() -> int:
             )
             fs_all_pnl.extend(fs_res["pnl_pct"])
 
-        # Pop heavy arrays from per-window dict before storing.
+        # Canonical-block inputs for the FS arm (the deployed-candidate arm).
+        # eq_impact_pnl_pct = sizing-aware PnL/equity-at-entry series; this is
+        # what feeds psr_per_window. No window_start: each window is already
+        # its own OOS slice in this runner. Computed here while fs_run["stats"]
+        # is in scope.
+        fs_res["eq_impact_pnl_pct"] = equity_impact_returns(
+            fs_run["stats"], cash=CASH
+        ).tolist()
+
+        # Pop heavy arrays from the BASE per-window dict before storing (base
+        # is diagnostic only — the canonical block reads the FS arm). Keep
+        # pnl_pct AND eq_impact_pnl_pct on the FS arm so the canonical block
+        # is not emitted hollow.
         base_res_light = {k: v for k, v in base_res.items() if k != "pnl_pct"}
-        fs_res_light = {k: v for k, v in fs_res.items() if k != "pnl_pct"}
-        rows.append({"label": label, "base": base_res_light, "fs": fs_res_light})
+        rows.append({"label": label, "base": base_res_light, "fs": fs_res})
 
         print(
             f"  {label}  base: tr={base_res['trades']:3d} "
@@ -402,6 +414,30 @@ def main() -> int:
         file=sys.stderr,
     )
 
+    # Canonical v2 dual-emit — soft-drift runner (funding-net is semantically
+    # required; we keep the funding-adjusted equity AS the v2 metric but tag
+    # it so cross-comparison logic can tell it apart from the strict v2_equity_curve.
+    from tools.aggregate import build_canonical_block
+    per_window_canon = [
+        {
+            "label": r["label"],
+            # v2 headline = funding-adjusted net (sizing-aware via PnL/cash)
+            "return_pct": r["fs"]["net_return_pct"],
+            "trades": r["fs"]["trades"],
+            # gross per-trade ReturnPct% — drives the synthetic stitched ref.
+            # Stays GROSS by definition (funding applied only at window level
+            # via net_return_pct); do not reconcile to the funding-net headline.
+            "pnl_pct": r["fs"]["pnl_pct"],
+            # sizing-aware equity-impact series — LOAD-BEARING: feeds psr_per_window.
+            "eq_impact_pnl_pct": r["fs"]["eq_impact_pnl_pct"],
+        }
+        for r in rows
+    ]
+    canon = build_canonical_block(
+        per_window_canon,
+        aggregation_method="v2_equity_curve_funding_adjusted",
+    )
+
     out = {
         "improvement_id":  "funding_skip",
         "applied_to":      "AdaptiveTrendV1",
@@ -411,6 +447,9 @@ def main() -> int:
         "cash_per_window": CASH,
         "config":          CONFIG_V1,
         "rows":            rows,
+        "aggregation_method": "v2_equity_curve_funding_adjusted",
+        "funding_adjusted":   True,
+        "canonical":          canon,
         "summary": {
             "base_compounded_net_pct":  round(base_comp_net, 4),
             "fs_compounded_net_pct":    round(fs_comp_net, 4),

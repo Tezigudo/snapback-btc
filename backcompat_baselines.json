@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "aggregation_version": "v2_equity_curve",
+  "generated_at_iso": "2026-06-03T00:00:00Z",
+  "notes": "Phase 2 re-baseline table for methodology debt #1 (return-aggregation drift). Each entry maps a locked strategy reference to its v1 (legacy stitched) vs v2 (canonical equity-curve) numbers. v2 numbers were filled in by re-running the corresponding runner under tools/aggregate. v1 numbers are the historically-locked compounded % from the deployed strategy memory + verdict docs. decision_unchanged tracks whether the v1->v2 delta changes the SHELF/PROMOTE/DEPLOYED verdict.",
+  "strategies": {
+    "multifactor_v1": {
+      "runner": "tools/_postfrac_mf_baseline.py",
+      "v1_locked_compounded_pct_current_config": 50.48,
+      "v1_locked_compounded_pct_path2_published": 55.73,
+      "v1_locked_psr_stitched": 0.912,
+      "v1_basis": "stats['Return [%]'] per window, prod-of-windows (already canonical-compatible). Current locked config tightened rsi 40->35 (2026-05-29) + risk 2.0->2.75 (2026-05-23); pre-tightening baseline was the published +55.73%.",
+      "v2_compounded_pct": 50.5402,
+      "v2_psr_walkforward": 0.995786,
+      "v2_legacy_stitched_compounded_pct": 27.0487,
+      "v2_legacy_delta_pp": 23.4915,
+      "v2_windows_positive": "5/5",
+      "delta_pp_vs_current_locked": 0.0602,
+      "decision_unchanged": true,
+      "deployed": false,
+      "phase2_gate_decision": "PROCEED",
+      "note": "Matches v1 (current config) within rounding. The +55.73% in older docs predates the rsi 40->35 tightening. v2 canonical = +50.54%. Verdict: METHODOLOGY UNCHANGED."
+    },
+    "multifactor_v1_plus_4h_gate": {
+      "runner": "tools/_postfrac_mf_4h_btc_run.py",
+      "v1_locked_compounded_pct": 77.93,
+      "v1_locked_psr_stitched": 0.9776,
+      "v1_locked_walkforward_pos_pct": 80.0,
+      "v1_basis": "stats['Return [%]'] per window, prod-of-windows (already canonical-compatible)",
+      "v2_compounded_pct": 77.952,
+      "v2_psr_walkforward": 0.996555,
+      "v2_psr_walkforward_n": 5,
+      "v2_legacy_stitched_compounded_pct": 38.8257,
+      "v2_legacy_delta_pp": 39.1263,
+      "v2_legacy_psr_stitched": 0.97755,
+      "v2_windows_positive": "5/5",
+      "v2_windows_positive_pct": 100.0,
+      "delta_pp": 0.022,
+      "decision_unchanged": true,
+      "deployed": true,
+      "deployed_since": "2026-06-02 12:07 UTC (droplet @ b83e20f)",
+      "phase2_gate_decision": "PROCEED",
+      "phase2_psr_floor": 0.90,
+      "phase2_wf_pos_floor": 0.70,
+      "note": "DEPLOYED mainnet. v2 canonical 77.952% matches locked 77.93% within rounding. v2 psr_walkforward 0.9966 (n=5) >> 0.90 floor. windows_positive 100% >> 70% floor. PROCEED. Legacy stitched PSR was 0.978 (n=121) — n=5 walkforward PSR has wider error bars by construction, but here both clear comfortably. No deployment risk."
+    },
+    "adaptrend_v1": {
+      "runner": "tools/_postfrac_adaptrend_v1.py",
+      "v1_locked_compounded_pct_5oos": 45.52,
+      "v1_locked_compounded_pct_11oos_extended": 67.09,
+      "v1_locked_psr_stitched": 0.905,
+      "v1_basis": "stats['Return [%]'] per window, prod-of-windows (already canonical-compatible)",
+      "v2_compounded_pct_5oos": 45.5222,
+      "v2_compounded_pct_11oos_extended": 75.5568,
+      "v2_psr_walkforward_5oos": 0.995071,
+      "v2_psr_walkforward_11oos": 0.991679,
+      "v2_legacy_stitched_compounded_pct_5oos": 96.3215,
+      "v2_legacy_delta_pp_5oos": -50.7993,
+      "v2_windows_positive_5oos": "5/5",
+      "v2_windows_positive_11oos": "9/11",
+      "delta_pp_5oos": 0.0022,
+      "decision_unchanged": true,
+      "deployed": false,
+      "phase2_gate_decision": "PROCEED",
+      "note": "Matches v1 5-OOS reference within rounding (45.52% -> 45.5222%). 11-OOS extended diverges (67.09% locked vs 75.5568% v2) — older reference was from run_strategy_experiment.py which used a different harness; v2 here is the post-fractional refactor harness so the absolute number is expected to differ. The 5-OOS match is the binding apples-to-apples comparison."
+    }
+  },
+  "drifters": {
+    "rv_band": {
+      "runner": "tools/_postfrac_adaptrend_v1_rv_band.py",
+      "verdict_pre_fix": "SHELVED (WF 45% < 70% gate)",
+      "verdict_load_bearing_on_fix": false,
+      "v2_rerun_status": "deferred (hygiene only; verify-deltas lens confirmed within-runner integrity)",
+      "note": "Per memory: within-runner delta integrity preserved. Fix is hygiene for absolute compounded numbers. Decision UNCHANGED."
+    },
+    "kc_squeeze": {
+      "runner": "tools/_postfrac_kc_squeeze.py",
+      "verdict_pre_fix": "TODO_LEG candidate",
+      "verdict_load_bearing_on_fix": false,
+      "v2_rerun_status": "deferred (hygiene only)",
+      "note": "Standalone TODO_LEG; re-run hygiene only."
+    },
+    "turn_of_candle_15m": {
+      "runner": "tools/_postfrac_turn_of_candle_15m.py",
+      "verdict_pre_fix": "TODO_LEG (deferred)",
+      "verdict_load_bearing_on_fix": false,
+      "v2_rerun_status": "deferred until reactivation",
+      "note": "TODO_LEG per MEMORY.md (untested live)."
+    },
+    "funding_skip": {
+      "runner": "tools/_postfrac_adaptrend_v1_funding_skip.py",
+      "verdict_pre_fix": "soft-drift; funding-adjusted equity is semantically required",
+      "verdict_load_bearing_on_fix": false,
+      "v2_rerun_status": "deferred",
+      "note": "v2 tagged 'v2_equity_curve_funding_adjusted'."
+    }
+  },
+  "deferred_files": {
+    "_postfrac_wf_mf_4h_btc_sol_portfolio.py": "Tied to debt #2 (portfolio PSR on stitched-trade-stream proxy). Requires weighted-portfolio equity-curve rewrite. Deferred to debt #2 workstream.",
+    "30_cosmetic_runners": "30+ canonical runners (mf_4h_btc_sol_portfolio, hybrid_*, _adaptrend*, _divergence_*, run_mf_*) already use stats['Return [%]']. Dual-emit migration is numerically identical and cosmetic. Deferred for incremental adoption via tools/aggregate.build_canonical_block(); call signature stable so backfills are uniform."
+  },
+  "known_imprecision": {
+    "wf_positive_pct_input_to_phase2_gate": "For the 5-OOS runners we wire windows_positive_pct (5-OOS family) into phase2_gate as the WF-rate input. The plan's '70% WF positive-quarter rate' technically means the true walk-forward quarterly series (memory: 80% on locked mf-4H). Both clear 70% comfortably in our reruns, so the decision is unaffected — but we did NOT re-run the WF runner (_postfrac_walkforward_adaptrend_v1_volsize.py) as part of Phase 2. Recommended follow-up: re-run that WF runner separately and validate windows_positive_pct >= 70%."
+  }
+}

@@ -33,6 +33,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from strategy.signals_multifactor import DayTradeMultiFactorBTC  # noqa: E402
+from tools.aggregate import (  # noqa: E402
+    AGGREGATION_VERSION,
+    build_canonical_block,
+    equity_impact_returns,
+    phase2_gate,
+)
 from tools.psr_eval import compute_psr  # noqa: E402
 
 CASH = 1_000_000.0
@@ -134,26 +140,29 @@ def run_window(label: str, start: str, end: str, save_csv_path: Path) -> dict:
     stats = bt.run(**LOCKED)
     trades_df = getattr(stats, "_trades", None)
     pnl_pct: list[float] = []
+    eq_impact_pnl_pct: list[float] = []
     if trades_df is not None and len(trades_df):
         if "ReturnPct" in trades_df.columns:
             pnl_pct = (trades_df["ReturnPct"].values * 100.0).tolist()
+            eq_impact_pnl_pct = equity_impact_returns(stats, cash=CASH).tolist()
             # Save per-window CSV
             out = pd.DataFrame({"pnl_pct": pnl_pct})
             out["window_start"] = start
             out["window_end"] = end
             out.to_csv(save_csv_path, index=False)
     return {
-        "label":         label,
-        "start":         start,
-        "end":           end,
-        "trades":        int(stats.get("# Trades", 0)),
-        "return_pct":    float(stats.get("Return [%]", 0.0) or 0.0),
-        "max_dd_pct":    float(stats.get("Max. Drawdown [%]", 0.0) or 0.0),
-        "win_rate_pct":  float(stats.get("Win Rate [%]") or 0.0),
-        "equity_final":  float(stats.get("Equity Final [$]", CASH) or CASH),
-        "sharpe":        float(stats.get("Sharpe Ratio") or 0.0),
-        "pnl_pct":       pnl_pct,
-        "csv_path":      str(save_csv_path),
+        "label":             label,
+        "start":             start,
+        "end":               end,
+        "trades":            int(stats.get("# Trades", 0)),
+        "return_pct":        float(stats.get("Return [%]", 0.0) or 0.0),
+        "max_dd_pct":        float(stats.get("Max. Drawdown [%]", 0.0) or 0.0),
+        "win_rate_pct":      float(stats.get("Win Rate [%]") or 0.0),
+        "equity_final":      float(stats.get("Equity Final [$]", CASH) or CASH),
+        "sharpe":            float(stats.get("Sharpe Ratio") or 0.0),
+        "pnl_pct":           pnl_pct,
+        "eq_impact_pnl_pct": eq_impact_pnl_pct,
+        "csv_path":          str(save_csv_path),
     }
 
 
@@ -177,17 +186,21 @@ def main() -> int:
     compounded = 1.0
     n_pos = 0
     per_window_returns: list[float] = []
+    per_window_rich: list[dict] = []
 
     for label, start, end in WINDOWS:
         csv_path = reports / f"_postfrac_mf_4h_btc_{label}.csv"
         print(f"[postfrac] window={label} ({start} -> {end}) ...", file=sys.stderr)
         r = run_window(label, start, end, csv_path)
-        out["per_window"][label] = {k: v for k, v in r.items() if k != "pnl_pct"}
+        out["per_window"][label] = {
+            k: v for k, v in r.items() if k not in ("pnl_pct", "eq_impact_pnl_pct")
+        }
         n_trades_total += r["trades"]
         all_pnl.extend(r["pnl_pct"])
         rp = r["return_pct"] / 100.0
         compounded *= (1.0 + rp)
         per_window_returns.append(round(r["return_pct"], 4))
+        per_window_rich.append(r)
         if r["return_pct"] > 0:
             n_pos += 1
         print(f"  trades={r['trades']} return={r['return_pct']:.4f}% dd={r['max_dd_pct']:.4f}%",
@@ -208,7 +221,26 @@ def main() -> int:
         "per_window_return_pct": per_window_returns,
         "aggregate_csv":         str(agg_csv),
     }
-    out["psr"] = psr
+    out["psr"] = psr   # legacy stitched PSR (kept for diff)
+
+    # Canonical v2 dual-emit (methodology debt #1)
+    # DEPLOYED strategy — Phase 2 gate is HARD: HALT if v2 PSR < 0.90
+    # OR WF positive-quarter rate < 70%.  Per CLAUDE.md BEFORE-DEPLOY rule,
+    # the user must be surfaced before any default flip.
+    canon = build_canonical_block(per_window_rich, aggregation_method=AGGREGATION_VERSION)
+    out["canonical"] = canon
+    out["aggregation_method"] = canon["aggregation_method"]
+    out["aggregation_version"] = AGGREGATION_VERSION
+    out["locked_reference"] = {
+        "v1_locked_compounded_pct": 77.93,
+        "deployed": True,
+        "note": "DEPLOYED mainnet (2026-06-02 12:07 UTC) — Phase 2 baseline gate "
+                "applies. v2 numbers should match v1 to rounding because this "
+                "runner already used stats['Return [%]'].",
+    }
+    out["phase2_gate_decision"] = phase2_gate(
+        out["locked_reference"], canon, deployed=True
+    )
 
     out_path = reports / "postfrac_mf_4h_btc.json"
     out_path.write_text(json.dumps(out, indent=2, default=str))

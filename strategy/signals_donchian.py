@@ -200,6 +200,20 @@ class DonchianBreakoutBTCv3(DonchianBreakoutBTC):
     regime_slope_window: int = 30
     slope_trend_threshold_pct: float = 0.0   # 0 = gate OFF
 
+    # debt #3 variant E — opt-in EMA-direction binary filter
+    # (Faber 2007 / AQR Trends Everywhere — replace magnitude with sign).
+    # Default OFF so the locked baseline (slope-gate path) is byte-for-byte
+    # unchanged. When enabled, slope_trend_threshold_pct should be 0 so the
+    # two gates don't overlap.
+    use_ema_direction_filter: bool = False
+    ema_direction_period: int = 200
+
+    # debt #3 placeholder — all variants pin this to 0; declared so that
+    # bt.run(**variant_config) doesn't AttributeError. No-op when 0.
+    # Reserved for a follow-up sweep that adds an N×ATR buffer on top of
+    # the Donchian breakout (Wilder breakout convention).
+    atr_breakout_buffer_mult: float = 0.0
+
     def init(self) -> None:
         super().init()
         if self.slope_trend_threshold_pct > 0:
@@ -213,6 +227,14 @@ class DonchianBreakoutBTCv3(DonchianBreakoutBTC):
             ).values
         else:
             self._regime_slope = None
+
+        if self.use_ema_direction_filter:
+            import pandas as pd_
+            from strategy.indicators import ema as _ema
+            close = pd_.Series(self.data.Close)
+            self._direction_ema = _ema(close, self.ema_direction_period).values
+        else:
+            self._direction_ema = None
 
     def _slope_now(self) -> float | None:
         if self._regime_slope is None:
@@ -253,12 +275,29 @@ class DonchianBreakoutBTCv3(DonchianBreakoutBTC):
             return
 
         sl_dist = self.atr_sl_multiple * atr_v
+        # Optional ATR buffer added on top of the Donchian breakout level.
+        # All five debt #3 variants pin this to 0 → no-op; kept declared so
+        # bt.run(**config) doesn't AttributeError on the attribute name.
+        buf = self.atr_breakout_buffer_mult * atr_v if self.atr_breakout_buffer_mult > 0 else 0.0
         slope = self._slope_now()
         gate_on = self.slope_trend_threshold_pct > 0
 
-        if close_v > upper:
+        # Variant E — close-vs-EMA(period) on the entry TF.
+        # When use_ema_direction_filter=True, long requires close>EMA, short
+        # requires close<EMA. Independent of slope gate; both may be on but
+        # the debt #3 plan pins slope_trend_threshold_pct=0 for variant E.
+        if self._direction_ema is not None:
+            ema_now = self._direction_ema[len(self.data) - 1]
+            if not _np.isfinite(ema_now):
+                return
+        else:
+            ema_now = None
+
+        if close_v > upper + buf:
             if gate_on and (slope is None or slope < self.slope_trend_threshold_pct):
                 return  # don't long unless in confirmed uptrend
+            if ema_now is not None and close_v <= ema_now:
+                return  # variant E — refuse longs when entry TF is below EMA
             sl = close_v - sl_dist
             units = self._position_units(sl_dist, close_v)
             if units > 0 and sl < close_v:
@@ -266,9 +305,11 @@ class DonchianBreakoutBTCv3(DonchianBreakoutBTC):
                 self._entry_bar = len(self.data)
                 self._high_water = high_v
                 self._low_water = 0.0
-        elif self.allow_shorts and close_v < lower:
+        elif self.allow_shorts and close_v < lower - buf:
             if gate_on and (slope is None or slope > -self.slope_trend_threshold_pct):
                 return  # don't short unless in confirmed downtrend
+            if ema_now is not None and close_v >= ema_now:
+                return  # variant E — refuse shorts when entry TF is above EMA
             sl = close_v + sl_dist
             units = self._position_units(sl_dist, close_v)
             if units > 0 and sl > close_v:

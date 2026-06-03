@@ -22,6 +22,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from strategy.signals_multifactor import DayTradeMultiFactorBTC  # noqa: E402
+from tools.aggregate import (  # noqa: E402
+    AGGREGATION_VERSION,
+    build_canonical_block,
+    equity_impact_returns,
+)
 from tools.psr_eval import compute_psr  # noqa: E402
 
 PARQUET = ROOT / "data" / "historical" / "BTC_USDT_USDT_15m.parquet"
@@ -119,8 +124,10 @@ def run_window(label: str, start: str, end: str) -> dict:
 
     trades_df = getattr(stats, "_trades", None)
     pnl_pct_list = []
+    eq_impact_pnl_pct: list[float] = []
     if trades_df is not None and len(trades_df) > 0 and "ReturnPct" in trades_df.columns:
         pnl_pct_list = (trades_df["ReturnPct"].values * 100.0).tolist()
+        eq_impact_pnl_pct = equity_impact_returns(stats, cash=CASH).tolist()
         # Save per-window CSV
         out_csv = ROOT / "reports" / f"_postfrac_mf_baseline_{label}.csv"
         out = pd.DataFrame({
@@ -133,15 +140,16 @@ def run_window(label: str, start: str, end: str) -> dict:
               file=sys.stderr)
 
     return {
-        "label":        label,
-        "start":        start,
-        "end":          end,
-        "trades":       n_trades,
-        "return_pct":   round(ret_pct, 4),
-        "max_dd_pct":   round(max_dd, 4),
-        "win_rate_pct": round(win_rate, 4),
-        "equity_final": round(equity_final, 4),
-        "pnl_pct":      pnl_pct_list,
+        "label":             label,
+        "start":             start,
+        "end":               end,
+        "trades":            n_trades,
+        "return_pct":        round(ret_pct, 4),   # canonical: stats['Return [%]']
+        "max_dd_pct":        round(max_dd, 4),
+        "win_rate_pct":      round(win_rate, 4),
+        "equity_final":      round(equity_final, 4),
+        "pnl_pct":           pnl_pct_list,
+        "eq_impact_pnl_pct": eq_impact_pnl_pct,
     }
 
 
@@ -200,6 +208,9 @@ def main() -> int:
     pd.DataFrame({"pnl_pct": all_pnl}).to_csv(agg_csv, index=False)
     print(f"[postfrac_mf_baseline] aggregated CSV -> {agg_csv.name}", file=sys.stderr)
 
+    # Canonical v2 dual-emit (methodology debt #1)
+    canon = build_canonical_block(per_window, aggregation_method=AGGREGATION_VERSION)
+
     result = {
         "strategy_id":     "mf_baseline",
         "strategy_class":  "strategy.signals_multifactor:DayTradeMultiFactorBTC",
@@ -209,12 +220,22 @@ def main() -> int:
         "price_scale":     PRICE_SCALE,
         "config":          CONFIG,
         "windows":         [w[0] for w in WINDOWS],
-        "per_window":      [{k: v for k, v in r.items() if k != "pnl_pct"} for r in per_window],
+        "per_window":      [
+            {k: v for k, v in r.items() if k not in ("pnl_pct", "eq_impact_pnl_pct")}
+            for r in per_window
+        ],
         "summary":         agg,
-        "psr":             psr,
+        "psr":             psr,                # legacy stitched
+        "canonical":       canon,              # v2 dual-emit
+        "aggregation_method": canon["aggregation_method"],
         "pre_fix": {
             "compounded_pct": 50.48,
             "trades":         168,
+        },
+        "locked_reference": {
+            "v1_locked_compounded_pct": 55.73,
+            "note": "Phase 2 re-baseline — v2 canonical should match v1 to rounding "
+                    "because this runner already used stats['Return [%]'].",
         },
         "elapsed_sec":     round(time.time() - t0, 2),
     }
