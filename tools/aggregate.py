@@ -158,14 +158,17 @@ def equity_impact_returns(
 # Canonical multi-window aggregation
 # ---------------------------------------------------------------------------
 
-def _safe_compute_psr(returns: np.ndarray) -> dict:
+def _safe_compute_psr(returns: np.ndarray, *, contiguous: bool = True) -> dict:
     if len(returns) < 2:
         return {
             "n_trades": int(len(returns)),
             "psr_vs_hurdle": 0.0,
+            "psr_lo_adjusted": 0.0,
             "interpretation": "insufficient_evidence",
         }
-    return compute_psr(returns, sr_hurdle=0.0, confidence=0.95)
+    return compute_psr(
+        returns, sr_hurdle=0.0, confidence=0.95, contiguous=contiguous
+    )
 
 
 def aggregate_windows(
@@ -224,8 +227,11 @@ def aggregate_windows(
             }
         )
 
+    # contiguous=False: the walk-forward series is n DISJOINT OOS windows, so
+    # serial correlation is spurious -> Lo correction is a no-op here (Trap 2).
     psr_walkforward = _safe_compute_psr(
-        np.asarray(per_window_return_pct, dtype=float)
+        np.asarray(per_window_return_pct, dtype=float),
+        contiguous=False,
     )
 
     return {
@@ -260,7 +266,8 @@ def legacy_stitched_psr(per_window: list[Mapping[str, Any]]) -> dict:
         if pnl:
             stitched.extend([float(x) for x in pnl])
     arr = np.asarray(stitched, dtype=float)
-    psr = _safe_compute_psr(arr)
+    # contiguous=False: stitched across disjoint windows -> Lo no-op (Trap 2).
+    psr = _safe_compute_psr(arr, contiguous=False)
     psr["deprecation"] = "stitched_per_trade_pl_pct_psr_is_N_inflated"
     psr["n_trades"] = int(len(arr))  # restore stitched count after _safe_compute_psr round
     return psr
@@ -270,6 +277,14 @@ def legacy_stitched_psr(per_window: list[Mapping[str, Any]]) -> dict:
 # Phase 2 rollout safety gate
 # ---------------------------------------------------------------------------
 
+#: Minimum number of walk-forward quarters required for the gate to
+#: render a real verdict. Below this the WF positive-rate / WF-PSR are
+#: too noisy to gate on, so we refuse to pass silently. n=8 is two
+#: years of quarterly windows — the smallest series where a 70% bar
+#: (>= 6/8) is meaningfully distinguishable from a coin flip.
+WF_MIN_QUARTERS: int = 8
+
+
 def phase2_gate(
     v1_locked: Mapping[str, Any],
     v2_result: Mapping[str, Any],
@@ -277,38 +292,144 @@ def phase2_gate(
     deployed: bool = False,
     psr_floor: float = 0.90,
     wf_pos_floor: float = 0.70,
+    wf_quarterly_returns: Iterable[float] | None = None,
+    wf_result: Mapping[str, Any] | None = None,
 ) -> str:
     """Decide whether the v1->v2 re-baseline of a strategy may proceed.
 
     Returns one of:
-      - "PROCEED" — v2 metrics within tolerance, no live-bot risk.
-      - "HALT_AND_SURFACE" — at least one safety threshold breached;
+      - "PROCEED" — metrics within tolerance, no rollout risk.
+      - "HALT_AND_SURFACE" — a DEPLOYED strategy breached a floor; the
         rollout must pause and the user must be informed per CLAUDE.md
         "BEFORE DEPLOY/PUSH".
+      - "SHELF" — a NON-deployed candidate breached a floor; the v1->v2
+        re-baseline is rejected but there is no live-bot risk.
+      - "insufficient_wf_evidence" — fewer than ``WF_MIN_QUARTERS``
+        walk-forward quarters were supplied; the gate refuses to render
+        a pass/fail rather than wave a thin series through.
+
+    REDESIGN (Phase-2 gate, judgment call #1)
+    -----------------------------------------
+    The old gate read its WF positive-rate from
+    ``v2_result["windows_positive_pct"]`` — but for the 5-OOS runner
+    family that field is the *5-OOS* n_pos/n_windows (e.g. 5/5 = 100%),
+    used as a PROXY for the true walk-forward quarterly positive-rate.
+    Those are different distributions: the 5-OOS family hand-picks five
+    disjoint stress windows, whereas the walk-forward series rolls a
+    90-day test window forward quarterly across the whole history. The
+    5-OOS proxy is systematically optimistic (a 5/5 run reads as 100%
+    while its true WF rate can be 55-80%), which MASKED genuine WF
+    failures (e.g. adaptrend_v1: 5-OOS proxy 100% vs true WF 55%).
+
+    This redesign consumes the ACTUAL walk-forward quarterly series when
+    it is supplied (``wf_quarterly_returns`` or ``wf_result``), and
+    recomputes BOTH gate inputs from it:
+      * wf_pos_pct = mean(series > 0)            (the real positive-rate)
+      * wf_psr     = compute_psr(series)["psr_vs_hurdle"]   (n ~= 25)
+
+    Why the PSR fix alone changes nothing, and the rate fix is the teeth
+    ----------------------------------------------------------------------
+    Every recorded WF-PSR already clears any sane floor (deployed mf+4H =
+    0.9987 at n=25; adaptrend_v1 = 0.9932 at n=20). The old gate fed PSR
+    from the 5-OOS window-series (n=5), where the standard error is so
+    wide (sr_se ~ 0.31) that 0.90 was trivially cleared by any 5/5 run —
+    "N-deflation". Moving PSR onto the n~=25 quarterly series tightens
+    the standard error enough that 0.90 becomes a *real* bar, but no
+    recorded strategy is anywhere near it, so the PSR change flips NO
+    decision. ALL decision movement comes from swapping the optimistic
+    5-OOS positive-rate proxy (100%) for the true WF positive-rate.
+
+    SCOPE (the load-bearing choice)
+    -------------------------------
+    The two floor checks now run for ANY strategy being graded, not only
+    the live one. The old gate short-circuited every ``deployed=False``
+    call to "PROCEED" — which is exactly what hid the masked failures.
+    ``deployed`` is retained only as a SEVERITY TAG on a breach:
+    deployed -> "HALT_AND_SURFACE", non-deployed -> "SHELF".
+
+    Backward compatibility (deployed bot must stay byte-unchanged)
+    -------------------------------------------------------------
+    The sole production call site
+    (tools/_postfrac_mf_4h_btc_run.py) passes the 5-OOS ``canon`` block
+    with NO walk-forward series. To keep the DEPLOYED strategy's gate
+    decision byte-identical, when no WF series is supplied this falls
+    back to the legacy proxy fields already inside ``v2_result``
+    (``psr_walkforward`` + ``windows_positive_pct``) exactly as before.
+    For the deployed mf+4H both paths agree on PROCEED (proxy: 100% &
+    PSR 0.9966; true WF: 80% & PSR 0.9987), so the live decision is
+    genuinely unchanged regardless of which input is used. NEW callers
+    that pass the true WF series get the redesigned, tougher evaluation.
 
     Parameters
     ----------
-    v1_locked, v2_result:
-        Dicts each containing `compounded_pct`, `psr_walkforward`
-        (dict from compute_psr) and `windows_positive_pct` (0..100).
+    v1_locked:
+        Locked-reference block (accepted for the audit contract; not
+        read by the gate body).
+    v2_result:
+        Canonical v2 block. Carries the legacy proxy fields
+        (``psr_walkforward`` dict from compute_psr, ``windows_positive_pct``
+        in 0..100) used ONLY when no WF series is supplied.
     deployed:
-        If True, applies the strict gate (this strategy is live on
-        mainnet — any breach triggers HALT).
+        Severity tag. A floor breach on a deployed strategy returns
+        "HALT_AND_SURFACE"; on a non-deployed candidate it returns
+        "SHELF". (No longer gates WHETHER the floors are evaluated.)
     psr_floor:
-        Minimum acceptable v2 PSR (default 0.90 from plan).
+        Minimum acceptable WF-PSR. Kept at the literal 0.90 (matches the
+        plan + backcompat_baselines.json phase2_psr_floor). NOTE: 0.90 is
+        meaningful ONLY because n changed. On the n=5 window-series the
+        PSR sr_se is ~0.31, so 0.90 was cleared by any 5/5 run (pure
+        N-deflation); on the n~=25 quarterly series the standard error
+        tightens enough that 0.90 is a genuine bar. We do NOT tighten to
+        0.95 — the redesign already adds teeth via the corrected WF
+        positive-rate, and the deployed v1 clears 0.95 anyway (0.9987).
     wf_pos_floor:
-        Minimum acceptable v2 WF positive-quarter rate as a fraction
+        Minimum acceptable WF positive-quarter rate as a fraction
         (default 0.70 from plan).
+    wf_quarterly_returns:
+        TRUE walk-forward per-quarter return series (e.g. the
+        per_window[].return_pct array from the WF JSON). When supplied,
+        this is the PRIMARY input and overrides the legacy proxy.
+    wf_result:
+        Alternative carrier for the WF series — a Mapping with a
+        ``per_window`` list of ``{"return_pct": ...}`` (the WF JSON
+        shape). Used only if ``wf_quarterly_returns`` is None.
     """
-    psr_block = v2_result.get("psr_walkforward", {})
-    psr = float(psr_block.get("psr_vs_hurdle", 0.0) or 0.0)
-    wf_pos_pct = float(v2_result.get("windows_positive_pct", 0.0) or 0.0) / 100.0
+    # --- Resolve the true walk-forward quarterly series, if supplied. ----
+    series: list[float] | None = None
+    if wf_quarterly_returns is not None:
+        series = [float(x) for x in wf_quarterly_returns]
+    elif wf_result is not None:
+        per_window = wf_result.get("per_window") or wf_result.get("windows") or []
+        series = [
+            float(e["return_pct"])
+            for e in per_window
+            if e.get("return_pct") is not None
+        ] or None
 
-    if deployed:
-        if psr < psr_floor:
-            return "HALT_AND_SURFACE"
-        if wf_pos_pct < wf_pos_floor:
-            return "HALT_AND_SURFACE"
+    if series is not None:
+        # REDESIGNED PATH — recompute both gate inputs from the true WF
+        # quarterly series (n ~= 25), not the optimistic 5-OOS proxy.
+        n_q = len(series)
+        if n_q < WF_MIN_QUARTERS:
+            # Refuse to pass a thin series silently (guard (D)).
+            return "insufficient_wf_evidence"
+        arr = np.asarray(series, dtype=float)
+        wf_pos_pct = float((arr > 0).mean())
+        psr = float(
+            compute_psr(arr, sr_hurdle=0.0, confidence=0.95)["psr_vs_hurdle"]
+        )
+    else:
+        # BACKCOMPAT PATH — no WF series supplied (the deployed runner's
+        # existing call). Read the legacy proxy fields exactly as the old
+        # gate did, so the DEPLOYED decision stays byte-identical.
+        psr_block = v2_result.get("psr_walkforward", {})
+        psr = float(psr_block.get("psr_vs_hurdle", 0.0) or 0.0)
+        wf_pos_pct = float(v2_result.get("windows_positive_pct", 0.0) or 0.0) / 100.0
+
+    # --- Floors now evaluated for ANY strategy (scope decision B). -------
+    breach = (psr < psr_floor) or (wf_pos_pct < wf_pos_floor)
+    if breach:
+        return "HALT_AND_SURFACE" if deployed else "SHELF"
     return "PROCEED"
 
 
@@ -370,3 +491,202 @@ def build_canonical_block(
         "legacy_psr_stitched":   legacy_psr,
         "legacy_delta_pp":       round(canon["compounded_pct"] - legacy_compounded_pct, 4),
     }
+
+
+# ---------------------------------------------------------------------------
+# True weighted-equity-curve portfolio PSR (methodology debt #2)
+# ---------------------------------------------------------------------------
+# MOVED here verbatim from tools/portfolio_psr.py as part of the canonical-PSR
+# dedup. tools/portfolio_psr.py is now a thin re-export shim pointing here.
+# Bodies are character-for-character identical to the pre-merge originals so
+# the dedup is provably behavior-preserving (see
+# tests/test_unified_psr_equivalence.py).
+#
+# Sum-then-diff pipeline:
+#     1. Superimpose normalized leg-equity curves on a union DatetimeIndex
+#        (ffill gaps; default 1.0 before the first tick on a leg = capital
+#        sits in cash before the first fill).
+#     2. Weight-sum into one portfolio equity series per window.
+#     3. Resample to '1D' (mitigates intraday autocorrelation -- documented
+#        caveat, not eliminated), pct_change, drop leading NaN.
+#     4. Concatenate the per-window return arrays AFTER differencing
+#        (NEVER diff across a window boundary -- that would inject a
+#        spurious return at the gap).
+#     5. Feed the concatenated array to ``compute_psr``.
+#
+# Why this absorbs correlation: Var(w_b*r_b + w_s*r_s) carries
+# 2*w_b*w_s*Cov(r_b, r_s); the stitched per-trade union destroys that cross
+# term and inflates N by ~sqrt(2) via sqrt(n-1) in psr_eval.compute_psr.
+#
+# Sharpe units: per-period (default daily), NOT per-trade. Reviewers must NOT
+# compare the new ``point_sharpe_period`` to historical trade-level Sharpes
+# from other strategies in this repo.
+
+
+def _normalized_equity(eq: "pd.Series | None") -> "pd.Series | None":
+    """Normalize a leg equity series to start=1.0; return None on bad input."""
+    if eq is None or len(eq) == 0:
+        return None
+    e0 = float(eq.iloc[0])
+    if e0 <= 0 or not np.isfinite(e0):
+        return None
+    return eq / e0
+
+
+def build_portfolio_equity_curve(
+    btc_eq: "pd.Series | None",
+    sol_eq: "pd.Series | None",
+    w_btc: float,
+    w_sol: float,
+) -> "pd.Series | None":
+    """Time-aligned weighted-sum portfolio equity for ONE window.
+
+    Union DatetimeIndex, ffill gaps, default 1.0 before the first tick
+    on a leg (capital sits in cash before the first fill). The resulting
+    series carries the BTC<->SOL co-movement structure into its own vol.
+    """
+    btc_n = _normalized_equity(btc_eq)
+    sol_n = _normalized_equity(sol_eq)
+    if btc_n is None and sol_n is None:
+        return None
+    if btc_n is not None and sol_n is not None:
+        idx = btc_n.index.union(sol_n.index).sort_values()
+        b = btc_n.reindex(idx).ffill().fillna(1.0)
+        s = sol_n.reindex(idx).ffill().fillna(1.0)
+    elif btc_n is not None:
+        b = btc_n
+        s = pd.Series(1.0, index=btc_n.index)
+    else:
+        s = sol_n  # type: ignore[assignment]
+        b = pd.Series(1.0, index=sol_n.index)  # type: ignore[union-attr]
+    return w_btc * b + w_sol * s
+
+
+def equity_to_period_returns(
+    port_eq: "pd.Series | None",
+    resample_period: "str | None" = "1D",
+) -> np.ndarray:
+    """Per-window equity -> period returns (default daily).
+
+    NEVER diff across a window boundary. Caller concatenates the arrays.
+    Pass ``None`` for ``resample_period`` to skip resampling (returns at
+    native frequency; will inflate N and bias PSR upward under any residual
+    autocorrelation).
+    """
+    if port_eq is None or len(port_eq) < 2:
+        return np.asarray([], dtype=float)
+    if resample_period:
+        eq = port_eq.resample(resample_period).last().dropna()
+    else:
+        eq = port_eq.dropna()
+    if len(eq) < 2:
+        return np.asarray([], dtype=float)
+    return eq.pct_change().dropna().values.astype(float)
+
+
+def aggregate_portfolio_psr(
+    per_window_eq: "dict[str, pd.Series | None]",
+    resample_period: str = "1D",
+    sr_hurdle: float = 0.0,
+    confidence: float = 0.95,
+) -> dict:
+    """Headline portfolio PSR across non-contiguous windows.
+
+    N becomes the count of PERIOD RETURNS (e.g. ~1080 daily obs across 6
+    H1 windows), NOT the trade count. Per-window: equity -> resample ->
+    pct_change. Cross-window: concatenate post-differencing -- the gap
+    between windows never produces a return observation.
+    """
+    pieces: list[np.ndarray] = []
+    per_window_n: dict[str, int] = {}
+    for label, eq in per_window_eq.items():
+        r = equity_to_period_returns(eq, resample_period=resample_period)
+        per_window_n[label] = int(len(r))
+        if len(r) > 0:
+            pieces.append(r)
+    if not pieces:
+        return {
+            "psr_equity_curve":     None,
+            "psr_interpretation":   "insufficient_evidence",
+            "point_sharpe_period":  None,
+            "n_periods_total":      0,
+            "per_window_n_periods": per_window_n,
+            "resample_period":      resample_period,
+            "sharpe_units":         "per_period (NOT per-trade)",
+        }
+    combined = np.concatenate(pieces)
+    psr = compute_psr(combined, sr_hurdle=sr_hurdle, confidence=confidence)
+    return {
+        "psr_equity_curve":     psr.get("psr_vs_hurdle"),
+        "psr_interpretation":   psr.get("interpretation"),
+        "point_sharpe_period":  psr.get("point_sharpe"),
+        "n_periods_total":      int(len(combined)),
+        "per_window_n_periods": per_window_n,
+        "resample_period":      resample_period,
+        "sharpe_units":         (
+            "per_period (NOT per-trade -- do not compare to historical "
+            "trade-level Sharpe)"
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Unified PSR dispatcher (thin sugar — additive; runner migration deferred)
+# ---------------------------------------------------------------------------
+
+def aggregate_psr(
+    per_window: list[Mapping[str, Any]] | None = None,
+    *,
+    portfolio_weights: Mapping[str, float] | None = None,
+    per_window_eq: "Mapping[str, pd.Series | None] | None" = None,
+    aggregation_method: str = AGGREGATION_VERSION,
+    resample_period: str = "1D",
+    sr_hurdle: float = 0.0,
+    confidence: float = 0.95,
+) -> dict:
+    """Single PSR entrypoint. portfolio_weights is None -> 5-OOS / WF
+    path (delegates to aggregate_windows on per_window return-dicts).
+    portfolio_weights given -> portfolio path (delegates to
+    aggregate_portfolio_psr on per_window_eq {label: equity Series}).
+
+    Delegation is LITERAL (no fusion of the two input shapes) so behavior is
+    byte-identical to calling the two underlying public functions directly:
+
+      - portfolio_weights is None     -> aggregate_windows(per_window, ...)
+      - portfolio_weights is not None -> aggregate_portfolio_psr(per_window_eq, ...)
+
+    The weights themselves are applied UPSTREAM in
+    ``build_portfolio_equity_curve`` when the caller builds ``per_window_eq``;
+    here ``portfolio_weights`` is the explicit branch selector and is
+    validated to be 2 weights summing to ~1.0.
+    """
+    if portfolio_weights is None:
+        if per_window is None:
+            raise ValueError(
+                "aggregate_psr: per_window is required when portfolio_weights "
+                "is None (5-OOS / walk-forward path)."
+            )
+        return aggregate_windows(per_window, aggregation_method=aggregation_method)
+
+    # Portfolio branch.
+    if per_window_eq is None:
+        raise ValueError(
+            "aggregate_psr: per_window_eq is required when portfolio_weights "
+            "is given (portfolio path)."
+        )
+    if len(portfolio_weights) != 2:
+        raise ValueError(
+            f"aggregate_psr: portfolio_weights must have exactly 2 weights, "
+            f"got {len(portfolio_weights)}."
+        )
+    wsum = float(sum(portfolio_weights.values()))
+    if abs(wsum - 1.0) > 1e-6:
+        raise ValueError(
+            f"aggregate_psr: portfolio_weights must sum to ~1.0, got {wsum}."
+        )
+    return aggregate_portfolio_psr(
+        dict(per_window_eq),
+        resample_period=resample_period,
+        sr_hurdle=sr_hurdle,
+        confidence=confidence,
+    )

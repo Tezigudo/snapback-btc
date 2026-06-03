@@ -107,10 +107,35 @@ def _skew_kurt(returns: np.ndarray) -> tuple[float, float]:
 # PSR / MinTRL (Bailey & López de Prado 2012)
 # ---------------------------------------------------------------------------
 
+# Lag-k autocorrelation truncation default and minimum n for the Lo correction.
+_LO_DEFAULT_MIN_N = 20
+
+
+def _lag_autocorr(returns: np.ndarray, k: int) -> float:
+    """Sample lag-k autocorrelation rho_k of an ORDERED return series.
+
+    Uses the standard biased (N-denominator) estimator on mean-centered
+    returns — the form Lo (2002) assumes for the variance-inflation factor.
+    Returns 0.0 on degenerate (zero-variance / too-short) input.
+    """
+    n = len(returns)
+    if n <= k or k < 1:
+        return 0.0
+    x = returns - returns.mean()
+    denom = float(np.dot(x, x))
+    if denom == 0.0:
+        return 0.0
+    num = float(np.dot(x[:-k], x[k:]))
+    return num / denom
+
+
 def compute_psr(
     returns: np.ndarray,
     sr_hurdle: float = 0.0,
     confidence: float = 0.95,
+    *,
+    contiguous: bool = True,
+    lo_min_n: int = _LO_DEFAULT_MIN_N,
 ) -> dict:
     """Compute PSR, MinTRL, and related statistics on an array of trade-level returns.
 
@@ -122,12 +147,37 @@ def compute_psr(
         Sharpe hurdle to test against (default 0.0 = "any edge vs coin flip").
     confidence:
         Confidence level for MinTRL / PSR interpretation (default 0.95).
+    contiguous:
+        Whether `returns` is a SINGLE ordered, contiguous return series for
+        which serial correlation is meaningful (True) or a stitched/disjoint
+        series across window boundaries where autocorrelation is spurious
+        (False). Gates the Lo (2002) serial-correlation correction below.
+    lo_min_n:
+        Minimum n for the Lo correction to fire (default 20). Below this the
+        sample autocorrelations are too noisy to trust.
 
     Returns
     -------
     dict with keys:
-        n_trades, point_sharpe, sr_se_lo, psr_vs_hurdle, min_trl, skew, kurt,
-        interpretation.
+        n_trades, point_sharpe, sr_se_lo, psr_vs_hurdle, psr_lo_adjusted,
+        min_trl, skew, kurt, interpretation.
+
+    Lo (2002) serial-correlation correction — ADDITIVE, never replaces PSR:
+        `psr_vs_hurdle` above is the IID-ordering PSR and is the locked,
+        byte-identical reference (deployed v1 PSR 0.978). Lo (2002, "The
+        Statistics of Sharpe Ratios," Financial Analysts Journal) shows that
+        positive serial correlation in the ORDERED return series inflates the
+        naive Sharpe's confidence. We DEFLATE the psr_z denominator (i.e.
+        inflate the SR standard error) by a variance-inflation factor
+            VIF = 1 + 2 * sum_{k=1..K} (1 - k/(K+1)) * rho_k
+        (Bartlett/Newey-West-style triangular weights; K = min(K_max, n//4)).
+        Then psr_z_lo = psr_z / sqrt(max(VIF, eps)) and
+        psr_lo_adjusted = Phi(psr_z_lo).
+        GATE (Trap 2): the correction is a NO-OP — psr_lo_adjusted ==
+        psr_vs_hurdle — when `contiguous=False` (disjoint windows) OR
+        n < lo_min_n. Positive autocorrelation strictly lowers
+        psr_lo_adjusted vs psr_vs_hurdle; near-zero autocorrelation leaves it
+        approximately unchanged.
 
     Notes on units:
         point_sharpe is computed as mean/std WITHOUT annualization (trade-level,
@@ -160,6 +210,7 @@ def compute_psr(
             "point_sharpe": 0.0,
             "sr_se_lo": 0.0,
             "psr_vs_hurdle": 0.0,
+            "psr_lo_adjusted": 0.0,
             "min_trl": int(1e9),
             "skew": 0.0,
             "kurt": 3.0,
@@ -186,6 +237,40 @@ def compute_psr(
         psr_z = 0.0
     psr = _norm_cdf(psr_z)
 
+    # ---------------------------------------------------------------------
+    # Lo (2002) serial-correlation correction — ADDITIVE.  Computed into NEW
+    # variables only; `sr`, `varterm`, `psr_z`, `psr` are NEVER reassigned, so
+    # `psr_vs_hurdle` stays byte-identical (locked v1 0.978 reference).
+    #
+    # GATE (Trap 2): no-op on disjoint/short series.  When skipped,
+    # psr_lo_adjusted == psr (the IID value) so downstream code that reads it
+    # degrades gracefully to the uncorrected PSR.
+    # ---------------------------------------------------------------------
+    if contiguous and n >= lo_min_n:
+        # Triangular (Bartlett/Newey-West) truncation lag.
+        K = min(int(math.sqrt(n)), n // 4)
+        if K < 1:
+            K = 1
+        vif = 1.0
+        for k in range(1, K + 1):
+            rho_k = _lag_autocorr(returns, k)
+            weight = 1.0 - k / (K + 1.0)
+            vif += 2.0 * weight * rho_k
+        # VIF < 1 (net-negative autocorrelation) would INFLATE PSR; Lo's
+        # correction targets positive serial correlation, so floor at 1.0 to
+        # keep the adjustment a one-sided (conservative) deflation and avoid
+        # sqrt of a non-positive number.
+        vif_eff = max(vif, 1.0)
+        psr_z_lo = psr_z / math.sqrt(vif_eff)
+        psr_lo_adjusted = _norm_cdf(psr_z_lo)
+        sr_lo_adjusted = sr / math.sqrt(vif_eff)
+        lo_eta = 1.0 / math.sqrt(vif_eff)
+    else:
+        # No-op: disjoint windows (spurious autocorr) or too few obs.
+        psr_lo_adjusted = psr
+        sr_lo_adjusted = sr
+        lo_eta = 1.0
+
     # MinTRL (minimum trades needed to reject SR <= hurdle at `confidence` level)
     z_conf = _norm_ppf(confidence)
     if sr > sr_hurdle:
@@ -209,6 +294,9 @@ def compute_psr(
         "point_sharpe": round(sr, 6),
         "sr_se_lo": round(sr_se_lo, 6),
         "psr_vs_hurdle": round(psr, 6),
+        "psr_lo_adjusted": round(psr_lo_adjusted, 6),
+        "sr_lo_adjusted": round(sr_lo_adjusted, 6),
+        "lo_eta": round(lo_eta, 6),
         "min_trl": min_trl_int,
         "skew": round(gamma3, 6),
         "kurt": round(gamma4, 6),

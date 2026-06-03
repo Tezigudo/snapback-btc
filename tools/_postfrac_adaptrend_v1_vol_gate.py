@@ -53,6 +53,11 @@ from strategy.signals_adaptive_trend import AdaptiveTrendV1  # noqa: E402
 from strategy.signals_adaptive_trend_v1_regime_gate_vol import (  # noqa: E402
     AdaptiveTrendV1_regime_gate_vol,
 )
+from tools.aggregate import (  # noqa: E402
+    AGGREGATION_VERSION,
+    build_canonical_block,
+    equity_impact_returns,
+)
 from tools.psr_eval import compute_psr  # noqa: E402
 
 PARQUET = ROOT / "data" / "historical" / "BTC_USDT_USDT_15m.parquet"
@@ -131,12 +136,14 @@ def run_window(
 
     trades_df = getattr(stats, "_trades", None)
     pnl_pct_list: list[float] = []
+    eq_impact_pnl_pct: list[float] = []
     if (
         trades_df is not None
         and len(trades_df) > 0
         and "ReturnPct" in trades_df.columns
     ):
         pnl_pct_list = (trades_df["ReturnPct"].values * 100.0).tolist()
+        eq_impact_pnl_pct = equity_impact_returns(stats, cash=CASH).tolist()
         if csv_prefix:
             out_csv = ROOT / "reports" / f"{csv_prefix}_{label}.csv"
             out = pd.DataFrame(
@@ -149,15 +156,16 @@ def run_window(
             out.to_csv(out_csv, index=False)
 
     return {
-        "label":        label,
-        "start":        start,
-        "end":          end,
-        "trades":       n_trades,
-        "return_pct":   round(ret_pct, 4),
-        "max_dd_pct":   round(max_dd, 4),
-        "win_rate_pct": round(win_rate, 4),
-        "equity_final": round(equity_final, 4),
-        "pnl_pct":      pnl_pct_list,
+        "label":             label,
+        "start":             start,
+        "end":               end,
+        "trades":            n_trades,
+        "return_pct":        round(ret_pct, 4),
+        "max_dd_pct":        round(max_dd, 4),
+        "win_rate_pct":      round(win_rate, 4),
+        "equity_final":      round(equity_final, 4),
+        "pnl_pct":           pnl_pct_list,
+        "eq_impact_pnl_pct": eq_impact_pnl_pct,
     }
 
 
@@ -222,22 +230,40 @@ def run_arm(
         pd.DataFrame({"pnl_pct": all_pnl}).to_csv(agg_csv, index=False)
         print(f"  [{arm_label}] aggregated CSV -> {agg_csv.name}", file=sys.stderr)
 
+    # Canonical v2 dual-emit (methodology debt #1): headline PSR comes from the
+    # equity-curve aggregation (per-window return-series -> psr_walkforward),
+    # NOT the N-inflated stitched per-trade ReturnPct union. Legacy stitched PSR
+    # is kept as `psr` + inside canon["legacy_psr_stitched"] for observability.
+    canon = build_canonical_block(per_window, aggregation_method=AGGREGATION_VERSION)
+
     return {
         "arm":        arm_label,
         "config":     config,
-        "per_window": [{k: v for k, v in r.items() if k != "pnl_pct"} for r in per_window],
+        "per_window": [
+            {k: v for k, v in r.items() if k not in ("pnl_pct", "eq_impact_pnl_pct")}
+            for r in per_window
+        ],
         "summary":    agg,
-        "psr":        psr,
+        "psr":        psr,            # legacy stitched (observability only)
+        "canonical":  canon,          # v2 dual-emit (headline PSR = psr_walkforward)
+        "aggregation_method": canon["aggregation_method"],
     }
 
 
 def verdict(base: dict, vol: dict) -> dict:
     base_comp = base["summary"]["compounded_pct"]
     vol_comp = vol["summary"]["compounded_pct"]
-    base_psr = base["psr"]["psr_vs_hurdle"]
-    vol_psr = vol["psr"]["psr_vs_hurdle"]
-    base_sharpe = base["psr"].get("point_sharpe")
-    vol_sharpe = vol["psr"].get("point_sharpe")
+    # Canonical headline PSR = equity-curve aggregation's psr_walkforward
+    # (compute_psr on the n-window return series). The stitched per-trade
+    # PSR is N-inflated and MUST NOT be the primary verdict input
+    # (tools/aggregate.py docstring lines 33-35). Stitched values are still
+    # emitted below as *_psr_stitched_legacy for observability/diff.
+    base_psr = base["canonical"]["psr_walkforward"]["psr_vs_hurdle"]
+    vol_psr = vol["canonical"]["psr_walkforward"]["psr_vs_hurdle"]
+    base_psr_stitched = base["psr"]["psr_vs_hurdle"]
+    vol_psr_stitched = vol["psr"]["psr_vs_hurdle"]
+    base_sharpe = base["canonical"]["psr_walkforward"].get("point_sharpe")
+    vol_sharpe = vol["canonical"]["psr_walkforward"].get("point_sharpe")
     base_trades = base["summary"]["n_trades"]
     vol_trades = vol["summary"]["n_trades"]
 
@@ -261,9 +287,12 @@ def verdict(base: dict, vol: dict) -> dict:
         "base_compounded_pct":    base_comp,
         "vol_compounded_pct":     vol_comp,
         "delta_compounded_pp":    round(delta_comp, 4),
+        "psr_basis":              "canonical_psr_walkforward",
         "base_psr":               base_psr,
         "vol_psr":                vol_psr,
         "delta_psr":              round(delta_psr, 4),
+        "base_psr_stitched_legacy": base_psr_stitched,
+        "vol_psr_stitched_legacy":  vol_psr_stitched,
         "base_point_sharpe":      base_sharpe,
         "vol_point_sharpe":       vol_sharpe,
         "base_trades":            base_trades,

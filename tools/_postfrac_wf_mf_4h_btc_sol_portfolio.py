@@ -339,6 +339,14 @@ def main() -> int:
         {"n_trades": int(len(pnl_arr)), "psr_vs_hurdle": 0.0,
          "interpretation": "insufficient_evidence"}
     )
+    # legacy_psr_stitched: full stitched-trade-pool PSR dict (observability
+    # only; N-inflated + sizing-blind, cross-coin correlation destroyed). NEVER
+    # the headline -- the headline `aggregate_psr` below is the equity-curve
+    # metric. Same scalar as aggregate_psr_trade_pool_proxy (kept for diff).
+    legacy_psr_stitched = dict(psr_trade_pool_proxy)
+    legacy_psr_stitched["deprecation"] = (
+        "stitched_per_trade_pl_pct_psr_is_N_inflated"
+    )
 
     # Methodology debt #2 fix: equity-curve PSR across the quarterly windows.
     port_eq_per_window = {
@@ -424,6 +432,7 @@ def main() -> int:
         "aggregate_psr_trade_pool_proxy":     psr_trade_pool_proxy.get(
             "psr_vs_hurdle"
         ),
+        "legacy_psr_stitched":                legacy_psr_stitched,
         "psr_n_periods":                      port_psr_true.get(
             "n_periods_total"
         ),

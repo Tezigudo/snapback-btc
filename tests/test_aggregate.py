@@ -250,33 +250,86 @@ def test_funding_skip_funding_adjusted_method_allowed():
 # ----- Test 11: phase2 baseline gate logic ----------------------------------
 
 
-def test_phase2_baseline_gate_logic():
-    # Case (a) — pass case for deployed mf+4H
-    v2_pass = {
-        "compounded_pct": 77.93,
-        "psr_walkforward": {"psr_vs_hurdle": 0.91},
-        "windows_positive_pct": 72.0,
-    }
-    assert phase2_gate({}, v2_pass, deployed=True) == "PROCEED"
+def _wf_series(n_pos: int, n_neg: int) -> list[float]:
+    """Build a WF quarterly return series with `n_pos` wins / `n_neg` losses.
 
-    # Case (b) — PSR breach
-    v2_low_psr = {
-        "compounded_pct": 77.93,
+    Wins are large enough that the WF-PSR comfortably clears the 0.90 floor,
+    so each case below isolates exactly the dimension it intends to test
+    (positive-rate vs PSR vs n-guard) rather than confounding the two.
+    """
+    return [3.0] * n_pos + [-1.0] * n_neg
+
+
+def test_phase2_gate_true_wf_series_pass_and_breach():
+    # ----- REDESIGNED PATH: gate consumes the true WF quarterly series -----
+
+    # Case (a) — deployed pass: 20/25 positive (80%) >> 70% floor; PSR >> 0.90.
+    s_pass = _wf_series(20, 5)
+    assert phase2_gate({}, {}, deployed=True, wf_quarterly_returns=s_pass) == "PROCEED"
+
+    # Case (b) — WF positive-rate breach on a DEPLOYED strategy -> HALT.
+    # 16/25 = 64% < 70% floor. (PSR of this series still clears 0.90, so the
+    # positive-rate is the sole thing failing — exactly the proxy-masked case.)
+    s_low_rate = _wf_series(16, 9)
+    assert phase2_gate({}, {}, deployed=True, wf_quarterly_returns=s_low_rate) == "HALT_AND_SURFACE"
+
+    # Case (c) — SCOPE DECISION (B): the SAME breach on a NON-deployed
+    # candidate is now graded (no more deployed=False short-circuit) and
+    # returns the SHELF severity tag rather than a free PROCEED.
+    assert phase2_gate({}, {}, deployed=False, wf_quarterly_returns=s_low_rate) == "SHELF"
+
+
+def test_phase2_gate_psr_floor_breach():
+    # ISOLATE the PSR floor: 8 small wins + 2 big losses. Positive-rate is
+    # 80% (>= 0.70, so wf_pos_floor is NOT the cause) but the two large
+    # losses drag the Sharpe negative -> PSR well below 0.90. This is the
+    # ONLY test where the PSR term is the sole reason for the breach, so it
+    # genuinely guards `psr < psr_floor` (drop that term and this fails).
+    series = [0.5] * 8 + [-3.0] * 2
+    arr = np.asarray(series, dtype=float)
+    assert (arr > 0).mean() >= 0.70  # positive-rate passes -> NOT the cause
+    psr = compute_psr(arr, sr_hurdle=0.0, confidence=0.95)["psr_vs_hurdle"]
+    assert psr < 0.90  # the PSR floor is the sole failing dimension
+    assert phase2_gate({}, {}, deployed=True, wf_quarterly_returns=series) == "HALT_AND_SURFACE"
+    assert phase2_gate({}, {}, deployed=False, wf_quarterly_returns=series) == "SHELF"
+
+
+def test_phase2_gate_insufficient_wf_evidence():
+    # Guard (D): fewer than WF_MIN_QUARTERS quarters -> refuse to render a
+    # pass/fail verdict rather than wave a thin series through.
+    thin = _wf_series(5, 0)  # n=5 < 8
+    assert phase2_gate({}, {}, deployed=True, wf_quarterly_returns=thin) == "insufficient_wf_evidence"
+    assert phase2_gate({}, {}, deployed=False, wf_quarterly_returns=thin) == "insufficient_wf_evidence"
+
+
+def test_phase2_gate_wf_result_mapping_carrier():
+    # The WF series may also arrive as a Mapping with a `per_window` list
+    # (the WF JSON shape) via the `wf_result` parameter.
+    wf_json = {"per_window": [{"return_pct": r} for r in _wf_series(20, 5)]}
+    assert phase2_gate({}, {}, deployed=True, wf_result=wf_json) == "PROCEED"
+    wf_json_bad = {"per_window": [{"return_pct": r} for r in _wf_series(16, 9)]}
+    assert phase2_gate({}, {}, deployed=False, wf_result=wf_json_bad) == "SHELF"
+
+
+def test_phase2_gate_backcompat_proxy_fallback_keeps_deployed_proceed():
+    # BACKCOMPAT PATH: when NO WF series is supplied (the deployed runner's
+    # existing call), the gate falls back to the legacy 5-OOS proxy fields so
+    # the DEPLOYED decision stays byte-identical to the pre-redesign gate.
+    canon_proxy = {
+        "compounded_pct": 77.952,
+        "psr_walkforward": {"psr_vs_hurdle": 0.996555},  # n=5 proxy
+        "windows_positive_pct": 100.0,                   # 5/5 proxy
+    }
+    # This is exactly what tools/_postfrac_mf_4h_btc_run.py passes.
+    assert phase2_gate({}, canon_proxy, deployed=True) == "PROCEED"
+
+    # Backcompat proxy ALSO still grades non-deployed candidates now (no
+    # short-circuit). A proxy breach on a non-deployed strategy -> SHELF.
+    canon_proxy_low = {
         "psr_walkforward": {"psr_vs_hurdle": 0.85},
-        "windows_positive_pct": 72.0,
+        "windows_positive_pct": 100.0,
     }
-    assert phase2_gate({}, v2_low_psr, deployed=True) == "HALT_AND_SURFACE"
-
-    # Case (c) — WF positive-quarter rate breach
-    v2_low_wf = {
-        "compounded_pct": 77.93,
-        "psr_walkforward": {"psr_vs_hurdle": 0.95},
-        "windows_positive_pct": 65.0,
-    }
-    assert phase2_gate({}, v2_low_wf, deployed=True) == "HALT_AND_SURFACE"
-
-    # Non-deployed — even bad numbers proceed (no live-bot risk)
-    assert phase2_gate({}, v2_low_psr, deployed=False) == "PROCEED"
+    assert phase2_gate({}, canon_proxy_low, deployed=False) == "SHELF"
 
 
 # ----- Test 12: PRICE_SCALE invariance --------------------------------------

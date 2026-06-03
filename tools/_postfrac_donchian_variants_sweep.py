@@ -53,6 +53,7 @@ sys.path.insert(0, str(ROOT))
 
 from strategy.indicators import atr as _atr_fn  # noqa: E402
 from strategy.signals_donchian import DonchianBreakoutBTCv3  # noqa: E402
+from tools.aggregate import build_canonical_block  # noqa: E402
 from tools.psr_eval import compute_psr  # noqa: E402
 
 # --- harness constants (apples-to-apples across all 6 arms) -----------------
@@ -227,6 +228,7 @@ def _run_bt(
     trades_df = getattr(stats, "_trades", None)
 
     pnl_pct_list: list[float] = []
+    eq_impact_pnl_pct: list[float] = []
     n_oos = 0
     if (
         trades_df is not None
@@ -240,6 +242,11 @@ def _run_bt(
         n_oos = int(len(oos))
         if n_oos > 0:
             pnl_pct_list = (oos["ReturnPct"].values * 100.0).tolist()
+            # CANONICAL (v2): sizing-aware equity-impact returns over the OOS
+            # trade subset (cash baseline; matches the OOS-only compounding).
+            from tools.aggregate import equity_impact_returns  # local import
+            stub = type("S", (), {"_trades": oos})()
+            eq_impact_pnl_pct = equity_impact_returns(stub, cash=CASH).tolist()
 
     compounded_pct = 0.0
     if pnl_pct_list:
@@ -252,6 +259,7 @@ def _run_bt(
         "trades":           n_oos,
         "return_pct":       round(compounded_pct, 4),
         "pnl_pct":          pnl_pct_list,
+        "eq_impact_pnl_pct": eq_impact_pnl_pct,
         "max_dd_pct":       float(stats.get("Max. Drawdown [%]", 0.0) or 0.0),
         "win_rate_pct":     float(stats.get("Win Rate [%]") or 0.0),
         "equity_final":     float(stats.get("Equity Final [$]", CASH) or CASH),
@@ -305,6 +313,7 @@ def run_oos_window(
         "sharpe":           r["sharpe"],
         "stats_return_pct": r["stats_return_pct"],
         "pnl_pct":          r["pnl_pct"],
+        "eq_impact_pnl_pct": r["eq_impact_pnl_pct"],
         "csv_path":         str(save_csv_path) if r["trades"] > 0 else None,
     }
 
@@ -356,6 +365,7 @@ def run_wf_window(
         "return_pct":     r["return_pct"],
         "max_dd_pct":     r["max_dd_pct"],
         "pnl_pct":        r["pnl_pct"],
+        "eq_impact_pnl_pct": r["eq_impact_pnl_pct"],
     }
 
 
@@ -379,19 +389,26 @@ def aggregate_oos(per_window: list[dict]) -> dict:
         dd = r.get("max_dd_pct", 0.0) or 0.0
         if dd < worst_dd:
             worst_dd = dd
-    psr = (
+    # LEGACY stitched-per-trade PSR (N-inflated; observability only).
+    legacy_psr_stitched = (
         compute_psr(np.asarray(all_pnl, dtype=float), sr_hurdle=0.0, confidence=0.95)
         if len(all_pnl) >= 2
         else {"n_trades": len(all_pnl), "psr_vs_hurdle": 0.0,
               "interpretation": "insufficient_evidence"}
     )
+    # CANONICAL (v2) dual-emit — 5-OOS family -> aggregation_method=v2_equity_curve.
+    canon = build_canonical_block(per_window, aggregation_method="v2_equity_curve")
+    psr = canon["psr_walkforward"]  # canonical headline PSR (gate reads this)
     return {
         "n_trades_total":           n_trades,
         "windows_positive":         f"{n_pos}/{len(per_window)}",
         "compounded_pct":           round((compounded - 1.0) * 100.0, 4),
         "per_window_return_pct":    [round(v, 4) for v in per_w_ret],
         "worst_window_max_dd_pct":  round(worst_dd, 4),
-        "psr":                      psr,
+        "psr":                      psr,                  # canonical psr_walkforward
+        "legacy_psr_stitched":      legacy_psr_stitched,  # observability only
+        "canonical":                canon,                # v2 dual-emit block
+        "aggregation_method":       canon["aggregation_method"],
     }
 
 
@@ -416,12 +433,16 @@ def aggregate_wf(per_window: list[dict]) -> dict:
                 pos_suff += 1
     pct_pos = (n_pos / n_test * 100.0) if n_test else 0.0
     pct_pos_suff = (pos_suff / suff * 100.0) if suff else 0.0
-    psr = (
+    # LEGACY stitched-per-trade PSR (N-inflated; observability only).
+    legacy_psr_stitched = (
         compute_psr(np.asarray(all_pnl, dtype=float), sr_hurdle=0.0, confidence=0.95)
         if len(all_pnl) >= 2
         else {"n_trades": len(all_pnl), "psr_vs_hurdle": 0.0,
               "interpretation": "insufficient_evidence"}
     )
+    # CANONICAL (v2) dual-emit — WF family -> aggregation_method=v2_walkforward.
+    canon = build_canonical_block(per_window, aggregation_method="v2_walkforward")
+    psr = canon["psr_walkforward"]  # canonical headline PSR (window-level series)
     return {
         "quarters_total":               n_test,
         "quarters_positive":            n_pos,
@@ -432,7 +453,10 @@ def aggregate_wf(per_window: list[dict]) -> dict:
         "pct_positive_sufficient":      round(pct_pos_suff, 2),
         "aggregate_compounded_pct":     round((compounded - 1.0) * 100.0, 4),
         "n_trades_total":               n_trades,
-        "psr":                          psr,
+        "psr":                          psr,                  # canonical psr_walkforward
+        "legacy_psr_stitched":          legacy_psr_stitched,  # observability only
+        "canonical":                    canon,                # v2 dual-emit block
+        "aggregation_method":           canon["aggregation_method"],
     }
 
 
@@ -513,14 +537,16 @@ def run_sweep(skip_wf: bool = False, only_variants: list[str] | None = None) -> 
             "notes":        v.get("notes", ""),
             "oos": {
                 "per_window": [
-                    {k: vv for k, vv in r.items() if k not in ("pnl_pct", "entry_times")}
+                    {k: vv for k, vv in r.items()
+                     if k not in ("pnl_pct", "entry_times", "eq_impact_pnl_pct")}
                     for r in oos_results
                 ],
                 "aggregate": oos_agg,
             },
             "walkforward": {
                 "per_quarter": [
-                    {k: vv for k, vv in r.items() if k != "pnl_pct"}
+                    {k: vv for k, vv in r.items()
+                     if k not in ("pnl_pct", "eq_impact_pnl_pct")}
                     for r in wf_results
                 ],
                 "aggregate": wf_agg,
@@ -528,6 +554,38 @@ def run_sweep(skip_wf: bool = False, only_variants: list[str] | None = None) -> 
         }
 
     elapsed = time.time() - t0
+
+    # --- bit-for-bit round-trip check (migration verification) --------------
+    # For every variant's OOS and WF canonical block: the headline psr must
+    # equal compute_psr on the PERSISTED per-window return series (rounded as
+    # aggregate_windows stores it), contiguous=False (disjoint windows; this is
+    # load-bearing for the WF arm where n>=20 would otherwise fire Lo's
+    # correction and change psr_lo_adjusted).
+    for vid, data in per_variant.items():
+        for leg in ("oos", "walkforward"):
+            agg = data.get(leg, {}).get("aggregate", {})
+            if not isinstance(agg, dict) or "canonical" not in agg:
+                continue  # skipped WF or empty
+            canon = agg["canonical"]
+            headline = agg["psr"]
+            persisted = np.asarray(canon["per_window_return_pct"], dtype=float)
+            recomputed = (
+                compute_psr(persisted, sr_hurdle=0.0, confidence=0.95,
+                            contiguous=False)
+                if len(persisted) >= 2
+                else {"psr_vs_hurdle": 0.0}
+            )
+            assert recomputed.get("psr_vs_hurdle") == headline.get("psr_vs_hurdle"), (
+                f"canonical PSR round-trip MISMATCH [{vid}/{leg}]: recomputed="
+                f"{recomputed.get('psr_vs_hurdle')} "
+                f"headline={headline.get('psr_vs_hurdle')}"
+            )
+            print(
+                f"[donchian-variants] round-trip OK [{vid}/{leg}]: "
+                f"psr={headline.get('psr_vs_hurdle')} "
+                f"method={canon.get('aggregation_method')}",
+                file=sys.stderr,
+            )
 
     # Gate evaluation per variant -- echoes the plan's promotion rule.
     baseline_compounded = per_variant.get(

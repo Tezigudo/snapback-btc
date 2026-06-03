@@ -1,0 +1,37 @@
+# debt #3 / variant C — shorter slope window 30 -> 10.
+#
+# Hypothesis: 10-bar slope window (~1.67d on 4h) captures recent EMA
+# trajectory rather than 5-day drift. Tests whether the predictive
+# component of the 30-bar slope is concentrated in its last third.
+#
+# NOTE: 0.03 threshold is calibrated to 30-bar measurement -- this variant
+# deliberately leaves threshold pinned to isolate window effect (per
+# "no in-window tuning" rule). Predicted failure mode (variants lens):
+# mis-scaled threshold creates regime-dependent behavior.
+
+variant_id: C_shorter_lookback_10
+strategy_name: donchian-v3
+symbol: BTC/USDT:USDT
+timeframe: 4h
+
+class_attrs:
+  donchian_period_entry: 80
+  donchian_period_exit: 20
+  atr_sl_multiple: 1.5
+  # atr_tp_multiple omitted -- Donchian has no TP.
+  atr_trail_multiple: 0.0
+  time_stop_bars: 48
+  risk_per_trade_pct: 2.75
+  leverage: 20
+  allow_shorts: true
+  regime_ema_period: 120
+  regime_slope_window: 10          # <-- shortened from baseline 30
+  slope_trend_threshold_pct: 0.03
+  use_ema_direction_filter: false
+  ema_direction_period: 200
+  atr_breakout_buffer_mult: 0.0
+
+notes: |
+  Treat with EXTRA skepticism on pass -- variants lens flagged mis-scaling
+  risk. Plan requires separate threshold re-calibration sweep before any
+  deploy if C is the sole winner.

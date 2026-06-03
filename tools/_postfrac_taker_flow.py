@@ -25,6 +25,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from strategy.signals_taker_flow import TakerFlowImbalance  # noqa: E402
+from tools.aggregate import (  # noqa: E402
+    AGGREGATION_VERSION,
+    build_canonical_block,
+    equity_impact_returns,
+)
 from tools.psr_eval import compute_psr  # noqa: E402
 
 PARQUET = ROOT / "data" / "historical" / "BTC_USDT_USDT_15m.parquet"
@@ -126,8 +131,12 @@ def run_window(label: str, start: str, end: str) -> dict:
 
     trades_df = getattr(stats, "_trades", None)
     pnl_pct_list = []
+    eq_impact_pnl_pct: list[float] = []
     if trades_df is not None and len(trades_df) > 0 and "ReturnPct" in trades_df.columns:
         pnl_pct_list = (trades_df["ReturnPct"].values * 100.0).tolist()
+        # CANONICAL (v2): sizing-aware equity-impact returns for per-window PSR.
+        # Slice IS the OOS window (no warm-prefix) -> all trades count.
+        eq_impact_pnl_pct = equity_impact_returns(stats, cash=CASH).tolist()
         out_csv = ROOT / "reports" / f"_postfrac_taker_flow_{label}.csv"
         out = pd.DataFrame({
             "pnl_pct": pnl_pct_list,
@@ -138,15 +147,16 @@ def run_window(label: str, start: str, end: str) -> dict:
         print(f"  [{label}] saved {len(out)} trades -> {out_csv.name}", file=sys.stderr)
 
     return {
-        "label":        label,
-        "start":        start,
-        "end":          end,
-        "trades":       n_trades,
-        "return_pct":   round(ret_pct, 4),
-        "max_dd_pct":   round(max_dd, 4),
-        "win_rate_pct": round(win_rate, 4),
-        "equity_final": round(equity_final, 4),
-        "pnl_pct":      pnl_pct_list,
+        "label":             label,
+        "start":             start,
+        "end":               end,
+        "trades":            n_trades,
+        "return_pct":        round(ret_pct, 4),
+        "max_dd_pct":        round(max_dd, 4),
+        "win_rate_pct":      round(win_rate, 4),
+        "equity_final":      round(equity_final, 4),
+        "pnl_pct":           pnl_pct_list,
+        "eq_impact_pnl_pct": eq_impact_pnl_pct,
     }
 
 
@@ -217,13 +227,20 @@ def main() -> int:
     agg = aggregate(per_window)
     all_pnl = agg.pop("all_pnl_pct")
     pnl_arr = np.asarray(all_pnl, dtype=float)
-    psr = compute_psr(pnl_arr, sr_hurdle=0.0, confidence=0.95) if len(pnl_arr) >= 2 else {
+    # LEGACY stitched-per-trade PSR (N-inflated; observability only).
+    legacy_psr_stitched = compute_psr(pnl_arr, sr_hurdle=0.0, confidence=0.95) if len(pnl_arr) >= 2 else {
         "n_trades": int(len(pnl_arr)),
         "psr_vs_hurdle": 0.0,
         "interpretation": "insufficient_evidence",
     }
 
-    # Gate decision
+    # CANONICAL (v2) dual-emit block — single source of truth (methodology #1).
+    # PSR axis migrated from stitched per-trade ReturnPct to the equity-curve
+    # window-level aggregation (psr_walkforward).
+    canon = build_canonical_block(per_window, aggregation_method=AGGREGATION_VERSION)
+    psr = canon["psr_walkforward"]  # canonical headline PSR
+
+    # Gate decision — now reads the CANONICAL psr (was stitched pre-migration).
     compounded = agg["compounded_pct"]
     psr_val = float(psr.get("psr_vs_hurdle", 0.0) or 0.0)
     if psr_val > 0.95 and compounded > 0.0:
@@ -243,11 +260,35 @@ def main() -> int:
         "price_scale":     PRICE_SCALE,
         "config":          CONFIG,
         "windows":         [w[0] for w in WINDOWS],
-        "per_window":      [{k: v for k, v in r.items() if k != "pnl_pct"} for r in per_window],
-        "summary":         agg,
-        "psr":             psr,
-        "elapsed_sec":     round(time.time() - t0, 2),
+        "per_window":      [
+            {k: v for k, v in r.items() if k not in ("pnl_pct", "eq_impact_pnl_pct")}
+            for r in per_window
+        ],
+        "summary":              agg,
+        "psr":                  psr,                  # canonical psr_walkforward
+        "legacy_psr_stitched":  legacy_psr_stitched,  # observability only
+        "canonical":            canon,                # v2 dual-emit block
+        "aggregation_method":   canon["aggregation_method"],
+        "elapsed_sec":          round(time.time() - t0, 2),
     }
+
+    # --- bit-for-bit round-trip check (migration verification) --------------
+    persisted = np.asarray(canon["per_window_return_pct"], dtype=float)
+    recomputed = (
+        compute_psr(persisted, sr_hurdle=0.0, confidence=0.95, contiguous=False)
+        if len(persisted) >= 2
+        else {"psr_vs_hurdle": 0.0}
+    )
+    assert recomputed.get("psr_vs_hurdle") == psr.get("psr_vs_hurdle"), (
+        f"canonical PSR round-trip MISMATCH: recomputed="
+        f"{recomputed.get('psr_vs_hurdle')} headline={psr.get('psr_vs_hurdle')}"
+    )
+    print(
+        f"[postfrac_taker_flow] canonical PSR round-trip OK: "
+        f"{psr.get('psr_vs_hurdle')}  verdict={verdict}",
+        file=sys.stderr,
+    )
+
     out_path = ROOT / "reports" / "postfrac_taker_flow.json"
     out_path.write_text(json.dumps(result, indent=2, default=str))
     print(f"[postfrac_taker_flow] wrote {out_path}  ({time.time()-t0:.1f}s)", file=sys.stderr)

@@ -1,0 +1,39 @@
+# debt #3 / variant E — EMA(200) binary direction filter on entry TF.
+#
+# Literature-canonical alternative (Faber 2007, AQR Trends Everywhere):
+# replace slope-magnitude with binary close-vs-EMA(200) direction filter
+# on entry TF (4H). Long allowed only when close > EMA(200); short only
+# when close < EMA(200). Cleanest A/B against magnitude-threshold gate.
+#
+# Deliberately uses 200/4H over 200/daily HTF -- single-TF data path,
+# no HTF resample plumbing for this round.
+#
+# ADX-replacement variant (variants-lens E_adx) DROPPED per task spec:
+# ADX>25 already falsified at -16.4pp / PSR 0.905->0.848 on AdaptiveTrend
+# V1 sibling per memory adaptrend_v1_adx_ablation_result.
+
+variant_id: E_ema200_direction_filter
+strategy_name: donchian-v3
+symbol: BTC/USDT:USDT
+timeframe: 4h
+
+class_attrs:
+  donchian_period_entry: 80
+  donchian_period_exit: 20
+  atr_sl_multiple: 1.5
+  # atr_tp_multiple omitted -- Donchian has no TP.
+  atr_trail_multiple: 0.0
+  time_stop_bars: 48
+  risk_per_trade_pct: 2.75
+  leverage: 20
+  allow_shorts: true
+  regime_ema_period: 120                # ignored when slope_threshold=0
+  regime_slope_window: 30               # ignored when slope_threshold=0
+  slope_trend_threshold_pct: 0.0        # <-- slope gate OFF
+  use_ema_direction_filter: true        # <-- binary gate ON
+  ema_direction_period: 200             # 4H EMA(200) = ~33d trend filter
+  atr_breakout_buffer_mult: 0.0
+
+notes: |
+  EMA(200) needs ~200 bars of warmup -- runner uses WARM_PREFIX_DAYS=60
+  for 4H quarterly walk-forward (60d * 6 bars/day = 360 bars = 1.8x warmup).

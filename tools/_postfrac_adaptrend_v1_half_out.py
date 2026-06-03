@@ -49,6 +49,7 @@ from strategy.signals_adaptive_trend_v1_half_out_1r import (  # noqa: E402
     AdaptiveTrendV1_half_out_1r,
 )
 from tools.psr_eval import compute_psr  # noqa: E402
+from tools.aggregate import build_canonical_block  # noqa: E402
 
 PARQUET = ROOT / "data" / "historical" / "BTC_USDT_USDT_15m.parquet"
 
@@ -229,8 +230,37 @@ def run_arm(
             "interpretation": "insufficient_evidence",
         }
 
+    # --- Canonical equity-curve aggregation (methodology debt #1) -----------
+    # Headline PSR is now psr_walkforward: compute_psr on the n-window
+    # equity-curve Return[%] series (sizing-aware). This SIDESTEPS the half-out
+    # row-doubling entirely — the equity-curve Return[%] is immune to how a
+    # touched entry splits into a +1R partial row + a runner-exit row. So the
+    # psr_row/psr_entry distinction is no longer load-bearing for the verdict;
+    # they are retained below as legacy observability.
+    #
+    # build_canonical_block expects {return_pct, trades, pnl_pct, label}; this
+    # runner's per-window dicts use rows/entries + pnl_pct_rows/pnl_pct_per_entry.
+    # Map trades=entries and pnl_pct=pnl_pct_per_entry (the apples-to-apples
+    # per-ENTRY basis that the OLD headline psr_entry used), so legacy_psr_stitched
+    # below reproduces the pre-migration headline (psr_entry) exactly.
+    canon_per_window = [
+        {
+            "label":      r["label"],
+            "return_pct": r["return_pct"],
+            "trades":     r["entries"],
+            "pnl_pct":    r["pnl_pct_per_entry"],
+        }
+        for r in per_window
+    ]
+    canon = build_canonical_block(canon_per_window)
+    psr = canon["psr_walkforward"]
+
+    # Legacy stitched-per-trade PSRs — diagnostic only (what this runner emitted
+    # pre-migration). N-inflated; never the verdict input.
+    # legacy_psr_stitched == psr_entry: the pre-migration HEADLINE basis.
     psr_row = _psr(all_row)
     psr_entry = _psr(all_entry)
+    legacy_psr_stitched = psr_entry
 
     if csv_prefix:
         agg_csv = ROOT / "reports" / f"{csv_prefix}_aggregated.csv"
@@ -245,9 +275,11 @@ def run_arm(
             for r in per_window
         ],
         "summary":    agg,
-        "psr_row":    psr_row,    # diagnostic (biased for half-out arm)
-        "psr_entry":  psr_entry,  # headline (apples-to-apples)
-        "psr":        psr_entry,  # alias for primary verdict
+        "psr":                 psr,         # canonical (psr_walkforward) — primary verdict
+        "canonical":           canon,       # full canonical block
+        "psr_row":             psr_row,     # legacy diagnostic (biased for half-out arm)
+        "psr_entry":           psr_entry,   # legacy headline (apples-to-apples per-entry)
+        "legacy_psr_stitched": legacy_psr_stitched,  # == psr_entry, pre-migration headline
     }
 
 
@@ -306,6 +338,62 @@ def verdict(base: dict, test: dict) -> dict:
     }
 
 
+def _arm_with_psr(arm: dict, psr_block: dict) -> dict:
+    """Shallow copy of an arm result with its `psr` swapped (verdict re-eval).
+
+    Only `psr` is swapped; `summary` (n_entries/n_rows) is left intact so the
+    half_out verdict's entries_match branch stays consistent across both runs.
+    """
+    a = dict(arm)
+    a["psr"] = psr_block
+    return a
+
+
+def _migration_selfcheck(base: dict, test: dict, canonical_verdict: dict, verdict_fn) -> dict:
+    """Assert canonical PSR is reproducible bit-for-bit + flag verdict flips.
+
+    (a) matches_headline: compute_psr on the persisted per-window Return[%]
+        array (canonical['per_window_return_pct'], contiguous=False to match
+        aggregate._safe_compute_psr) must equal each arm's headline
+        psr_walkforward exactly.
+    (b) verdict_changed: re-run verdict() feeding the OLD stitched per-ENTRY PSR
+        (== pre-migration headline psr_entry); if the decision differs from the
+        canonical-PSR decision, the migration moved a verdict and MUST be
+        surfaced loudly.
+    """
+    def _check_arm(arm: dict) -> bool:
+        canon = arm["canonical"]
+        arr = np.asarray(canon["per_window_return_pct"], dtype=float)
+        recomputed = (
+            compute_psr(arr, sr_hurdle=0.0, confidence=0.95, contiguous=False)
+            if len(arr) >= 2
+            else {"n_trades": int(len(arr)), "psr_vs_hurdle": 0.0,
+                  "psr_lo_adjusted": 0.0, "interpretation": "insufficient_evidence"}
+        )
+        return recomputed == canon["psr_walkforward"]
+
+    matches_headline = _check_arm(base) and _check_arm(test)
+
+    # Legacy decision: feed the pre-migration headline PSR back through verdict().
+    legacy_v = verdict_fn(
+        _arm_with_psr(base, base["legacy_psr_stitched"]),
+        _arm_with_psr(test, test["legacy_psr_stitched"]),
+    )
+    legacy_decision = legacy_v["decision"]
+    canonical_decision = canonical_verdict["decision"]
+
+    return {
+        "matches_headline":   bool(matches_headline),
+        "verdict_changed":    bool(legacy_decision != canonical_decision),
+        "canonical_decision": canonical_decision,
+        "legacy_decision":    legacy_decision,
+        "canonical_psr_base": base["psr"]["psr_vs_hurdle"],
+        "canonical_psr_test": test["psr"]["psr_vs_hurdle"],
+        "legacy_psr_base":    base["legacy_psr_stitched"]["psr_vs_hurdle"],
+        "legacy_psr_test":    test["legacy_psr_stitched"]["psr_vs_hurdle"],
+    }
+
+
 def main() -> int:
     t0 = time.time()
 
@@ -323,6 +411,21 @@ def main() -> int:
     )
 
     v = verdict(res_base, res_test)
+
+    # --- Migration self-checks (methodology debt #1) ------------------------
+    migration = _migration_selfcheck(res_base, res_test, v, verdict)
+    print(
+        f"[half_out_ablation] migration matches_headline={migration['matches_headline']} "
+        f"verdict_changed={migration['verdict_changed']}",
+        file=sys.stderr,
+    )
+    if migration["verdict_changed"]:
+        print(
+            "[half_out_ablation] !!! VERDICT CHANGED under canonical PSR — "
+            f"legacy={migration['legacy_decision']!r} -> "
+            f"canonical={migration['canonical_decision']!r}. SURFACE TO USER.",
+            file=sys.stderr,
+        )
 
     # Per-window variance comparison (does scaling out shrink dispersion?).
     base_per_win = res_base["summary"]["per_window_return_pct"]
@@ -350,6 +453,7 @@ def main() -> int:
         "base":           res_base,
         "test":           res_test,
         "verdict":        v,
+        "migration":      migration,
         "variance":       var_comp,
         "reference_postfrac_base": {
             "source": "reports/postfrac_adaptrend_v1.json (set_5_OOS)",

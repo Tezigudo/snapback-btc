@@ -359,6 +359,10 @@ def _aggregate_book(per_window: dict, label_for_returns: str) -> dict:
             all_pnl.extend(r["pnl_pct_trade_pool_proxy"])
     n_total = len([r for r in per_window.values() if r is not None])
     pnl_arr = np.asarray(all_pnl) if all_pnl else np.asarray([])
+    # Legacy stitched-trade-pool PSR (kept byte-identical to the pre-migration
+    # value for diff-ability). For the PORT label this `psr` is the N-inflated
+    # trade-pool proxy; main() overwrites psr_vs_hurdle with the equity-curve
+    # metric and preserves this full dict under legacy_psr_stitched.
     psr = compute_psr(pnl_arr, sr_hurdle=0.0, confidence=0.95) if len(pnl_arr) >= 2 else {
         "n_trades": int(len(pnl_arr)), "psr_vs_hurdle": 0.0,
         "interpretation": "insufficient_evidence",
@@ -370,6 +374,7 @@ def _aggregate_book(per_window: dict, label_for_returns: str) -> dict:
         "per_window_return_pct": per_window_returns,
         "psr_vs_hurdle":         psr.get("psr_vs_hurdle"),
         "psr_interpretation":    psr.get("interpretation"),
+        "_psr_full":             dict(psr),
         "_all_pnl":              all_pnl,
     }
 
@@ -481,6 +486,16 @@ def main() -> int:
         )
         port_agg["psr_per_window_returns"] = psr_per_window_returns
         port_agg["psr_combined_returns"] = psr_combined_returns
+        # legacy_psr_stitched: full stitched-trade-pool PSR dict (observability
+        # only; N-inflated + sizing-blind, cross-coin correlation destroyed).
+        # NEVER the headline -- the headline `psr_vs_hurdle` below is the true
+        # equity-curve metric. Same scalar as psr_trade_pool_proxy (preserved
+        # for diff against pre-migration JSONs).
+        _legacy_stitched = dict(port_agg.get("_psr_full") or {})
+        _legacy_stitched["deprecation"] = (
+            "stitched_per_trade_pl_pct_psr_is_N_inflated"
+        )
+        port_agg["legacy_psr_stitched"] = _legacy_stitched
         port_agg["psr_trade_pool_proxy"] = port_agg.pop("psr_vs_hurdle")
         port_agg["psr_trade_pool_proxy_interpretation"] = port_agg.pop(
             "psr_interpretation"
@@ -497,10 +512,13 @@ def main() -> int:
         # Headline `psr_vs_hurdle` now refers to the equity-curve metric.
         port_agg["psr_vs_hurdle"] = port_psr_true["psr_equity_curve"]
 
-    # Strip the heavy _all_pnl arrays before serializing
+    # Strip the heavy _all_pnl arrays + internal _psr_full before serializing
     btc_pnl_all = btc_agg.pop("_all_pnl")
     sol_pnl_all = sol_agg.pop("_all_pnl")
     port_pnl_all = port_agg.pop("_all_pnl") if "_all_pnl" in port_agg else []
+    btc_agg.pop("_psr_full", None)
+    sol_agg.pop("_psr_full", None)
+    port_agg.pop("_psr_full", None)
 
     # Lift summary
     btc_solo_psr = btc_agg["psr_vs_hurdle"]

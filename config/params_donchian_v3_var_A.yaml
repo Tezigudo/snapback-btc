@@ -1,0 +1,39 @@
+# debt #3 / variant A — lower slope threshold 0.03 -> 0.015.
+#
+# Hypothesis: halving threshold opens the gate earlier, recovers some of the
+# 161 removed breakouts and compresses 124-bar/193-bar entry lag 30-50%.
+# Pinned threshold sweep — no in-window tuning per task spec.
+#
+# Standalone YAML for the debt-#3 sweep runner; NOT loaded by the live bot.
+# Live config remains config/params_donchian.yaml (slope_trend_threshold_pct=0.03).
+
+variant_id: A_lower_threshold_0.015
+strategy_name: donchian-v3
+symbol: BTC/USDT:USDT
+timeframe: 4h
+
+# Maps to DonchianBreakoutBTCv3 class attrs via the sweep runner.
+# Keys in `class_attrs` are passed verbatim to bt.run(**class_attrs).
+class_attrs:
+  donchian_period_entry: 80      # = donchian_lookback_long
+  donchian_period_exit: 20       # = donchian_lookback_short
+  atr_sl_multiple: 1.5
+  # atr_tp_multiple intentionally omitted -- Donchian has no TP (channel exit).
+  # Adding it would AttributeError because the class doesn't declare it.
+  atr_trail_multiple: 0.0
+  time_stop_bars: 48
+  risk_per_trade_pct: 2.75
+  leverage: 20
+  allow_shorts: true
+  regime_ema_period: 120
+  regime_slope_window: 30
+  slope_trend_threshold_pct: 0.015   # <-- lowered from baseline 0.03
+  use_ema_direction_filter: false
+  ema_direction_period: 200
+  atr_breakout_buffer_mult: 0.0
+
+notes: |
+  gate_type=signed_slope_backtest_formula (matches strategy.regime_classifier.ema_slope_signed
+  — ewm-based, % per bar * 100). Live live_donchian_v3.py uses polyfit/fraction
+  (no *100) -- DO NOT promote to live until formulas are reconciled or dual-calibrated.
+  See plan kill-condition #1.

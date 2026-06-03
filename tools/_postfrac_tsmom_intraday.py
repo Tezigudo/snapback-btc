@@ -26,6 +26,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from strategy.signals_tsmom_intraday import IntradayTSMOM_BTC  # noqa: E402
+from tools.aggregate import (  # noqa: E402
+    AGGREGATION_VERSION,
+    build_canonical_block,
+    equity_impact_returns,
+)
 from tools.psr_eval import compute_psr  # noqa: E402
 
 CASH = 1_000_000.0
@@ -121,25 +126,30 @@ def run_window(label: str, start: str, end: str, csv_path: Path) -> dict:
     stats = bt.run(**LOCKED)
     trades_df = getattr(stats, "_trades", None)
     pnl_pct: list[float] = []
+    eq_impact_pnl_pct: list[float] = []
     if trades_df is not None and len(trades_df):
         if "ReturnPct" in trades_df.columns:
             pnl_pct = (trades_df["ReturnPct"].values * 100.0).tolist()
+            # CANONICAL (v2): sizing-aware equity-impact returns for per-window
+            # PSR. Slice IS the OOS window (no warm-prefix) -> all trades count.
+            eq_impact_pnl_pct = equity_impact_returns(stats, cash=CASH).tolist()
             out = pd.DataFrame({"pnl_pct": pnl_pct})
             out["window_start"] = start
             out["window_end"] = end
             out.to_csv(csv_path, index=False)
     return {
-        "label":         label,
-        "start":         start,
-        "end":           end,
-        "trades":        int(stats.get("# Trades", 0)),
-        "return_pct":    float(stats.get("Return [%]", 0.0) or 0.0),
-        "max_dd_pct":    float(stats.get("Max. Drawdown [%]", 0.0) or 0.0),
-        "win_rate_pct":  float(stats.get("Win Rate [%]") or 0.0),
-        "equity_final":  float(stats.get("Equity Final [$]", CASH) or CASH),
-        "sharpe":        float(stats.get("Sharpe Ratio") or 0.0),
-        "pnl_pct":       pnl_pct,
-        "csv_path":      str(csv_path),
+        "label":             label,
+        "start":             start,
+        "end":               end,
+        "trades":            int(stats.get("# Trades", 0)),
+        "return_pct":        float(stats.get("Return [%]", 0.0) or 0.0),
+        "max_dd_pct":        float(stats.get("Max. Drawdown [%]", 0.0) or 0.0),
+        "win_rate_pct":      float(stats.get("Win Rate [%]") or 0.0),
+        "equity_final":      float(stats.get("Equity Final [$]", CASH) or CASH),
+        "sharpe":            float(stats.get("Sharpe Ratio") or 0.0),
+        "pnl_pct":           pnl_pct,
+        "eq_impact_pnl_pct": eq_impact_pnl_pct,
+        "csv_path":          str(csv_path),
     }
 
 
@@ -160,6 +170,7 @@ def main() -> int:
     reports = ROOT / "reports"
     reports.mkdir(exist_ok=True)
     all_pnl: list[float] = []
+    per_window: list[dict] = []
     n_trades_total = 0
     compounded = 1.0
     n_pos = 0
@@ -171,7 +182,10 @@ def main() -> int:
         print(f"[postfrac_tsmom_intraday] window={label} ({start} -> {end}) ...",
               file=sys.stderr)
         r = run_window(label, start, end, csv_path)
-        out["per_window"][label] = {k: v for k, v in r.items() if k != "pnl_pct"}
+        per_window.append(r)
+        out["per_window"][label] = {
+            k: v for k, v in r.items() if k not in ("pnl_pct", "eq_impact_pnl_pct")
+        }
         n_trades_total += r["trades"]
         all_pnl.extend(r["pnl_pct"])
         rp = r["return_pct"] / 100.0
@@ -189,9 +203,16 @@ def main() -> int:
     agg_csv = reports / "_postfrac_tsmom_intraday_AGGREGATE.csv"
     pd.DataFrame({"pnl_pct": all_pnl}).to_csv(agg_csv, index=False)
 
-    psr = compute_psr(np.asarray(all_pnl), sr_hurdle=0.0, confidence=0.95) if len(all_pnl) >= 2 else {
+    # LEGACY stitched-per-trade PSR (N-inflated; observability only).
+    legacy_psr_stitched = compute_psr(np.asarray(all_pnl), sr_hurdle=0.0, confidence=0.95) if len(all_pnl) >= 2 else {
         "n_trades": len(all_pnl), "psr_vs_hurdle": 0.0, "interpretation": "insufficient_evidence",
     }
+
+    # CANONICAL (v2) dual-emit block — single source of truth (methodology #1).
+    # PSR axis migrated from stitched per-trade ReturnPct to the equity-curve
+    # window-level aggregation (psr_walkforward).
+    canon = build_canonical_block(per_window, aggregation_method=AGGREGATION_VERSION)
+    psr = canon["psr_walkforward"]  # canonical headline PSR
 
     out["aggregate"] = {
         "n_trades_total":        n_trades_total,
@@ -200,8 +221,28 @@ def main() -> int:
         "per_window_return_pct": per_window_returns,
         "aggregate_csv":         str(agg_csv),
     }
-    out["psr"] = psr
+    out["psr"] = psr                                 # canonical psr_walkforward
+    out["legacy_psr_stitched"] = legacy_psr_stitched  # observability only
+    out["canonical"] = canon                          # v2 dual-emit block
+    out["aggregation_method"] = canon["aggregation_method"]
     out["elapsed_sec"] = round(time.time() - t0, 2)
+
+    # --- bit-for-bit round-trip check (migration verification) --------------
+    persisted = np.asarray(canon["per_window_return_pct"], dtype=float)
+    recomputed = (
+        compute_psr(persisted, sr_hurdle=0.0, confidence=0.95, contiguous=False)
+        if len(persisted) >= 2
+        else {"psr_vs_hurdle": 0.0}
+    )
+    assert recomputed.get("psr_vs_hurdle") == psr.get("psr_vs_hurdle"), (
+        f"canonical PSR round-trip MISMATCH: recomputed="
+        f"{recomputed.get('psr_vs_hurdle')} headline={psr.get('psr_vs_hurdle')}"
+    )
+    print(
+        f"[postfrac_tsmom_intraday] canonical PSR round-trip OK: "
+        f"{psr.get('psr_vs_hurdle')}",
+        file=sys.stderr,
+    )
 
     out_path = reports / "postfrac_tsmom_intraday.json"
     out_path.write_text(json.dumps(out, indent=2, default=str))

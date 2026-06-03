@@ -1,0 +1,32 @@
+# debt #3 / variant B — shorter regime EMA 120 -> 50.
+#
+# Hypothesis: EMA50 reacts ~2.4x faster than EMA120 to regime shifts; slope
+# on EMA50 flips sign sooner, addressing the audit-lens 21-32 day
+# lag-to-extremum. Risk: shorter EMA produces noisier slope.
+
+variant_id: B_shorter_ema_50
+strategy_name: donchian-v3
+symbol: BTC/USDT:USDT
+timeframe: 4h
+
+class_attrs:
+  donchian_period_entry: 80
+  donchian_period_exit: 20
+  atr_sl_multiple: 1.5
+  # atr_tp_multiple omitted -- Donchian has no TP.
+  atr_trail_multiple: 0.0
+  time_stop_bars: 48
+  risk_per_trade_pct: 2.75
+  leverage: 20
+  allow_shorts: true
+  regime_ema_period: 50            # <-- shortened from baseline 120
+  regime_slope_window: 30
+  slope_trend_threshold_pct: 0.03
+  use_ema_direction_filter: false
+  ema_direction_period: 200
+  atr_breakout_buffer_mult: 0.0
+
+notes: |
+  Same threshold (0.03) as baseline -- this isolates the EMA-length effect.
+  If WF positive-quarter % degrades while aggregate looks good, the noise
+  hypothesis wins (per plan interpretation_rules).

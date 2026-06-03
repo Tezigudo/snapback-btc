@@ -1,0 +1,37 @@
+# debt #3 / variant D — pure Turtle Donchian 80/20, NO regime gate.
+#
+# Lower-bound ablation. Literature lens calls this the canonical reference
+# (Hurst/Ooi/Pedersen 2017, Turtle 1983). Two diagnostic outcomes:
+#   (1) if pure Turtle clears ~50% of gated PSR, gate is icing not bread
+#   (2) if pure Turtle collapses negative, gate is doing structural work
+# Variants lens predicts: trade count 3-5x baseline, WR 30-35%, compounded
+# negative in 3+/5 windows, possible -15% DD breach.
+#
+# Variant D gate disabled by setting slope_trend_threshold_pct=0
+# (existing baseline path treats 0 as "gate OFF" via gate_on check).
+
+variant_id: D_no_gate_pure_turtle
+strategy_name: donchian-v3
+symbol: BTC/USDT:USDT
+timeframe: 4h
+
+class_attrs:
+  donchian_period_entry: 80
+  donchian_period_exit: 20
+  atr_sl_multiple: 1.5
+  # atr_tp_multiple omitted -- Donchian has no TP.
+  atr_trail_multiple: 0.0
+  time_stop_bars: 48
+  risk_per_trade_pct: 2.75
+  leverage: 20
+  allow_shorts: true
+  regime_ema_period: 120
+  regime_slope_window: 30
+  slope_trend_threshold_pct: 0.0   # <-- 0 = gate OFF
+  use_ema_direction_filter: false
+  ema_direction_period: 200
+  atr_breakout_buffer_mult: 0.0
+
+notes: |
+  Kill-condition #3 says: if D compounded >= baseline at PSR>=0.90 then
+  STOP further variant testing, promote D, skip A/B/C/E. Simplest wins.
