@@ -211,6 +211,12 @@ def compute_psr(
             "sr_se_lo": 0.0,
             "psr_vs_hurdle": 0.0,
             "psr_lo_adjusted": 0.0,
+            # Sibling Lo (2002) keys emitted on the normal path are mirrored
+            # here so downstream readers see a uniform schema. SR is undefined
+            # when std==0 / n<2, so sr_lo_adjusted degenerates to 0.0 (matching
+            # point_sharpe) and lo_eta to the no-op identity 1.0 (see line ~272).
+            "sr_lo_adjusted": 0.0,
+            "lo_eta": 1.0,
             "min_trl": int(1e9),
             "skew": 0.0,
             "kurt": 3.0,
