@@ -221,31 +221,39 @@ REGISTRY: dict[str, dict[str, Any]] = {
         {"runner": "_adaptrend_v2_imp_regime_gate_adx_run.py", "shape": "nested", "conforms": True},
     "adaptrend_v2_imp_session_volume_filter.json":
         {"runner": "_adaptrend_v2_imp_session_volume_filter_run.py", "shape": "nested", "conforms": True},
-    # ---- KNOWN-STALE: runner migrated, JSON predates migration (canonical=null)
+    # ---- arm-nested per-arm full blocks (migrated; canonical lives in each arm
+    #      sub-dict report[arm]['canonical'], NOT at report top. Arm keys vary:
+    #      base/test, base/adx, base/vol, set_5_OOS/set_11_OOS_extended,
+    #      base/variant, v2_base/v2_with_improvement, base/treatment. These were
+    #      previously MISLABELLED conforms=False ("stale") because discovery only
+    #      checked report['canonical']; _canonical_units now finds the arm-nested
+    #      layout and test_a validates each arm's block (keys + recompute). -----
     "postfrac_adaptrend_v1.json":
-        {"runner": "_postfrac_adaptrend_v1.py", "shape": "direct", "conforms": False},
+        {"runner": "_postfrac_adaptrend_v1.py", "shape": "nested", "conforms": True},
     "postfrac_adaptrend_v1_adx_gate.json":
-        {"runner": "_postfrac_adaptrend_v1_adx.py", "shape": "direct", "conforms": False},
+        {"runner": "_postfrac_adaptrend_v1_adx.py", "shape": "nested", "conforms": True},
     "postfrac_adaptrend_v1_h1_conf.json":
-        {"runner": "_postfrac_adaptrend_v1_h1_conf.py", "shape": "direct", "conforms": False},
+        {"runner": "_postfrac_adaptrend_v1_h1_conf.py", "shape": "nested", "conforms": True},
     "postfrac_adaptrend_v1_half_out_1r.json":
-        {"runner": "_postfrac_adaptrend_v1_half_out.py", "shape": "direct", "conforms": False},
+        {"runner": "_postfrac_adaptrend_v1_half_out.py", "shape": "nested", "conforms": True},
     "postfrac_adaptrend_v1_session_volume.json":
-        {"runner": "_postfrac_adaptrend_v1_session_volume.py", "shape": "direct", "conforms": False},
+        {"runner": "_postfrac_adaptrend_v1_session_volume.py", "shape": "nested", "conforms": True},
     "postfrac_adaptrend_v1_time_stop.json":
-        {"runner": "_postfrac_adaptrend_v1_time_stop.py", "shape": "direct", "conforms": False},
+        {"runner": "_postfrac_adaptrend_v1_time_stop.py", "shape": "nested", "conforms": True},
     "postfrac_adaptrend_v1_vol_gate.json":
-        {"runner": "_postfrac_adaptrend_v1_vol_gate.py", "shape": "direct", "conforms": False},
+        {"runner": "_postfrac_adaptrend_v1_vol_gate.py", "shape": "nested", "conforms": True},
     "postfrac_adaptrend_v1_volsize.json":
-        {"runner": "_postfrac_adaptrend_v1_volsize.py", "shape": "direct", "conforms": False},
+        {"runner": "_postfrac_adaptrend_v1_volsize.py", "shape": "nested", "conforms": True},
+    "adaptrend_v2_imp_vol_scaled_sizing.json":
+        {"runner": "adaptrend_v2_imp_vol_scaled_sizing.py", "shape": "nested", "conforms": True},
+    "adaptrend_v2_imp_regime_gate_vol.json":
+        {"runner": "adaptrend_v2_imp_regime_gate_vol.py", "shape": "nested", "conforms": True},
+    "adaptrend_v2_imp_time_stop_24h.json":
+        {"runner": "_adaptrend_v2_imp_time_stop_24h.py", "shape": "nested", "conforms": True},
+    # ---- GENUINE straggler: runner emits no per-arm canonical in its on-disk
+    #      report (sanity script, not a verdict-bearing OOS report). Honest xfail.
     "adaptrend_v2_sanity.json":
         {"runner": "adaptrend_v2_sanity.py", "shape": "direct", "conforms": False},
-    "adaptrend_v2_imp_vol_scaled_sizing.json":
-        {"runner": "adaptrend_v2_imp_vol_scaled_sizing.py", "shape": "direct", "conforms": False},
-    "adaptrend_v2_imp_regime_gate_vol.json":
-        {"runner": "adaptrend_v2_imp_regime_gate_vol.py", "shape": "direct", "conforms": False},
-    "adaptrend_v2_imp_time_stop_24h.json":
-        {"runner": "_adaptrend_v2_imp_time_stop_24h.py", "shape": "nested", "conforms": False},
 }
 
 # Allowlist of registry reports whose (a) failure is KNOWN-stale (runner migrated
@@ -295,21 +303,30 @@ def _is_canonical_block(obj: Any) -> bool:
 def _canonical_units(report: dict) -> list[tuple[str, dict]]:
     """Yield (arm_label, canonical_block) for a report.
 
-    DIRECT : canonical = {..., psr_walkforward, legacy_psr_stitched, ...}
-             -> [("<top>", canonical)]
-    NESTED : canonical = {"base": {...}, "improvement"/"fs"/"treat": {...}}
-             -> one entry per arm that is itself a canonical block.
+    DIRECT     : canonical = {..., psr_walkforward, legacy_psr_stitched, ...}
+                 -> [("<top>", canonical)]
+    NESTED     : canonical = {"base": {...}, "improvement"/"fs"/"treat": {...}}
+                 -> one entry per arm that is itself a canonical block.
+    ARM-NESTED : NO top-level canonical; each arm sub-dict carries its OWN block
+                 report["base"]["canonical"], report["test"]["canonical"], ...
+                 (A/B ablation + set_5_OOS/set_11_OOS_extended layouts).
+                 Arm key varies (base/test, base/adx, set_5_OOS/..., v2_base/...).
+                 -> one entry per arm sub-dict whose ["canonical"] is a block.
     """
     canon = report.get("canonical")
-    if not isinstance(canon, dict):
-        return []
-    if _is_canonical_block(canon):
-        return [("<top>", canon)]
-    units: list[tuple[str, dict]] = []
-    for arm, blk in canon.items():
-        if _is_canonical_block(blk):
-            units.append((arm, blk))
-    return units
+    if isinstance(canon, dict):
+        if _is_canonical_block(canon):
+            return [("<top>", canon)]
+        units = [(arm, blk) for arm, blk in canon.items() if _is_canonical_block(blk)]
+        if units:
+            return units
+    # ARM-NESTED fallback: canonical lives inside each arm sub-dict, not at the
+    # report top. Generic over arm-key names (guarded by _is_canonical_block).
+    arm_units: list[tuple[str, dict]] = []
+    for arm, sub in report.items():
+        if isinstance(sub, dict) and _is_canonical_block(sub.get("canonical")):
+            arm_units.append((arm, sub["canonical"]))
+    return arm_units
 
 
 def _legacy_sibling(report: dict, arm: str, blk: dict) -> Any:
@@ -359,10 +376,10 @@ def _discover_has_block() -> tuple[list[str], list[str], list[str]]:
 
 HAS_BLOCK_REPORTS, DECISION_REPORTS, SKIPPED_LIST_TYPED = _discover_has_block()
 
-# Anti-vacuous floor: the migrated corpus carries 16 fully-canonical reports
-# (11 direct + 5 nested) plus adaptive_trend_extended_psr (partial-but-valid
-# direct from a sweep) == 17. If discovery finds fewer, the glob/path is broken.
-MIN_HAS_BLOCK_REPORTS = 16
+# Anti-vacuous floor: discovery now finds 33 has-block reports (11 direct +
+# 5 top-nested + 11 arm-nested A/B + adaptive_trend sweep/WF reports). Floor 30
+# leaves margin while still catching a broken glob/path (vacuous green).
+MIN_HAS_BLOCK_REPORTS = 30
 
 
 # ===========================================================================
