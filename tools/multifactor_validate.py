@@ -51,6 +51,16 @@ from strategy.signals_multifactor import (  # noqa: E402
     DayTradeMultiFactorBTC,
     _build_4h_ema_aligned,
 )
+# PSR-MIGRATION NOTE (methodology debt #1): this validator computes NO PSR.
+# It is a trade-list-equality + per-bar signal-parity check whose verdict is an
+# agreement-%, not a Sharpe/PSR. It imports only data/config/strategy symbols
+# (CASH, COMMISSION, LOCKED, MARGIN, MultiFactorMTF4H, _load_slice) from
+# run_mf_deepening — it NEVER calls that module's run_one/aggregate/summarize
+# path, so it never reaches the (previously stitched, now already-canonical)
+# PSR aggregation there. There is therefore no PSR call site to migrate here;
+# the inherited base (run_mf_deepening.summarize) was already migrated to the
+# canonical dual-emit. No change to the parity logic and no touch to the live
+# path (strategy.live_multifactor_v1 stays a read-only import).
 from tools.run_mf_deepening import (  # noqa: E402
     CASH,
     COMMISSION,

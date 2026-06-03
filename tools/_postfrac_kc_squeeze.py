@@ -280,7 +280,8 @@ def main() -> int:
     all_pnl = agg.pop("all_pnl_pct")
 
     pnl_arr = np.asarray(all_pnl, dtype=float)
-    psr = (
+    # LEGACY stitched-per-trade PSR (N-inflated; observability only).
+    legacy_psr_stitched = (
         compute_psr(pnl_arr, sr_hurdle=0.0, confidence=0.95)
         if len(pnl_arr) >= 2
         else {
@@ -294,12 +295,40 @@ def main() -> int:
     pd.DataFrame({"pnl_pct": all_pnl}).to_csv(agg_csv, index=False)
     print(f"[postfrac_kc_squeeze] aggregated CSV -> {agg_csv.name}", file=sys.stderr)
 
+    # CANONICAL (v2) dual-emit block — single source of truth (methodology #1).
+    # Headline / gate PSR migrated from the N-inflated stitched per-trade
+    # ReturnPct union to the equity-curve window-level aggregation
+    # (psr_walkforward). Stitched PSR kept as observability only.
+    from tools.aggregate import build_canonical_block, AGGREGATION_VERSION
+    canon = build_canonical_block(per_window, aggregation_method=AGGREGATION_VERSION)
+    psr = canon["psr_walkforward"]  # canonical headline PSR
+
+    # --- bit-for-bit round-trip check (migration verification) --------------
+    persisted = np.asarray(canon["per_window_return_pct"], dtype=float)
+    recomputed = (
+        compute_psr(persisted, sr_hurdle=0.0, confidence=0.95, contiguous=False)
+        if len(persisted) >= 2
+        else {"psr_vs_hurdle": 0.0}
+    )
+    assert recomputed.get("psr_vs_hurdle") == psr.get("psr_vs_hurdle"), (
+        f"canonical PSR round-trip MISMATCH: recomputed="
+        f"{recomputed.get('psr_vs_hurdle')} headline={psr.get('psr_vs_hurdle')}"
+    )
+    print(
+        f"[postfrac_kc_squeeze] canonical PSR round-trip OK: "
+        f"{psr.get('psr_vs_hurdle')}",
+        file=sys.stderr,
+    )
+
     # Pinned task gates — pure reporting, not "verdict" arms (the workflow
-    # decides the verdict from the JSON downstream).
+    # decides the verdict from the JSON downstream). PSR gate now reads the
+    # CANONICAL psr_walkforward (was stitched per-trade pre-migration).
     gate_checks = {
+        "psr_basis":           "canonical_psr_walkforward",
         "psr_min":             0.97,
         "psr_actual":          float(psr.get("psr_vs_hurdle", 0.0)),
         "psr_cleared":         float(psr.get("psr_vs_hurdle", 0.0)) >= 0.97,
+        "psr_stitched_legacy": float(legacy_psr_stitched.get("psr_vs_hurdle", 0.0)),
         "min_trades_total":    30,
         "trades_actual":       int(agg["n_trades"]),
         "trades_cleared":      int(agg["n_trades"]) >= 30,
@@ -316,10 +345,6 @@ def main() -> int:
             if per_window else True
         ),
     }
-
-    # Canonical v2 dual-emit block (methodology debt #1)
-    from tools.aggregate import build_canonical_block, AGGREGATION_VERSION
-    canon = build_canonical_block(per_window, aggregation_method=AGGREGATION_VERSION)
 
     result = {
         "strategy_id":     "kc_squeeze_v0",
@@ -339,7 +364,8 @@ def main() -> int:
             for r in per_window
         ],
         "summary":         agg,
-        "psr":             psr,                    # legacy stitched
+        "psr":             psr,                    # canonical psr_walkforward
+        "legacy_psr_stitched": legacy_psr_stitched,  # observability only
         "canonical":       canon,                  # v2 dual-emit
         "aggregation_method": canon["aggregation_method"],
         "gates":           gate_checks,

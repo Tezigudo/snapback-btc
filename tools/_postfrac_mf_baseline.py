@@ -194,10 +194,10 @@ def main() -> int:
     agg = aggregate(per_window)
     all_pnl = agg.pop("all_pnl_pct")
 
-    # PSR
+    # LEGACY stitched-per-trade PSR (N-inflated; observability only).
     import numpy as np
     pnl_arr = np.asarray(all_pnl, dtype=float)
-    psr = compute_psr(pnl_arr, sr_hurdle=0.0, confidence=0.95) if len(pnl_arr) >= 2 else {
+    legacy_psr_stitched = compute_psr(pnl_arr, sr_hurdle=0.0, confidence=0.95) if len(pnl_arr) >= 2 else {
         "n_trades": int(len(pnl_arr)),
         "psr_vs_hurdle": 0.0,
         "interpretation": "insufficient_evidence",
@@ -208,8 +208,28 @@ def main() -> int:
     pd.DataFrame({"pnl_pct": all_pnl}).to_csv(agg_csv, index=False)
     print(f"[postfrac_mf_baseline] aggregated CSV -> {agg_csv.name}", file=sys.stderr)
 
-    # Canonical v2 dual-emit (methodology debt #1)
+    # CANONICAL (v2) dual-emit block — single source of truth (methodology #1).
+    # Headline PSR migrated from the N-inflated stitched per-trade ReturnPct
+    # union to the equity-curve window-level aggregation (psr_walkforward).
     canon = build_canonical_block(per_window, aggregation_method=AGGREGATION_VERSION)
+    psr = canon["psr_walkforward"]  # canonical headline PSR
+
+    # --- bit-for-bit round-trip check (migration verification) --------------
+    persisted = np.asarray(canon["per_window_return_pct"], dtype=float)
+    recomputed = (
+        compute_psr(persisted, sr_hurdle=0.0, confidence=0.95, contiguous=False)
+        if len(persisted) >= 2
+        else {"psr_vs_hurdle": 0.0}
+    )
+    assert recomputed.get("psr_vs_hurdle") == psr.get("psr_vs_hurdle"), (
+        f"canonical PSR round-trip MISMATCH: recomputed="
+        f"{recomputed.get('psr_vs_hurdle')} headline={psr.get('psr_vs_hurdle')}"
+    )
+    print(
+        f"[postfrac_mf_baseline] canonical PSR round-trip OK: "
+        f"{psr.get('psr_vs_hurdle')}",
+        file=sys.stderr,
+    )
 
     result = {
         "strategy_id":     "mf_baseline",
@@ -225,7 +245,8 @@ def main() -> int:
             for r in per_window
         ],
         "summary":         agg,
-        "psr":             psr,                # legacy stitched
+        "psr":             psr,                # canonical psr_walkforward
+        "legacy_psr_stitched": legacy_psr_stitched,  # observability only
         "canonical":       canon,              # v2 dual-emit
         "aggregation_method": canon["aggregation_method"],
         "pre_fix": {

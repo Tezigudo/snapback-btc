@@ -6,6 +6,7 @@ for the canonical rule.  Reference: backcompat_baselines.json after Phase 2.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -309,6 +310,58 @@ def test_phase2_gate_wf_result_mapping_carrier():
     assert phase2_gate({}, {}, deployed=True, wf_result=wf_json) == "PROCEED"
     wf_json_bad = {"per_window": [{"return_pct": r} for r in _wf_series(16, 9)]}
     assert phase2_gate({}, {}, deployed=False, wf_result=wf_json_bad) == "SHELF"
+
+
+def test_phase2_gate_wf_result_reads_real_net_return_pct_field():
+    # REGRESSION: the real WF JSON shape uses container key "windows" and
+    # keys each quarter return on "net_return_pct" (verified against
+    # reports/adaptive_trend_walk_forward.json: 11/20 = 55% on that field).
+    # The old carrier read "return_pct" — ABSENT from real entries — so the
+    # series resolved to None and the gate SILENTLY fell back to the
+    # optimistic 5-OOS proxy, masking genuine WF positive-rate failures.
+    #
+    # The discriminating configuration (the trap the existing carrier test
+    # fell into) is the MASKING scenario: a real WF series that FAILS the
+    # positive-rate floor PAIRED with an OPTIMISTIC proxy that would PASS.
+    # If v2_result were {}, the buggy fallback also lands on SHELF (empty
+    # proxy => 0.0 < floors), so it would not discriminate buggy vs fixed.
+    wf_real = {"windows": [{"net_return_pct": r} for r in _wf_series(16, 9)]}  # 64% < 70%
+    optimistic_proxy = {
+        "psr_walkforward": {"psr_vs_hurdle": 0.9932},  # clears 0.90
+        "windows_positive_pct": 100.0,                  # clears 70%
+    }
+    # On BUGGY code these return PROCEED (real 64% series ignored, proxy used).
+    # On FIXED code the gate reads net_return_pct, regrades, and breaches the
+    # positive-rate floor — proving it did NOT silently fall back to the proxy.
+    assert phase2_gate({}, optimistic_proxy, deployed=False, wf_result=wf_real) == "SHELF"
+    assert phase2_gate({}, optimistic_proxy, deployed=True, wf_result=wf_real) == "HALT_AND_SURFACE"
+
+    # And a PASSING real series (20/25 = 80%) must PROCEED through the same
+    # carrier even with the optimistic proxy present (the regrade, not the
+    # proxy, is what is consulted).
+    wf_real_pass = {"windows": [{"net_return_pct": r} for r in _wf_series(20, 5)]}
+    assert phase2_gate({}, optimistic_proxy, deployed=True, wf_result=wf_real_pass) == "PROCEED"
+
+
+def test_phase2_gate_wf_result_real_report_file_regrades():
+    # Belt-and-suspenders integration check against the actual untracked WF
+    # report. Skipped if the report is absent (fresh checkout) so CI stays
+    # green; the inline-dict test above is the file-independent primary.
+    p = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "reports", "adaptive_trend_walk_forward.json",
+    )
+    if not os.path.exists(p):
+        pytest.skip("real WF report not present")
+    with open(p) as fh:
+        wf = json.load(fh)
+    optimistic_proxy = {
+        "psr_walkforward": {"psr_vs_hurdle": 0.9932},
+        "windows_positive_pct": 100.0,
+    }
+    # 11/20 = 55% on net_return_pct -> below 0.70 floor -> must regrade to
+    # SHELF, NOT silently PROCEED off the optimistic proxy.
+    assert phase2_gate({}, optimistic_proxy, deployed=False, wf_result=wf) == "SHELF"
 
 
 def test_phase2_gate_backcompat_proxy_fallback_keeps_deployed_proceed():

@@ -218,7 +218,8 @@ def main() -> int:
     )
 
     pnl_arr = np.asarray(all_pnl, dtype=float)
-    psr = (
+    # LEGACY stitched-per-trade PSR (N-inflated; observability only).
+    legacy_psr_stitched = (
         compute_psr(pnl_arr, sr_hurdle=0.0, confidence=0.95)
         if len(pnl_arr) >= 2
         else {"n_trades": int(len(pnl_arr)), "psr_vs_hurdle": 0.0,
@@ -245,6 +246,11 @@ def main() -> int:
     canon = build_canonical_block(
         canon_windows, aggregation_method="v2_walkforward"
     )
+    # Headline PSR migrated to the canonical window-level aggregation
+    # (psr_walkforward, n==n_quarters). Defeats the N-inflation of the
+    # stitched per-trade ReturnPct union. Stitched value kept as
+    # legacy_psr_stitched (observability only).
+    psr = canon["psr_walkforward"]
 
     result = {
         "strategy_id":        "adaptrend_v1_volsize",
@@ -269,13 +275,33 @@ def main() -> int:
                 for r in per_window
             ],
         },
-        "psr":                psr,           # legacy stitched
+        "psr":                psr,           # canonical psr_walkforward (headline)
+        "legacy_psr_stitched": legacy_psr_stitched,  # observability only
         "canonical":          canon,         # v2 dual-emit (WF-tagged)
         "aggregation_method": canon["aggregation_method"],
         "verdict":            verdict,
         "verdict_threshold":  "PASSES if >=70% test windows positive",
         "elapsed_sec":        round(time.time() - t0, 2),
     }
+
+    # --- bit-for-bit round-trip check (migration verification) --------------
+    # contiguous=False matches aggregate_windows' psr_walkforward computation
+    # on the ROUNDED per_window_return_pct array.
+    persisted = np.asarray(canon["per_window_return_pct"], dtype=float)
+    recomputed = (
+        compute_psr(persisted, sr_hurdle=0.0, confidence=0.95, contiguous=False)
+        if len(persisted) >= 2
+        else {"psr_vs_hurdle": 0.0}
+    )
+    assert recomputed.get("psr_vs_hurdle") == psr.get("psr_vs_hurdle"), (
+        f"canonical PSR round-trip MISMATCH: recomputed="
+        f"{recomputed.get('psr_vs_hurdle')} headline={psr.get('psr_vs_hurdle')}"
+    )
+    print(
+        f"[wf adaptrend_v1_volsize] canonical PSR round-trip OK: "
+        f"{psr.get('psr_vs_hurdle')}",
+        file=sys.stderr,
+    )
 
     out_path = ROOT / "reports" / "postfrac_walkforward_adaptrend_v1_volsize.json"
     out_path.write_text(json.dumps(result, indent=2, default=str))

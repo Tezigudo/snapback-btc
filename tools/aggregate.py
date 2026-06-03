@@ -391,8 +391,10 @@ def phase2_gate(
         this is the PRIMARY input and overrides the legacy proxy.
     wf_result:
         Alternative carrier for the WF series — a Mapping with a
-        ``per_window`` list of ``{"return_pct": ...}`` (the WF JSON
-        shape). Used only if ``wf_quarterly_returns`` is None.
+        ``per_window`` (or ``windows``) list of entries whose quarter
+        return is keyed on ``net_return_pct`` (the real WF JSON shape),
+        with ``return_pct`` / ``compounded`` accepted as fallbacks. Used
+        only if ``wf_quarterly_returns`` is None.
     """
     # --- Resolve the true walk-forward quarterly series, if supplied. ----
     series: list[float] | None = None
@@ -400,10 +402,28 @@ def phase2_gate(
         series = [float(x) for x in wf_quarterly_returns]
     elif wf_result is not None:
         per_window = wf_result.get("per_window") or wf_result.get("windows") or []
+
+        def _entry_return(e: Mapping[str, Any]) -> float | None:
+            # Real WF JSONs key the net-of-funding quarter return on
+            # "net_return_pct" (verified against
+            # reports/adaptive_trend_walk_forward*.json). The old carrier
+            # read "return_pct", which is ABSENT from real entries -> the
+            # comprehension yielded [] -> the gate silently fell back to the
+            # optimistic 5-OOS proxy, masking real WF failures. Resolve the
+            # real field FIRST, then the documented fallbacks:
+            #   "return_pct"  — synthetic alias some runners emit (and what
+            #                   the existing carrier test builds); kept green.
+            #   "compounded"  — aggregate-level field only, never a per-window
+            #                   key, so never matched here; harmless per spec.
+            for k in ("net_return_pct", "return_pct", "compounded"):
+                v = e.get(k)
+                if v is not None:
+                    return float(v)
+            return None
+
         series = [
-            float(e["return_pct"])
-            for e in per_window
-            if e.get("return_pct") is not None
+            r for r in (_entry_return(e) for e in per_window)
+            if r is not None
         ] or None
 
     if series is not None:

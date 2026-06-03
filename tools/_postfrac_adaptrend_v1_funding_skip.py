@@ -361,16 +361,18 @@ def main() -> int:
     base_funding_total = sum(r["base"]["funding_cost_usdt"] for r in rows)
     fs_funding_total = sum(r["fs"]["funding_cost_usdt"] for r in rows)
 
-    # PSR (uses per-trade pnl_pct, NOT compounded per-window).
+    # LEGACY stitched-per-trade PSR (uses per-trade pnl_pct union; N-inflated;
+    # observability only). Canonical headline PSR is repointed below to the
+    # equity-curve window-level aggregation (psr_walkforward).
     base_pnl_arr = np.asarray(base_all_pnl, dtype=float)
     fs_pnl_arr = np.asarray(fs_all_pnl, dtype=float)
-    base_psr = (
+    base_psr_legacy_stitched = (
         compute_psr(base_pnl_arr, sr_hurdle=0.0, confidence=0.95)
         if len(base_pnl_arr) >= 2
         else {"n_trades": int(len(base_pnl_arr)), "psr_vs_hurdle": 0.0,
               "interpretation": "insufficient_evidence"}
     )
-    fs_psr = (
+    fs_psr_legacy_stitched = (
         compute_psr(fs_pnl_arr, sr_hurdle=0.0, confidence=0.95)
         if len(fs_pnl_arr) >= 2
         else {"n_trades": int(len(fs_pnl_arr)), "psr_vs_hurdle": 0.0,
@@ -402,15 +404,17 @@ def main() -> int:
         file=sys.stderr,
     )
     print(
-        f"base PSR: {base_psr['psr_vs_hurdle']:.4f} "
-        f"(sharpe={base_psr['point_sharpe']:.4f} n={base_psr['n_trades']} "
-        f"MinTRL={base_psr['min_trl']})",
+        f"base PSR (legacy stitched): {base_psr_legacy_stitched['psr_vs_hurdle']:.4f} "
+        f"(sharpe={base_psr_legacy_stitched['point_sharpe']:.4f} "
+        f"n={base_psr_legacy_stitched['n_trades']} "
+        f"MinTRL={base_psr_legacy_stitched['min_trl']})",
         file=sys.stderr,
     )
     print(
-        f"+fs  PSR: {fs_psr['psr_vs_hurdle']:.4f} "
-        f"(sharpe={fs_psr['point_sharpe']:.4f} n={fs_psr['n_trades']} "
-        f"MinTRL={fs_psr['min_trl']})",
+        f"+fs  PSR (legacy stitched): {fs_psr_legacy_stitched['psr_vs_hurdle']:.4f} "
+        f"(sharpe={fs_psr_legacy_stitched['point_sharpe']:.4f} "
+        f"n={fs_psr_legacy_stitched['n_trades']} "
+        f"MinTRL={fs_psr_legacy_stitched['min_trl']})",
         file=sys.stderr,
     )
 
@@ -438,6 +442,38 @@ def main() -> int:
         aggregation_method="v2_equity_curve_funding_adjusted",
     )
 
+    # BASE arm canonical block — symmetric to the FS canon so base_psr can be
+    # repointed to the equity-curve window-level aggregation (psr_walkforward).
+    # return_pct = base funding-net (sizing-aware), same funding-adjusted tag.
+    # eq_impact/pnl_pct unused for the headline psr_walkforward (it reads only
+    # return_pct), so they are left empty here.
+    per_window_base_canon = [
+        {
+            "label": r["label"],
+            "return_pct": r["base"]["net_return_pct"],
+            "trades": r["base"]["trades"],
+            "pnl_pct": [],
+            "eq_impact_pnl_pct": [],
+        }
+        for r in rows
+    ]
+    canon_base = build_canonical_block(
+        per_window_base_canon,
+        aggregation_method="v2_equity_curve_funding_adjusted",
+    )
+
+    # CANONICAL headline PSRs (window-level psr_walkforward; defeats
+    # N-inflation). Stitched values retained under *_legacy_stitched.
+    base_psr = canon_base["psr_walkforward"]
+    fs_psr = canon["psr_walkforward"]
+    # Recompute delta_psr from the CANONICAL values (was incoherent if left
+    # as fs_canonical - base_stitched).
+    delta_psr_canonical = round(
+        float(fs_psr.get("psr_vs_hurdle", 0.0) or 0.0)
+        - float(base_psr.get("psr_vs_hurdle", 0.0) or 0.0),
+        4,
+    )
+
     out = {
         "improvement_id":  "funding_skip",
         "applied_to":      "AdaptiveTrendV1",
@@ -449,7 +485,8 @@ def main() -> int:
         "rows":            rows,
         "aggregation_method": "v2_equity_curve_funding_adjusted",
         "funding_adjusted":   True,
-        "canonical":          canon,
+        "canonical":          canon,         # FS arm v2 dual-emit
+        "canonical_base":     canon_base,    # BASE arm v2 dual-emit
         "summary": {
             "base_compounded_net_pct":  round(base_comp_net, 4),
             "fs_compounded_net_pct":    round(fs_comp_net, 4),
@@ -462,17 +499,48 @@ def main() -> int:
             "fs_total_trades":          fs_trades_total,
             "base_total_funding_usdt":  round(base_funding_total, 2),
             "fs_total_funding_usdt":    round(fs_funding_total, 2),
-            "delta_psr":                round(fs_psr["psr_vs_hurdle"]
-                                              - base_psr["psr_vs_hurdle"], 4),
+            # delta_psr now computed from CANONICAL window-level psr_walkforward
+            # (was fs_canonical - base_stitched, which was incoherent).
+            "delta_psr":                delta_psr_canonical,
+            "delta_psr_legacy_stitched": round(
+                float(fs_psr_legacy_stitched.get("psr_vs_hurdle", 0.0) or 0.0)
+                - float(base_psr_legacy_stitched.get("psr_vs_hurdle", 0.0) or 0.0),
+                4,
+            ),
         },
-        "base_psr": base_psr,
-        "fs_psr":   fs_psr,
+        "base_psr": base_psr,                        # canonical psr_walkforward
+        "fs_psr":   fs_psr,                          # canonical psr_walkforward
+        "base_psr_legacy_stitched": base_psr_legacy_stitched,  # observability
+        "fs_psr_legacy_stitched":   fs_psr_legacy_stitched,    # observability
         "v2_prior_finding": {
             "delta_compounded_net_pp": -4.42,
             "note": "V2 + funding_skip with int() truncation in V2 sizing",
         },
         "elapsed_sec": round(time.time() - t0, 2),
     }
+    # --- bit-for-bit round-trip check (migration verification) --------------
+    # contiguous=False matches aggregate_windows' psr_walkforward computation
+    # on the ROUNDED per_window_return_pct array. Assert BOTH arms.
+    for arm_name, arm_canon, arm_headline in (
+        ("fs", canon, fs_psr),
+        ("base", canon_base, base_psr),
+    ):
+        persisted = np.asarray(arm_canon["per_window_return_pct"], dtype=float)
+        recomputed = (
+            compute_psr(persisted, sr_hurdle=0.0, confidence=0.95, contiguous=False)
+            if len(persisted) >= 2
+            else {"psr_vs_hurdle": 0.0}
+        )
+        assert recomputed.get("psr_vs_hurdle") == arm_headline.get("psr_vs_hurdle"), (
+            f"canonical PSR round-trip MISMATCH ({arm_name}): recomputed="
+            f"{recomputed.get('psr_vs_hurdle')} headline={arm_headline.get('psr_vs_hurdle')}"
+        )
+    print(
+        f"[postfrac_adaptrendV1_imp_funding_skip] canonical PSR round-trip OK: "
+        f"base={base_psr.get('psr_vs_hurdle')} fs={fs_psr.get('psr_vs_hurdle')}",
+        file=sys.stderr,
+    )
+
     out_path = ROOT / "reports" / "postfrac_adaptrendV1_imp_funding_skip.json"
     out_path.write_text(json.dumps(out, indent=2, default=str))
     print(f"\nSaved: {out_path}", file=sys.stderr)
