@@ -27,10 +27,10 @@ Design notes (per advisor):
   * Warmup: 60d prefix for 4H sweeps (= 360 bars >= 1.5x EMA(200)).
     Trades attributed by EntryTime to the OOS slice.
 
-DO NOT RUN until live_donchian_v3.py formula is reconciled with
-strategy.regime_classifier.ema_slope_signed (kill-condition #1 in plan).
-Any PSR from this harness is backtest-only; live behavior is ~3.3x stricter
-at threshold 0.03.
+Formula reconciled: live_donchian_v3.py now mirrors
+strategy.regime_classifier.ema_slope_signed (endpoint-diff / slope_window
+/ close[-1] × 100). Kill-condition #1 resolved — sweep is safe to run.
+Any PSR from this harness is backtest-only.
 
 This module is import-safe -- main() is only invoked under
 `if __name__ == "__main__"`.
@@ -664,11 +664,10 @@ def run_sweep(skip_wf: bool = False, only_variants: list[str] | None = None) -> 
         "gates":              gates,
         "per_variant":        per_variant,
         "promotion":          promotion,
-        "kill_condition_unresolved": (
-            "live live_donchian_v3.py uses polyfit+fraction (no *100); "
-            "backtest regime_classifier.ema_slope_signed uses ewm+percent*100. "
-            "Live gate ~3.3x stricter at threshold 0.03. PSR from this harness "
-            "is BACKTEST-ONLY; reconcile or dual-calibrate before promoting."
+        "kill_condition_1_resolved": (
+            "live_donchian_v3.py formula reconciled with "
+            "regime_classifier.ema_slope_signed (endpoint-diff / slope_window "
+            "/ close[-1] * 100). PSR from this harness is backtest-only."
         ),
         "elapsed_sec":        round(elapsed, 2),
     }

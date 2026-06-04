@@ -33,7 +33,7 @@ class_attrs:
   atr_breakout_buffer_mult: 0.0
 
 notes: |
-  gate_type=signed_slope_backtest_formula (matches strategy.regime_classifier.ema_slope_signed
-  — ewm-based, % per bar * 100). Live live_donchian_v3.py uses polyfit/fraction
-  (no *100) -- DO NOT promote to live until formulas are reconciled or dual-calibrated.
-  See plan kill-condition #1.
+  gate_type=signed_slope (matches strategy.regime_classifier.ema_slope_signed
+  — endpoint-diff / slope_window / close[-1] × 100). live_donchian_v3.py now
+  uses the same formula. Kill-condition #1 resolved; safe to promote if metrics
+  clear.
