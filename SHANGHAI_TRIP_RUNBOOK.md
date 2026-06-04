@@ -66,7 +66,7 @@ If alert AND you've had multiple alerts in a few days AND no obvious cause:
 ```
 ssh root@152.42.241.43
 cd /root/snapback-btc
-.venv/bin/python tools/multifactor_validate.py --recent 7d
+.venv/bin/python tools/multifactor_validate.py
 ```
 This compares the last week's live decisions to what the backtest would have done on the same bars. If parity is < 100%, escalate to Claude.
 
