@@ -467,6 +467,17 @@ class Bot:
         #        admission walk)
         # Binance Futures klines cap at 1500/call so 1500 is also the ceiling.
         df = self.client.fetch_ohlcv(self.symbol, self.entry_tf, limit=1500)
+        # Binance returns the still-FORMING current bar as the last row (~5s
+        # after it opens it holds ~0.5% of its eventual volume). The backtest
+        # only ever sees CLOSED bars (backtesting.py never shows a forming bar;
+        # signals_multifactor.next() reads Close[-1] of a closed bar). Drop the
+        # forming bar HERE, before anything downstream touches the frame: every
+        # evaluator, the entry price, SL/TP, the 4H-gate alignment timestamp,
+        # the warmup count, and the dedup ts all read iloc[-1]/index[-1], so a
+        # single slice at the source keeps live↔backtest parity intact. Without
+        # this, the volume gate (cur_vol > 2×SMA20) can never be satisfied →
+        # 0 trades, and entry/SL/TP would anchor to an incomplete bar.
+        df = df.iloc[:-1]
         if len(df) < 250:
             return
         last_ts = df.index[-1]
