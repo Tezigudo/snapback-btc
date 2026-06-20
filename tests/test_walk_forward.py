@@ -14,19 +14,24 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from research.agents.base import FoldResult
-from research.agents.deterministic import DeterministicResearcher
-from research.scoring import (
+research = pytest.importorskip(
+    "research",
+    reason="research package not present on droplet branch",
+)
+
+from research.agents.base import FoldResult  # noqa: E402
+from research.agents.deterministic import DeterministicResearcher  # noqa: E402
+from research.scoring import (  # noqa: E402
     bootstrap_sharpe_p5,
     deflated_sharpe,
     fold_stability_score,
 )
-from research.walk_forward import (
+from research.walk_forward import (  # noqa: E402
     make_params,
     split_windows,
     sweep_grid,
 )
-from strategy.signals import StrategyParams
+from strategy.signals import StrategyParams  # noqa: E402
 
 
 # --- splitter ---------------------------------------------------------------
