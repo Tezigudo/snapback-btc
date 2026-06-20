@@ -24,7 +24,11 @@ class RiskCeilings:
     # without a separate RISK_REVIEW.
     MAX_LEVERAGE: int = 20
 
-    # If equity drawdown today exceeds this %, flatten + HALT for 24h.
+    # If equity drawdown since this UTC day's start reaches this %, block NEW
+    # entries for the rest of the day (bot._daily_loss_blocks_entry). Does NOT
+    # flatten or HALT — open positions keep their exchange-native brackets, and
+    # the daily anchor resets at the next UTC midnight. The tighter,
+    # daily-resetting sibling of the cumulative kill-switch.
     MAX_DAILY_LOSS_PCT: float = 2.0
 
     # Single-symbol simplicity for v1.

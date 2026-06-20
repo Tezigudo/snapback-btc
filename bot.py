@@ -68,7 +68,9 @@ from exchange.constraints import (
 )
 from exchange.env import REPO_ROOT, get_env, is_halted, load_env_for_instance
 from risk import (
+    CEILINGS,
     RiskBreach,
+    check_daily_loss,
     check_leverage,
     check_notional,
     check_symbol,
@@ -244,6 +246,9 @@ class Bot:
         # open→flat transitions. "unknown" until the first loop call so we
         # don't emit a spurious exit alert for a historical entry in state.db.
         self._last_position_side: str = "unknown"
+        # Latch so the daily-loss breaker logs/alerts once per trip, not every
+        # poll. Cleared on drawdown recovery or UTC-day rollover.
+        self._daily_loss_blocked: bool = False
         if self.dry_run:
             self.log.warning("DRY-RUN MODE: no real orders will be placed")
 
@@ -454,10 +459,74 @@ class Bot:
             return True
         return False
 
+    def _daily_anchor_equity(self, equity: float) -> float:
+        """Return the UTC-day's starting equity, re-anchoring on date rollover.
+
+        Persisted in state.meta so it survives restarts within a day. Unlike
+        deploy_start_equity (set once at first deploy, drives the -18% cumulative
+        kill-switch), this anchor resets every UTC midnight and drives the tighter
+        2% daily-loss breaker. The two are intentionally separate ceilings.
+        """
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        anchor_date = state.get_meta("daily_anchor_date")
+        anchor_eq = state.get_float("daily_anchor_equity", 0.0)
+        if anchor_date != today or anchor_eq <= 0:
+            state.set_meta("daily_anchor_date", today)
+            state.set_float("daily_anchor_equity", equity)
+            self.log.info("Daily anchor set: date=%s equity=%.2f USDT", today, equity)
+            return equity
+        return anchor_eq
+
+    def _daily_loss_blocks_entry(self, equity: float) -> bool:
+        """True if today's drawdown has hit MAX_DAILY_LOSS_PCT — block new
+        entries for the rest of the UTC day. Does NOT flatten or HALT: existing
+        brackets keep managing any open position, and the anchor resets at the
+        next UTC midnight (see _daily_anchor_equity). This is the tighter,
+        daily-resetting sibling of the -18% cumulative kill-switch.
+        """
+        day_start = self._daily_anchor_equity(equity)
+        try:
+            check_daily_loss(equity, day_start)
+        except RiskBreach as e:
+            loss_pct = (day_start - equity) / day_start * 100.0 if day_start > 0 else 0.0
+            if not self._daily_loss_blocked:
+                # Log + event once per day, on the bar the breaker trips, to
+                # avoid spamming JSONL/outbox every poll for the rest of the day.
+                self.log.warning("DAILY LOSS BREAKER: %s — blocking new entries "
+                                 "until next UTC day.", e)
+                state.record_event("WARN", "daily_loss_breaker",
+                                   {"equity": equity, "day_start": day_start,
+                                    "loss_pct": loss_pct,
+                                    "threshold_pct": CEILINGS.MAX_DAILY_LOSS_PCT})
+                state.enqueue_bot_event(
+                    "daily_loss_breaker", equity_usd=float(equity),
+                    payload={"day_start_equity": float(day_start),
+                             "loss_pct": loss_pct,
+                             "threshold_pct": CEILINGS.MAX_DAILY_LOSS_PCT},
+                )
+                send_alert(
+                    "Bot daily-loss breaker tripped",
+                    f"Daily drawdown breached -{CEILINGS.MAX_DAILY_LOSS_PCT:.0f}%.\n"
+                    f"day_start={day_start:.2f}  current={equity:.2f}  "
+                    f"loss={loss_pct:.2f}%\n"
+                    f"New entries blocked until next UTC day. "
+                    f"Open position (if any) left to its brackets; no flatten.",
+                )
+                self._daily_loss_blocked = True
+            return True
+        # Drawdown recovered or new day anchored — clear the latch.
+        self._daily_loss_blocked = False
+        return False
+
     def _maybe_enter(self, equity: float) -> None:
         # Skip entry evaluation if already in a position — bracket SL/TP
         # manage the existing trade. Matches backtest's exclusive_orders=True.
         if self.client.fetch_position(self.symbol).side != "flat":
+            return
+
+        # Daily-loss breaker: tighter (2%) daily-resetting guard, separate from
+        # the -18% cumulative kill-switch. Blocks NEW entries only.
+        if self._daily_loss_blocks_entry(equity):
             return
 
         # 1500 bars covers warmup on every supported timeframe:
@@ -467,6 +536,17 @@ class Bot:
         #        admission walk)
         # Binance Futures klines cap at 1500/call so 1500 is also the ceiling.
         df = self.client.fetch_ohlcv(self.symbol, self.entry_tf, limit=1500)
+        # Binance returns the still-FORMING current bar as the last row (~5s
+        # after it opens it holds ~0.5% of its eventual volume). The backtest
+        # only ever sees CLOSED bars (backtesting.py never shows a forming bar;
+        # signals_multifactor.next() reads Close[-1] of a closed bar). Drop the
+        # forming bar HERE, before anything downstream touches the frame: every
+        # evaluator, the entry price, SL/TP, the 4H-gate alignment timestamp,
+        # the warmup count, and the dedup ts all read iloc[-1]/index[-1], so a
+        # single slice at the source keeps live↔backtest parity intact. Without
+        # this, the volume gate (cur_vol > 2×SMA20) can never be satisfied →
+        # 0 trades, and entry/SL/TP would anchor to an incomplete bar.
+        df = df.iloc[:-1]
         if len(df) < 250:
             return
         last_ts = df.index[-1]
