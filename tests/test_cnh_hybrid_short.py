@@ -47,6 +47,13 @@ if not DATA.exists():
     )
 
 
+def _have_range(df: pd.DataFrame) -> str:
+    """Safe data-range suffix for skip reasons — never indexes an empty frame."""
+    if len(df) == 0:
+        return "have no data"
+    return f"have {df.index[0]} to {df.index[-1]}"
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -66,7 +73,7 @@ def df_2024h2(df_4h_full: pd.DataFrame) -> pd.DataFrame:
     if len(sub) == 0:
         pytest.skip(
             "requires 2024-H2 data fixture not available in cached parquet "
-            f"(have {df_4h_full.index[0]} to {df_4h_full.index[-1]})"
+            f"({_have_range(df_4h_full)})"
         )
     return attach_indicators(sub)
 
@@ -213,7 +220,7 @@ def test_known_dt_bar_fires(df_4h_full: pd.DataFrame) -> None:
     if len(df_2024) == 0:
         pytest.skip(
             "requires 2024 data fixture not available in cached parquet "
-            f"(have {df_4h_full.index[0]} to {df_4h_full.index[-1]})"
+            f"({_have_range(df_4h_full)})"
         )
     df_full = attach_indicators(df_2024)
     cfg = HybridConfig()
@@ -259,7 +266,7 @@ def test_no_tp_returns_none(df_4h_full: pd.DataFrame) -> None:
     if len(raw) == 0:
         pytest.skip(
             "requires 2022 data fixture not available in cached parquet "
-            f"(have {df_4h_full.index[0]} to {df_4h_full.index[-1]})"
+            f"({_have_range(df_4h_full)})"
         )
     df = attach_indicators(raw)
     cfg = HybridConfig()
@@ -293,7 +300,7 @@ def test_no_signal_quiet_window(df_4h_full: pd.DataFrame) -> None:
     if len(prior) == 0 or len(bars) == 0:
         pytest.skip(
             "requires 2022-2023 data fixture not available in cached parquet "
-            f"(have {df_4h_full.index[0]} to {df_4h_full.index[-1]})"
+            f"({_have_range(df_4h_full)})"
         )
     bars_full = pd.concat([prior, bars])
     side, sl, tp, dbg = evaluate_signal_cnh_hybrid_short(bars_full, 0.0, {})
