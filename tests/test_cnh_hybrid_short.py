@@ -255,7 +255,13 @@ def test_no_tp_returns_none(df_4h_full: pd.DataFrame) -> None:
     """In a downtrend window, even if a DT pattern fires the EMA100 may sit
     above current close → no SHORT TP slot → trade skipped. Verify the
     evaluator doesn't crash and returns the documented reason."""
-    df = attach_indicators(df_4h_full.loc["2022-06-01":"2022-09-30"])
+    raw = df_4h_full.loc["2022-06-01":"2022-09-30"]
+    if len(raw) == 0:
+        pytest.skip(
+            "requires 2022 data fixture not available in cached parquet "
+            f"(have {df_4h_full.index[0]} to {df_4h_full.index[-1]})"
+        )
+    df = attach_indicators(raw)
     cfg = HybridConfig()
     # Walk forward and look for the case explicitly.
     saw_no_tp = False
