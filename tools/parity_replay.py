@@ -248,7 +248,7 @@ class _BacktestPredicate:
 # --------------------------------------------------------------------------- #
 # Forming-bar synthesis (OLD-BUG arm)
 # --------------------------------------------------------------------------- #
-def _forming_bar_row(next_full: pd.Series, prev_close: float, frac: float) -> pd.Series:
+def _forming_bar_row(next_full: pd.Series, frac: float) -> pd.Series:
     """Synthesize a partial FORMING bar as ccxt would return it mid-candle.
 
     A bar ~early in its life has: open = its real open, high/low/close drifting
@@ -303,6 +303,17 @@ def run_replay(
     # Respect warmup: need enough preceding bars for EMA200 etc.
     eval_positions = eval_positions[eval_positions >= warmup_bars]
 
+    if len(eval_positions) == 0:
+        return {
+            "params": params,
+            "window": None,
+            "n_eval": 0,
+            "fixed_live": {},
+            "old_bug": {},
+            "backtest": {},
+            "k15": k15,
+        }
+
     backtest_pred = _BacktestPredicate(k15, funding_15m, params)
 
     fixed_live: dict[pd.Timestamp, dict] = {}
@@ -333,7 +344,7 @@ def run_replay(
 
         # ---- OLD-BUG: append a FORMING t+1 bar, no slice ----
         next_full = k15.iloc[pos + 1]
-        forming = _forming_bar_row(next_full, float(k15["Close"].iloc[pos]), forming_frac)
+        forming = _forming_bar_row(next_full, forming_frac)
         frame_old = pd.concat(
             [k15.iloc[: pos + 1], pd.DataFrame([forming], index=[full_index[pos + 1]])]
         )
@@ -427,11 +438,18 @@ def compare(res: dict) -> None:
     max_dp = max(price_deltas) if price_deltas else 0.0
     mean_dp = (sum(price_deltas) / len(price_deltas)) if price_deltas else 0.0
 
-    w0, w1 = res["window"]
     print("=" * 72)
     print("PARITY-REPLAY  —  forming-bar fix vs backtest on REAL Binance data")
     print("=" * 72)
     print(f"symbol         : {SYMBOL}   strategy: {STRATEGY_NAME}")
+    if res["window"] is None:
+        print("eval window    : (empty — no bars after warmup + t+1 filtering)")
+        print(f"closed bars ev : 0")
+        print()
+        print("VERDICT: INCONCLUSIVE (zero evaluable bars — widen window or check data)")
+        print("=" * 72)
+        return
+    w0, w1 = res["window"]
     print(f"eval window    : {w0}  ->  {w1}")
     print(f"closed bars ev : {res['n_eval']}")
     print()

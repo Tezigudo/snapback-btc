@@ -16,10 +16,22 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+
+def _fixed_datetime(fixed_now):
+    """Return a mock datetime class where now(UTC) returns `fixed_now`
+    but other datetime functionality (strftime, fromisoformat, etc.)
+    still works via the real datetime class."""
+    class _FakeDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+    return _FakeDatetime
 
 
 # --------------------------------------------------------------------------
@@ -95,10 +107,12 @@ def _make_breaker_bot():
 def test_anchor_set_then_stable_within_day(tmp: Path) -> None:
     b, bot_mod = _make_breaker_bot()
     from exchange import state
-    with patch.object(bot_mod, "send_alert", lambda *a, **k: None):
+    fixed_dt = _fixed_datetime(datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC))
+    with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
+         patch.object(bot_mod, "datetime", fixed_dt):
         # First call anchors to current equity.
         assert b._daily_anchor_equity(1000.0) == 1000.0
-        assert state.get_meta("daily_anchor_date") is not None
+        assert state.get_meta("daily_anchor_date") == "2026-06-15"
         # Same day, different equity → anchor must NOT move.
         assert b._daily_anchor_equity(1234.0) == 1000.0
 
@@ -107,13 +121,17 @@ def test_anchor_set_then_stable_within_day(tmp: Path) -> None:
 def test_anchor_resets_on_utc_date_rollover(tmp: Path) -> None:
     b, bot_mod = _make_breaker_bot()
     from exchange import state
-    with patch.object(bot_mod, "send_alert", lambda *a, **k: None):
+    day1_dt = _fixed_datetime(datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC))
+    day2_dt = _fixed_datetime(datetime(2026, 6, 16, 12, 0, 0, tzinfo=UTC))
+    with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
+         patch.object(bot_mod, "datetime", day1_dt):
         b._daily_anchor_equity(1000.0)
-        # Simulate a stale anchor from "yesterday".
-        state.set_meta("daily_anchor_date", "2000-01-01")
-        # New UTC day → re-anchor to today's equity.
+        assert state.get_meta("daily_anchor_date") == "2026-06-15"
+    # New UTC day → re-anchor to today's equity.
+    with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
+         patch.object(bot_mod, "datetime", day2_dt):
         assert b._daily_anchor_equity(880.0) == 880.0
-        assert state.get_meta("daily_anchor_date") != "2000-01-01"
+        assert state.get_meta("daily_anchor_date") == "2026-06-16"
 
 
 # --------------------------------------------------------------------------
@@ -123,7 +141,9 @@ def test_anchor_resets_on_utc_date_rollover(tmp: Path) -> None:
 @_with_temp_db
 def test_under_threshold_allows_entry(tmp: Path) -> None:
     b, bot_mod = _make_breaker_bot()
-    with patch.object(bot_mod, "send_alert", lambda *a, **k: None):
+    fixed_dt = _fixed_datetime(datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC))
+    with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
+         patch.object(bot_mod, "datetime", fixed_dt):
         b._daily_anchor_equity(1000.0)
         # -1.5% loss, under the 2% ceiling → not blocked.
         assert b._daily_loss_blocks_entry(985.0) is False
@@ -135,7 +155,9 @@ def test_over_threshold_blocks_and_logs_event_once(tmp: Path) -> None:
     b, bot_mod = _make_breaker_bot()
     from exchange import state
     alerts: list = []
-    with patch.object(bot_mod, "send_alert", lambda *a, **k: alerts.append(a)):
+    fixed_dt = _fixed_datetime(datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC))
+    with patch.object(bot_mod, "send_alert", lambda *a, **k: alerts.append(a)), \
+         patch.object(bot_mod, "datetime", fixed_dt):
         b._daily_anchor_equity(1000.0)
         # -3% loss → blocked.
         assert b._daily_loss_blocks_entry(970.0) is True
@@ -155,11 +177,14 @@ def test_over_threshold_blocks_and_logs_event_once(tmp: Path) -> None:
 def test_new_utc_day_reallows_after_block(tmp: Path) -> None:
     b, bot_mod = _make_breaker_bot()
     from exchange import state
-    with patch.object(bot_mod, "send_alert", lambda *a, **k: None):
+    day1_dt = _fixed_datetime(datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC))
+    day2_dt = _fixed_datetime(datetime(2026, 6, 16, 12, 0, 0, tzinfo=UTC))
+    with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
+         patch.object(bot_mod, "datetime", day1_dt):
         b._daily_anchor_equity(1000.0)
         assert b._daily_loss_blocks_entry(970.0) is True  # -3% → blocked today
-        # Roll the UTC day forward.
-        state.set_meta("daily_anchor_date", "2000-01-01")
-        # New day re-anchors to the (lower) current equity → fresh 0% loss → allowed.
+    # New UTC day → re-anchor to today's equity → fresh 0% loss → allowed.
+    with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
+         patch.object(bot_mod, "datetime", day2_dt):
         assert b._daily_loss_blocks_entry(970.0) is False
         assert b._daily_loss_blocked is False

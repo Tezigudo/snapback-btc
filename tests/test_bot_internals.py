@@ -166,6 +166,29 @@ def _firing_long_bars(n: int = 300, base: float = 65000.0) -> pd.DataFrame:
     }, index=idx)
 
 
+def _firing_short_bars(n: int = 300, base: float = 65000.0) -> pd.DataFrame:
+    """Build a frame whose LAST bar satisfies every v1 short-entry gate:
+      RSI(14) > 70, close < EMA(200), volume > 2×SMA(20), funding not extreme.
+
+    Construction: a long slow downtrend (so close < EMA200) that rallies sharply
+    on the final few bars (so RSI > 70), with a volume spike on the last bar.
+    Mirror of _firing_long_bars for the short side.
+    """
+    idx = pd.date_range("2026-01-01", periods=n, freq="15min", tz="UTC").tz_localize(None)
+    # Slow downtrend keeps close below the 200-EMA.
+    close = base - np.arange(n, dtype=float) * 8.0
+    # Final 10-bar rally drives RSI above 70. The rally is steep enough to push
+    # RSI over the threshold but the EMA(200) still sits well above (lagging the
+    # long downtrend), so close < EMA200 holds for the short trend gate.
+    close[-10:] = close[-11] + np.arange(1, 11) * 50.0
+    vol = np.full(n, 100.0)
+    vol[-1] = 100.0 * 5.0  # last bar: ~5× the SMA(20) baseline → vol gate passes
+    return pd.DataFrame({
+        "Open": close + 1, "High": close + 30, "Low": close - 5,
+        "Close": close, "Volume": vol,
+    }, index=idx)
+
+
 class TestFormingBarParity:
     """Regression for the forming-bar bug (fix/forming-bar-closed-bar-eval).
 
@@ -225,6 +248,43 @@ class TestFormingBarParity:
         deformed = raw.iloc[:-1]  # the surgical fix, applied at the test level
         d = evaluate_for_strategy("multifactor-v1", deformed, 0.0, self._params())
         assert d.side == "long"
+        # Price/SL/TP must come from the CLOSED bar, never the forming one.
+        assert d.price == pytest.approx(float(bars["Close"].iloc[-1]))
+        assert d.price != pytest.approx(float(forming["Close"].iloc[-1]))
+
+    def test_closed_bar_fires_short(self) -> None:
+        # Sanity: the engineered closed-bar frame produces a short signal.
+        bars = _firing_short_bars()
+        d = evaluate_for_strategy("multifactor-v1", bars, 0.0, self._params())
+        assert d.side == "short", f"expected short on closed bar, got {d.debug}"
+        assert d.debug["vol_ok"] is True
+        assert d.debug["trend_up"] is False
+
+    def test_forming_bar_suppresses_short(self) -> None:
+        # Forming bar with near-zero volume appended → volume gate fails → no
+        # signal. Same mechanism as the long-side bug.
+        bars = _firing_short_bars()
+        forming = bars.iloc[[-1]].copy()
+        forming.index = forming.index + pd.Timedelta(minutes=15)
+        forming["Close"] = float(bars["Close"].iloc[-1]) + 40.0
+        forming["Volume"] = 0.5
+        raw = pd.concat([bars, forming])
+        d = evaluate_for_strategy("multifactor-v1", raw, 0.0, self._params())
+        assert d.side is None, "forming bar must NOT satisfy the volume gate"
+        assert d.debug["vol_ok"] is False
+
+    def test_slice_restores_closed_bar_short_signal(self) -> None:
+        # The fix applied: drop the forming bar → closed bar fires short again.
+        bars = _firing_short_bars()
+        forming = bars.iloc[[-1]].copy()
+        forming.index = forming.index + pd.Timedelta(minutes=15)
+        forming["Close"] = float(bars["Close"].iloc[-1]) + 40.0
+        forming["Volume"] = 0.5
+        raw = pd.concat([bars, forming])
+
+        deformed = raw.iloc[:-1]
+        d = evaluate_for_strategy("multifactor-v1", deformed, 0.0, self._params())
+        assert d.side == "short"
         # Price/SL/TP must come from the CLOSED bar, never the forming one.
         assert d.price == pytest.approx(float(bars["Close"].iloc[-1]))
         assert d.price != pytest.approx(float(forming["Close"].iloc[-1]))
