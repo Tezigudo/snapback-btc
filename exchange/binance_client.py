@@ -168,7 +168,17 @@ class BinanceClient:
                         entry_price=0.0, unrealized_pnl=0.0, margin_used=0.0)
 
     # --- order management ---------------------------------------------------
-    def cancel_open_orders(self, symbol: str) -> int:
+    def cancel_open_orders(self, symbol: str,
+                           coid_prefix: str | None = None) -> int:
+        """Cancel open orders for `symbol`.
+
+        When `coid_prefix` is given, only orders whose clientOrderId starts
+        with that prefix are cancelled — manual orders and orders from other
+        bot legs are left untouched.  When `coid_prefix` is None, all open
+        orders for the symbol are cancelled (backward-compatible behaviour).
+
+        Returns the count of orders actually cancelled.
+        """
         try:
             orders = self.ex.fetch_open_orders(symbol=symbol)
         except Exception as e:
@@ -176,6 +186,12 @@ class BinanceClient:
             return 0
         n = 0
         for o in orders:
+            if coid_prefix is not None:
+                # ccxt may surface clientOrderId in top-level field or nested
+                # inside the raw `info` dict — check both.
+                coid = o.get("clientOrderId") or o.get("info", {}).get("clientOrderId") or ""
+                if not coid.startswith(coid_prefix):
+                    continue
             try:
                 self.ex.cancel_order(o["id"], symbol)
                 n += 1
@@ -454,7 +470,7 @@ class BinanceClient:
             return None
         ccxt_side = "sell" if p.side == "long" else "buy"
         pos_side = self._position_side(p.side)
-        self.cancel_open_orders(symbol)
+        self.cancel_open_orders(symbol, coid_prefix=self.coid_prefix)
         params: dict[str, Any] = {"reduceOnly": True}
         if (coid := _coid(client_order_id_root, close_leg, self.coid_prefix)):
             params["newClientOrderId"] = coid
