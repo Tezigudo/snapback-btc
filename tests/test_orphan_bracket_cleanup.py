@@ -168,6 +168,35 @@ class TestCancelOpenOrdersCoidPrefix:
         assert n == 1
         client.ex.cancel_order.assert_called_once_with("2", "BTC/USDT:USDT")
 
+    def test_non_string_coid_is_skipped_not_crashed(self):
+        """A non-string clientOrderId (e.g. an adapter returning an int) must be
+        treated as non-matching, not raise out of the sweep on `.startswith`."""
+        orders = [
+            {"id": "1", "clientOrderId": 12345},            # non-string → skip
+            {"id": "2", "clientOrderId": "snap-v1-aaa-s"},  # matches → cancel
+        ]
+        client = self._client_with_orders(orders)
+        n = client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-")
+        assert n == 1
+        client.ex.cancel_order.assert_called_once_with("2", "BTC/USDT:USDT")
+
+    def test_partial_cancel_failure_is_non_fatal(self):
+        """One cancel_order raising must not abort the sweep: the loop continues
+        to the remaining orders, and the returned count reflects only the
+        successful cancels."""
+        orders = [
+            self._order("1", "snap-v1-aaa-s"),
+            self._order("2", "snap-v1-bbb-s"),
+            self._order("3", "snap-v1-ccc-t"),
+        ]
+        client = self._client_with_orders(orders)
+        client.ex.cancel_order.side_effect = [None, Exception("rejected"), None]
+        n = client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-")
+        assert n == 2
+        assert client.ex.cancel_order.call_count == 3
+        assert [c.args[0]
+                for c in client.ex.cancel_order.call_args_list] == ["1", "2", "3"]
+
 
 # ---------------------------------------------------------------------------
 # 2. _detect_bracket_exit: sweep on open->flat transition

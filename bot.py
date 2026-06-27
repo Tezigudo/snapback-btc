@@ -348,8 +348,8 @@ class Bot:
                     if n:
                         self.log.warning(
                             "boot: swept %d orphaned order(s) while flat", n)
-                except Exception as e:
-                    self.log.warning("boot: cancel_open_orders failed: %s", e)
+                except Exception:
+                    self.log.exception("boot: cancel_open_orders failed")
 
     def stop(self, *_args) -> None:
         self._stopped = True
@@ -653,8 +653,8 @@ class Bot:
         # the new one.  Only cancels orders with our own COID prefix.
         try:
             self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
-        except Exception as e:
-            self.log.warning("pre-entry cancel_open_orders failed (continuing): %s", e)
+        except Exception:
+            self.log.exception("pre-entry cancel_open_orders failed (continuing)")
 
         if self.order_type == "limit":
             limit_price = limit_entry_price(
@@ -729,8 +729,8 @@ class Bot:
             # errors out, the orphan is still cancelled.
             try:
                 self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
-            except Exception as e:
-                self.log.warning("bracket-exit: cancel_open_orders failed: %s", e)
+            except Exception:
+                self.log.exception("bracket-exit: cancel_open_orders failed")
 
             with sqlite3.connect(state.DB_PATH) as c:
                 row = c.execute(
