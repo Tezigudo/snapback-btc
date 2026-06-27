@@ -340,6 +340,19 @@ class Bot:
                     price_usd=float(pos.entry_price),
                     payload={"reason": "stale_position_at_boot"},
                 )
+        else:
+            # Position is already flat at boot.  Sweep any orphaned reduce-only
+            # orders left over from a prior run (e.g. a surviving bracket sibling
+            # after an exchange-driven TP/SL fill).  Only our own COID prefix.
+            if not self.dry_run:
+                try:
+                    n = self.client.cancel_open_orders(
+                        self.symbol, coid_prefix=self.coid_prefix)
+                    if n:
+                        self.log.warning(
+                            "boot: swept %d orphaned order(s) while flat", n)
+                except Exception:
+                    self.log.exception("boot: cancel_open_orders failed")
 
     def stop(self, *_args) -> None:
         self._stopped = True
@@ -563,6 +576,14 @@ class Bot:
         """Place a live entry (market or limit per config) + brackets, then
         record the fill via trade_events. Raises on order-placement failure
         so the caller can log + alert."""
+        # Pre-clear any stale bot orders before placing a new entry so we
+        # don't leave a stale bracket from a prior trade orphaned alongside
+        # the new one.  Only cancels orders with our own COID prefix.
+        try:
+            self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
+        except Exception:
+            self.log.exception("pre-entry cancel_open_orders failed (continuing)")
+
         if self.order_type == "limit":
             limit_price = limit_entry_price(
                 decision.side, decision.price, self.limit_offset_bps)
@@ -631,6 +652,14 @@ class Bot:
             self._last_position_side = current
             if not had_open or current != "flat":
                 return
+            # Sweep the surviving bracket leg (the sibling that Binance did NOT
+            # fill).  Do this before the PnL lookup so even if the fill-lookup
+            # errors out, the orphan is still cancelled.
+            try:
+                self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
+            except Exception:
+                self.log.exception("bracket-exit: cancel_open_orders failed")
+
             with sqlite3.connect(state.DB_PATH) as c:
                 row = c.execute(
                     "SELECT reason, side, qty, price, client_order_id_root "
