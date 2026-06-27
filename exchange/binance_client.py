@@ -189,7 +189,7 @@ class BinanceClient:
             if coid_prefix is not None:
                 # ccxt may surface clientOrderId in top-level field or nested
                 # inside the raw `info` dict — check both.
-                coid = o.get("clientOrderId") or o.get("info", {}).get("clientOrderId") or ""
+                coid = o.get("clientOrderId") or (o.get("info") or {}).get("clientOrderId") or ""
                 if not coid.startswith(coid_prefix):
                     continue
             try:

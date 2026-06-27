@@ -153,6 +153,21 @@ class TestCancelOpenOrdersCoidPrefix:
         n = client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-")
         assert n == 2
 
+    def test_info_present_but_none_does_not_crash(self):
+        """Regression: an order with info=None (key present, value None) must
+        not raise AttributeError under prefix filtering. `o.get("info", {})`
+        does NOT fall back to {} when the value is None, so the code guards with
+        `(o.get("info") or {})`. The loop must skip the no-coid order and keep
+        going."""
+        orders = [
+            {"id": "1", "info": None},                      # no coid, info None → skip
+            {"id": "2", "clientOrderId": "snap-v1-aaa-s"},  # matches → cancel
+        ]
+        client = self._client_with_orders(orders)
+        n = client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-")
+        assert n == 1
+        client.ex.cancel_order.assert_called_once_with("2", "BTC/USDT:USDT")
+
 
 # ---------------------------------------------------------------------------
 # 2. _detect_bracket_exit: sweep on open->flat transition
@@ -288,6 +303,9 @@ class TestPlaceLiveEntry:
                 < call_names.index("limit_order_with_bracket")), (
             f"cancel must precede limit_order_with_bracket; got: {call_names}"
         )
+        mc.cancel_open_orders.assert_called_once_with(
+            "BTC/USDT:USDT", coid_prefix="snap-v1-"
+        )
 
     def test_cancel_failure_does_not_block_entry_placement(self):
         """A cancel exception before the entry must not prevent the order."""
@@ -344,9 +362,14 @@ class TestBootOrphanSweep:
         mc.cancel_open_orders.assert_not_called()
 
     def test_open_position_does_not_trigger_flat_sweep(self):
-        """With an open position, close_position() is called — the new flat-path
-        sweep must NOT also run (the mock close_position won't internally cancel,
-        so this confirms our new else-branch is unreachable when pos is open)."""
+        """With an open position at boot, the boot-flatten branch runs (calling
+        close_position), NOT the new flat-path else-branch sweep.
+
+        NOTE: in PRODUCTION close_position itself calls cancel_open_orders
+        (binance_client.py) — but here the client is a MagicMock whose
+        close_position is a no-op stub that does not call through. So this test
+        only asserts the NEW else-branch sweep does not fire on the open-position
+        path; it is NOT a claim that production cancels nothing here."""
         bot, mc = _make_bot(dry_run=False)
         mc.fetch_equity_usdt.return_value = 1000.0
         mc.fetch_position.return_value = _open()
@@ -354,6 +377,6 @@ class TestBootOrphanSweep:
         with _boot_patches(), self._state_patches():
             bot.boot()
 
-        # cancel_open_orders is NOT called by our new code (close_position mock
-        # absorbs the open-position path but doesn't internally call cancel).
+        # The new flat-path else-branch must not run when a position is open.
+        # (mc.close_position is a mock stub, so it doesn't cancel through here.)
         mc.cancel_open_orders.assert_not_called()
