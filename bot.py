@@ -66,7 +66,14 @@ from exchange.constraints import (
     passes_minimums,
     round_qty_down,
 )
-from exchange.env import REPO_ROOT, get_env, is_halted, load_env_for_instance
+from exchange.env import (
+    REPO_ROOT,
+    get_env,
+    halt_source,
+    is_halted,
+    leg_halt_path,
+    load_env_for_instance,
+)
 from risk import (
     CEILINGS,
     RiskBreach,
@@ -121,6 +128,14 @@ INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
         "heartbeat": REPO_ROOT / "data" / "heartbeat_cnh_short_sol",
     },
 }
+
+# Derive each leg's SELF-halt flag (data/HALT_<instance>) the same way as the
+# other per-leg paths, from a single source of truth (env.leg_halt_path). The
+# shared data/HALT stays a GLOBAL manual stop-all and is NOT in the profile —
+# no leg's kill switch may write it (that shared write is what caused the 07-01
+# cascade). See exchange/env.py :: is_halted / leg_halt_path.
+for _name, _profile in INSTANCE_PROFILES.items():
+    _profile["halt"] = leg_halt_path(_name)
 
 # Console logs display in Bangkok time (GMT+7) for human readability.
 # JSONL `ts` field and state.db remain UTC for alignment with Binance candles.
@@ -202,6 +217,9 @@ class Bot:
         self.strategy_name = resolve_strategy_name(params)
         self.dry_run = dry_run
         self.instance = instance
+        # This leg's SELF-halt flag. The kill switch touches ONLY this file, so
+        # a leg self-halting can never take a sibling down.
+        self.halt_path = leg_halt_path(instance)
         self.log = logging.getLogger("snapback.bot")
         # Hedge mode + clientOrderId prefix come from `hedge` block in params YAML.
         # When unset, behaves exactly like the legacy single-bot deploy.
@@ -410,7 +428,7 @@ class Bot:
         if not consolidate_push.is_configured():
             return  # don't even enqueue heartbeats if no consumer
         try:
-            payload: dict = {"halt_present": is_halted(),
+            payload: dict = {"halt_present": is_halted(self.instance),
                              "outbox_size_before_drain": state.outbox_size()}
             # Include the most recent gate-status snapshot so the dashboard
             # can show "what's true now / waiting on what" without operator
@@ -437,7 +455,8 @@ class Bot:
         if equity < start * self.kill_fraction:
             self.log.error("KILL SWITCH: equity %.2f < %.2f (start %.2f * %.2f)",
                            equity, start * self.kill_fraction, start, self.kill_fraction)
-            (REPO_ROOT / "data" / "HALT").touch()
+            # Touch ONLY this leg's self-halt flag — never the shared data/HALT.
+            self.halt_path.touch()
             state.enqueue_bot_event(
                 "kill_switch", equity_usd=float(equity),
                 payload={"deploy_start_equity": float(start),
@@ -826,8 +845,12 @@ class Bot:
         while not self._stopped:
             try:
                 self._heartbeat()
-                if is_halted():
-                    self.log.warning("HALT file present — %s.",
+                halt_by = halt_source(self.instance)
+                if halt_by is not None:
+                    which = ("GLOBAL data/HALT (manual stop-all)"
+                             if halt_by == "global"
+                             else f"self data/HALT_{self.instance}")
+                    self.log.warning("HALT flag present [%s] — %s.", which,
                                      "exiting (DRY-RUN, no flatten)" if self.dry_run
                                      else "flattening and exiting")
                     if not self.dry_run:
@@ -837,14 +860,15 @@ class Bot:
                             client_order_id_root=root, close_leg="h")
                     state.enqueue_bot_event(
                         "halt",
-                        payload={"dry_run": bool(self.dry_run)},
+                        payload={"dry_run": bool(self.dry_run),
+                                 "halt_source": halt_by},
                     )
                     try:
                         consolidate_push.drain()
                     except Exception as e:
                         self.log.warning("halt push failed: %s", e)
                     send_alert("Bot HALTED",
-                               f"data/HALT detected. "
+                               f"{which} detected. "
                                f"{'DRY-RUN exit, no flatten.' if self.dry_run else 'Position flattened.'} "
                                f"Bot exiting.")
                     return 0
