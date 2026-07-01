@@ -493,7 +493,14 @@ class Bot:
         P = principal.get_principal()
         if not principal.breached(equity, P, self.kill_fraction):
             return False
-        assert P is not None  # breached() guarantees P is a positive float here
+        # breached() only returns True for a positive float anchor. Make that
+        # invariant explicit with a real guard — an `assert` here is stripped
+        # under `python -O`, which would let `P * fraction` raise TypeError (or
+        # touch the HALT on a None anchor) in the hot trading path.
+        if P is None:
+            raise RuntimeError(
+                "kill-switch invariant violated: breached() true but principal "
+                "is None — refusing to act on an unknown anchor.")
         floor = P * self.kill_fraction
         self.log.error("KILL SWITCH: equity %.2f < %.2f (principal %.2f * %.2f)",
                        equity, floor, P, self.kill_fraction)

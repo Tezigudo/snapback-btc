@@ -153,6 +153,7 @@ class BinanceClient:
         self, start_ms: int, end_ms: int | None = None,
         income_type: str | None = None,
         page_limit: int = 1000, max_pages: int = 50,
+        caller_log: Any = None,
     ) -> list[dict[str, Any]]:
         """Read-only paginated GET /fapi/v1/income from start_ms (ascending).
 
@@ -164,6 +165,11 @@ class BinanceClient:
         TRANSFER/DEPOSIT/WITHDRAW events. The time-cursor pagination is for
         completeness of the fetch; same-ms boundary rows are re-covered on the
         next overlapping call and de-duplicated by tranId in the ledger.
+
+        `caller_log`: when the page cap is hit (older rows TRUNCATED), the
+        warning is surfaced to this logger too — not just the module logger — so
+        a leg's own log/alerts pipeline sees a silent-transfer-drop risk. Pass
+        the bot's `log` here.
         """
         rows: list[dict[str, Any]] = []
         cursor = int(start_ms)
@@ -181,10 +187,12 @@ class BinanceClient:
                 break
             cursor = int(page[-1].get("time") or cursor) + 1
         else:
-            log.warning(
-                "fetch_income hit the %d-page cap (%d rows) — older rows may be "
-                "truncated; raise max_pages or narrow the window.",
-                max_pages, len(rows),
+            (caller_log or log).warning(
+                "fetch_income hit the %d-page cap (%d rows) for incomeType=%s — "
+                "older principal rows may be TRUNCATED; a dropped TRANSFER would "
+                "understate deposited principal P. Raise max_pages or narrow the "
+                "window.",
+                max_pages, len(rows), income_type or "ALL",
             )
         return rows
 

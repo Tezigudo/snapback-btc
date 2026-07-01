@@ -149,6 +149,28 @@ def reconcile_from_income(income_rows: list[dict[str, Any]], *, log: Any = None)
             "non_usdt": non_usdt, "skipped_no_id": skipped}
 
 
+def _fetch_principal_income(
+    client: Any, start_ms: int, *, log: Any = None,
+) -> list[dict[str, Any]]:
+    """Fetch principal-moving income with a SERVER-SIDE incomeType filter, one
+    call per type (TRANSFER / DEPOSIT / WITHDRAW).
+
+    Why per-type instead of one unfiltered /fapi/v1/income fetch: on a busy
+    account (v1's MAIN account especially) the ledger is dominated by
+    REALIZED_PNL / COMMISSION / FUNDING_FEE rows. Under fetch_income's page cap
+    those trading rows can push real TRANSFER rows past the truncation boundary,
+    so a deposit is SILENTLY DROPPED and P understates deposited principal.
+    Filtering server-side spends the cap only on principal rows, so no transfer
+    can be lost. Any per-type truncation is surfaced through `log`
+    (fetch_income(caller_log=log)). Overlapping/duplicate rows across types are
+    harmless — the tranId PRIMARY KEY in principal_ledger dedupes on upsert.
+    """
+    rows: list[dict[str, Any]] = []
+    for itype in sorted(PRINCIPAL_INCOME_TYPES):
+        rows.extend(client.fetch_income(start_ms, income_type=itype, caller_log=log))
+    return rows
+
+
 def initialize(client: Any, params: dict, *, log: Any = None) -> float | None:
     """Establish the initial principal anchor. Idempotent: no-op if already
     initialised. NEVER snapshots current balance.
@@ -179,21 +201,33 @@ def initialize(client: Any, params: dict, *, log: Any = None) -> float | None:
     # income_backfill (default): base 0, full-history income → ledger.
     state.set_float(META_BASE, 0.0)
     start_ms = int(deploy.get("principal_backfill_start_ms", DEFAULT_BACKFILL_START_MS))
-    rows = client.fetch_income(start_ms)  # may raise on network/keys → not initialised
-    # Only mark initialised AFTER the fetch succeeds, but BEFORE reconcile so
-    # get_principal() inside reconcile can compute.
-    state.set_meta(META_SOURCE, "income_backfill")
+    # fetch + reconcile may raise (network/keys/DB) → we must NOT have marked
+    # ourselves initialised, so the loop keeps retrying at the fast (60s) cadence
+    # and the kill switch stays fail-safe. reconcile_from_income persists the
+    # LEDGER + watermark; while META_SOURCE is still unset get_principal() returns
+    # None inside it (that only skips caching META_ANCHOR — the anchor is derived,
+    # so it is recomputed below once we mark initialised).
+    rows = _fetch_principal_income(client, start_ms, log=log)
     res = reconcile_from_income(rows, log=log)
+    # Mark initialised ONLY after the backfill fully succeeds. Setting META_SOURCE
+    # before reconcile could leave is_initialized()=True with an empty ledger
+    # (P=0) if reconcile raised — which drops the retry to the 3600s reconcile
+    # interval (a 1-hour blind window) instead of the 60s init retry. Order fixed.
+    state.set_meta(META_SOURCE, "income_backfill")
+    P = get_principal()
+    if P is not None:
+        state.set_float(META_ANCHOR, P)
     if log is not None:
         log.info("principal: backfilled %d new income row(s) since %d → P=%.2f USDT",
-                 res["applied"], start_ms, res["principal"] or 0.0)
-    return get_principal()
+                 res["applied"], start_ms, P or 0.0)
+    return P
 
 
 def reconcile_recent(client: Any, *, log: Any = None) -> dict:
     """Fetch income since (watermark − overlap) and fold it in. Used on restart
-    and periodically. Requires initialize() to have run."""
+    and periodically. Requires initialize() to have run. Same server-side
+    incomeType filtering as the backfill (no transfer lost to the page cap)."""
     wm = get_watermark_ms()
     start = max(0, wm - RECONCILE_OVERLAP_MS) if wm > 0 else DEFAULT_BACKFILL_START_MS
-    rows = client.fetch_income(start)
+    rows = _fetch_principal_income(client, start, log=log)
     return reconcile_from_income(rows, log=log)

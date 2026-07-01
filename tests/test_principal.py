@@ -39,6 +39,22 @@ class _FakeClient:
         return [r for r in self._rows if int(r["time"]) >= int(start_ms)]
 
 
+class _RecordingClient:
+    """Like _FakeClient but records the incomeType filter of each fetch_income
+    call AND honours it server-side — so a test can prove the backfill queries
+    each principal type specifically (must-fix 3: no TRANSFER lost to the page
+    cap behind a flood of REALIZED_PNL rows)."""
+    def __init__(self, rows):
+        self._rows = list(rows)
+        self.income_types_requested: list[str | None] = []
+
+    def fetch_income(self, start_ms, income_type=None, **_kw):
+        self.income_types_requested.append(income_type)
+        return [r for r in self._rows
+                if int(r["time"]) >= int(start_ms)
+                and (income_type is None or r["incomeType"] == income_type)]
+
+
 def _with_temp_db(test_fn):
     def wrapped():
         with tempfile.TemporaryDirectory() as td:
@@ -136,6 +152,26 @@ def test_non_usdt_transfer_excluded_from_principal(_td: Path) -> None:
     assert state.principal_ledger_non_usdt_count() == 1
 
 
+@_with_temp_db
+def test_initialize_filters_income_by_type(_td: Path) -> None:
+    from exchange import principal, state
+    # A busy account: one real TRANSFER buried under a flood of trading income.
+    # An UNFILTERED whole-ledger fetch is what risks truncating (and silently
+    # dropping) the TRANSFER; the per-type server-side filter cannot lose it.
+    rows = [_income(1, "TRANSFER", 50.50, time_ms=T0),
+            _income(2, "REALIZED_PNL", 9.0, time_ms=T1),
+            _income(3, "COMMISSION", -0.5, time_ms=T1),
+            _income(4, "FUNDING_FEE", -0.2, time_ms=T1)]
+    rc = _RecordingClient(rows)
+    P = principal.initialize(rc, {"deploy": {}})
+    assert P == 50.50
+    assert state.principal_ledger_count() == 1  # only the TRANSFER lands in P
+    # The backfill issued a SERVER-SIDE incomeType filter for EACH principal
+    # type, and never an unfiltered whole-ledger fetch (must-fix 3).
+    assert set(rc.income_types_requested) == {"TRANSFER", "DEPOSIT", "WITHDRAW"}
+    assert None not in rc.income_types_requested
+
+
 # --------------------------------------------------------------------------
 # Kill-switch predicate (fail-safe) + the donchian $114.75 regression
 # --------------------------------------------------------------------------
@@ -195,24 +231,33 @@ def _make_kill_bot(instance, halt_path, kill_fraction=0.645):
 
 @_with_temp_db
 def test_kill_switch_touches_only_this_leg_halt(td: Path) -> None:
+    from exchange import env as env_mod
     from exchange import principal, state
     principal.initialize(_FakeClient([_income(1, "TRANSFER", 50.50, time_ms=T0)]),
                          {"deploy": {}})
     P = principal.get_principal()
 
-    halt_self = td / "HALT_cnh_short"
-    halt_global = td / "HALT"
-    halt_sibling = td / "HALT_v1"
+    # Point env.REPO_ROOT at the temp dir so global_halt_path()/leg_halt_path()
+    # resolve UNDER td/data. The REAL global HALT is REPO_ROOT/data/HALT (NOT
+    # td/HALT), so asserting against the env-derived paths is what makes the
+    # 07-01-cascade guard actually bite: a regression touching the global HALT
+    # would write td/data/HALT and fail `not halt_global.exists()`.
+    with patch.object(env_mod, "REPO_ROOT", td):
+        (td / "data").mkdir(parents=True, exist_ok=True)
+        halt_self = env_mod.leg_halt_path("cnh_short")   # td/data/HALT_cnh_short
+        halt_global = env_mod.global_halt_path()          # td/data/HALT (real global)
+        halt_sibling = env_mod.leg_halt_path("v1")        # td/data/HALT_v1
 
-    b, bot_mod = _make_kill_bot("cnh_short", halt_self)
-    with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
-         patch.object(bot_mod.consolidate_push, "drain", lambda *a, **k: {}):
-        # Equity below the principal floor (32.57) → must trip.
-        tripped = b._check_kill_switch(P * 0.5)
+        b, bot_mod = _make_kill_bot("cnh_short", halt_self)
+        with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
+             patch.object(bot_mod.consolidate_push, "drain", lambda *a, **k: {}):
+            # Equity below the principal floor (32.57) → must trip.
+            tripped = b._check_kill_switch(P * 0.5)
 
     assert tripped is True
-    assert halt_self.exists(), "kill switch must write this leg's HALT"
-    assert not halt_global.exists(), "kill switch must NOT write the shared HALT"
+    assert halt_self.exists(), "kill switch must write this leg's per-leg HALT"
+    assert not halt_global.exists(), \
+        "kill switch must NOT write the GLOBAL data/HALT (07-01 cascade guard)"
     assert not halt_sibling.exists(), "kill switch must NOT touch a sibling's HALT"
     # The emitted event carries the principal anchor, not a balance snapshot.
     import json
