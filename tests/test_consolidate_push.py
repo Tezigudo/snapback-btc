@@ -300,10 +300,37 @@ def test_drain_does_not_dead_letter_on_5xx(tmp: Path) -> None:
     assert result.get("dead_lettered", 0) == 0
 
 
+def _poison_aware_urlopen(poison_external_id: str):
+    """Return a urlopen stub that 400s any batch CONTAINING poison_external_id
+    and 200s (delivers) any batch that does not. Models a real schema-poison
+    row: a batch WITHOUT it succeeds, so bisection can isolate + deliver the
+    innocent rows. Content-based (not call-count-based) so it is robust to the
+    variable number of HTTP calls bisection makes."""
+    def fake_urlopen(req, timeout=None):
+        body = json.loads(req.data.decode("utf-8"))
+        ext_ids = {e.get("external_id") for e in body.get("events", [])}
+        if poison_external_id in ext_ids:
+            raise HTTPError(
+                url="https://example.test/bot-event/batch", code=400,
+                msg="Bad Request", hdrs={}, fp=BytesIO(b'{"error":"invalid_batch"}'),
+            )
+        n = len(body.get("events", []))
+        fake = MagicMock()
+        fake.status = 200
+        fake.read.return_value = json.dumps(
+            {"ok": True, "inserted": n, "skipped": 0, "errors": []}
+        ).encode("utf-8")
+        fake.__enter__ = lambda self: self
+        fake.__exit__ = lambda self, *_a: None
+        return fake
+    return fake_urlopen
+
+
 @_with_temp_db_and_env
 def test_dead_letter_good_rows_still_drain_after_poison(tmp: Path) -> None:
-    """After a poison row is dead-lettered, the remaining good rows drain
-    successfully on the next call. This is the head-of-line unblocking test.
+    """A poison row bundled with an innocent heartbeat: the innocent row is
+    isolated and DELIVERED in the same drain, while the poison row is
+    dead-lettered on its own retry budget. Head-of-line unblocking.
     """
     from exchange import state
     from tools import consolidate_push
@@ -311,42 +338,89 @@ def test_dead_letter_good_rows_still_drain_after_poison(tmp: Path) -> None:
 
     dead_letter_k = 2
     poison_id = state.enqueue_bot_event("daily_loss_breaker", equity_usd=100.0)
-    # Pre-load poison row to the threshold.
+    # Pre-load poison row to the threshold so this drain tips it over.
     for _ in range(dead_letter_k - 1):
         state.outbox_mark_failed([poison_id], "HTTP 400: ...")
-
     good_id = state.enqueue_bot_event("heartbeat", equity_usd=101.0)
 
-    call_count = 0
-    def fake_urlopen(_req, timeout=None):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise HTTPError(
-                url="https://example.test/bot-event/batch", code=400,
-                msg="Bad Request", hdrs={}, fp=BytesIO(b'{"error":"invalid_batch"}'),
-            )
-        fake = MagicMock()
-        fake.status = 200
-        fake.read.return_value = b'{"ok":true,"inserted":1,"skipped":0,"errors":[]}'
-        fake.__enter__ = lambda self: self
-        fake.__exit__ = lambda self, *_a: None
-        return fake
-
+    poison_ext = f"snapback-btc:{poison_id}"
     with patch.dict("os.environ",
                     {"CONSOLIDATE_API_URL": "https://example.test",
                      "CONSOLIDATE_API_TOKEN": "tok"}), \
-         patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("urllib.request.urlopen", side_effect=_poison_aware_urlopen(poison_ext)), \
          patch("tools.consolidate_push.DEAD_LETTER_AFTER_ATTEMPTS", dead_letter_k):
-        # First drain: poison row dead-lettered.
         r1 = consolidate_push.drain()
-        # Second drain: good row goes through.
-        r2 = consolidate_push.drain()
 
+    # Poison isolated + dead-lettered; innocent heartbeat delivered in the SAME
+    # drain (never dead-lettered alongside the poison row).
     assert r1.get("dead_lettered") == 1
-    assert r2.get("inserted") == 1
+    assert r1.get("inserted") == 1, "innocent row delivered in the same drain"
     assert state.outbox_size() == 0
     assert state.dead_letter_size() == 1
+    with sqlite3.connect(tmp) as c:
+        dl_outbox_id = c.execute("SELECT outbox_id FROM dead_letter").fetchone()[0]
+    assert dl_outbox_id == poison_id
+    _ = good_id  # delivered, no longer in outbox
+
+
+@_with_temp_db_and_env
+def test_drain_isolates_poison_across_repeated_drains(tmp: Path) -> None:
+    """MULTI-CALL drain(): one poison row bundled with many innocent heartbeats
+    across repeated failures. The innocent heartbeats must ALWAYS survive
+    (delivered, never dead-lettered), while ONLY the poison row eventually
+    dead-letters after it alone exhausts its retry budget.
+
+    This is the regression guard for the 2026-06-30 incident where a single
+    kind='daily_loss_breaker' 4xx dead-lettered ~49 innocent heartbeats.
+    """
+    from exchange import state
+    from tools import consolidate_push
+    state.init_db()
+
+    dead_letter_k = 3
+    poison_id = state.enqueue_bot_event("daily_loss_breaker", equity_usd=100.0)
+    # A first batch of innocent heartbeats bundled with the poison row.
+    innocents_1 = [state.enqueue_bot_event("heartbeat", equity_usd=100.0 + i)
+                   for i in range(5)]
+    poison_ext = f"snapback-btc:{poison_id}"
+
+    env = {"CONSOLIDATE_API_URL": "https://example.test", "CONSOLIDATE_API_TOKEN": "tok"}
+
+    def _drain_once():
+        with patch.dict("os.environ", env), \
+             patch("urllib.request.urlopen", side_effect=_poison_aware_urlopen(poison_ext)), \
+             patch("tools.consolidate_push.DEAD_LETTER_AFTER_ATTEMPTS", dead_letter_k):
+            return consolidate_push.drain()
+
+    # Drain 1: innocents delivered, poison isolated (attempts 1, not yet dead).
+    r1 = _drain_once()
+    assert r1.get("inserted") == len(innocents_1), "all innocents delivered on drain 1"
+    assert r1.get("dead_lettered", 0) == 0, "poison not dead-lettered yet (attempt 1)"
+    assert state.dead_letter_size() == 0
+    # Only the poison row remains queued.
+    remaining = [r[0] for r in state.outbox_pending(50)]
+    assert remaining == [poison_id]
+
+    # Between drains, MORE innocent heartbeats arrive and get bundled with the
+    # still-stuck poison row. They must keep surviving across repeated failures.
+    innocents_2 = [state.enqueue_bot_event("heartbeat", equity_usd=200.0 + i)
+                   for i in range(4)]
+
+    # Drain 2: new innocents delivered, poison attempt 2 (still not dead).
+    r2 = _drain_once()
+    assert r2.get("inserted") == len(innocents_2), "new innocents delivered on drain 2"
+    assert r2.get("dead_lettered", 0) == 0
+    assert state.dead_letter_size() == 0
+    assert [r[0] for r in state.outbox_pending(50)] == [poison_id]
+
+    # Drain 3: poison hits attempt K → dead-lettered. No innocents left to lose.
+    r3 = _drain_once()
+    assert r3.get("dead_lettered") == 1
+    assert state.outbox_size() == 0
+    assert state.dead_letter_size() == 1
+    with sqlite3.connect(tmp) as c:
+        dl = c.execute("SELECT outbox_id, kind FROM dead_letter").fetchone()
+    assert dl[0] == poison_id and dl[1] == "daily_loss_breaker"
 
 
 @_with_temp_db_and_env
