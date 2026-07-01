@@ -124,7 +124,7 @@ def _post_batch(url: str, token: str, events: list[dict[str, Any]],
         return {"class": "transient", "err": err_msg}  # 5xx
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         return {"class": "transient", "err": f"net: {e}"}
-    except Exception as e:  # noqa: BLE001 — never let a push crash the caller
+    except Exception as e:  # never let a telemetry push crash the caller
         log.exception("consolidate push exception")
         return {"class": "transient", "err": f"unexpected: {e}"}
 
@@ -164,7 +164,7 @@ def _handle_ok(source: str, items: list[tuple], outcome: dict[str, Any]) -> dict
 def _dead_letter_single(item: tuple, err: str) -> dict[str, Any]:
     """A size-1 batch got a 4xx → THIS row is the poison. Increment its attempts
     and dead-letter only if it has now exhausted its own retry budget."""
-    row_id, kind = item[0], item[1]
+    row_id = item[0]
     state.outbox_mark_failed([row_id], err)
     dead = state.outbox_dead_letter_over_limit([row_id], err, DEAD_LETTER_AFTER_ATTEMPTS)
     for did, dk, payload in dead:

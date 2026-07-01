@@ -162,11 +162,11 @@ def test_donchian_114_wrong_read_no_longer_trips(_td: Path) -> None:
     # OLD bug: the anchor was a wrong-account snapshot of $114.75, so at the
     # real equity of $50.50 the OLD kill switch WOULD have fired.
     old_wrong_anchor = 114.75
-    assert 50.50 < old_wrong_anchor * frac  # old code would trip (false positive)
+    assert old_wrong_anchor * frac > 50.50  # old code would trip (false positive)
 
     # NEW: anchor is deposited principal ($50.50). Equity == principal → no trip.
     assert principal.breached(50.50, P, frac) is False
-    assert 50.50 >= P * frac  # real floor is 32.57; equity sits above it
+    assert P * frac <= 50.50  # real floor is 32.57; equity sits above it
     # A transient WRONG-HIGH equity read can neither inflate P nor trip.
     assert principal.breached(114.75, P, frac) is False
     # Only a genuine loss of real principal trips: equity below 32.57.
