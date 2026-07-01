@@ -549,12 +549,14 @@ class Bot:
             self.log.warning("principal reconcile failed (continuing): %s", e)
 
     def _daily_anchor_equity(self, equity: float) -> float:
-        """Return the UTC-day's starting equity, re-anchoring on date rollover.
+        """Return the UTC-day's RAW starting equity, re-anchoring on date rollover.
 
         Persisted in state.meta so it survives restarts within a day. Unlike
-        deploy_start_equity (set once at first deploy, drives the -18% cumulative
-        kill-switch), this anchor resets every UTC midnight and drives the tighter
-        2% daily-loss breaker. The two are intentionally separate ceilings.
+        deploy_start_equity (set once at first deploy), this anchor resets every
+        UTC midnight and drives the tighter 2% daily-loss breaker. On each new UTC
+        day we ALSO snapshot the cumulative principal-ledger sum
+        (daily_anchor_principal_sum) so the breaker can neutralise intraday
+        transfers — see _daily_book_anchor. The two ceilings stay separate.
         """
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         anchor_date = state.get_meta("daily_anchor_date")
@@ -562,18 +564,58 @@ class Bot:
         if anchor_date != today or anchor_eq <= 0:
             state.set_meta("daily_anchor_date", today)
             state.set_float("daily_anchor_equity", equity)
+            # Baseline for intraday-transfer neutralisation: net deposited
+            # principal (Part C ledger) as of the anchor. Intraday transfers move
+            # the ledger sum; _daily_book_anchor adds the delta back so only
+            # trading P&L counts toward the threshold.
+            state.set_float("daily_anchor_principal_sum",
+                            state.principal_ledger_sum(principal.PRINCIPAL_ASSET))
             self.log.info("Daily anchor set: date=%s equity=%.2f USDT", today, equity)
             return equity
         return anchor_eq
 
+    def _daily_book_anchor(self, equity: float) -> float:
+        """Transfer-immune daily baseline (BOOK equity at day start).
+
+        A raw equity anchor misreads an intraday deposit/withdrawal as P&L: a
+        deposit inflates equity (can MASK a real trading loss), a withdrawal
+        deflates it (can FALSELY trip the breaker). Neutralise both by shifting
+        the baseline by the net principal moved since the anchor was set:
+
+            book_anchor = raw_anchor + (ledger_sum_now − ledger_sum_at_anchor)
+
+        A transfer then moves equity and the baseline by the same amount, so only
+        true trading P&L counts toward the 2% threshold — consistent with the
+        principal-derived kill switch. Reuses the Part C principal ledger.
+
+        Fail-safe to legacy behaviour: an empty/uninitialised ledger gives a 0
+        delta (== raw anchor). A legacy anchor set before this migration (no
+        baseline key) is seeded to the current sum, so PRE-existing principal is
+        never mistaken for an intraday transfer (which would inflate the baseline
+        and stop the breaker from ever tripping).
+        """
+        raw_anchor = self._daily_anchor_equity(equity)
+        now_sum = state.principal_ledger_sum(principal.PRINCIPAL_ASSET)
+        baseline = state.get_meta("daily_anchor_principal_sum")
+        if baseline is None:
+            state.set_float("daily_anchor_principal_sum", now_sum)
+            return raw_anchor
+        try:
+            anchor_sum = float(baseline)
+        except ValueError:
+            anchor_sum = now_sum
+        return raw_anchor + (now_sum - anchor_sum)
+
     def _daily_loss_blocks_entry(self, equity: float) -> bool:
-        """True if today's drawdown has hit MAX_DAILY_LOSS_PCT — block new
+        """True if today's TRADING drawdown has hit MAX_DAILY_LOSS_PCT — block new
         entries for the rest of the UTC day. Does NOT flatten or HALT: existing
         brackets keep managing any open position, and the anchor resets at the
-        next UTC midnight (see _daily_anchor_equity). This is the tighter,
-        daily-resetting sibling of the -18% cumulative kill-switch.
+        next UTC midnight (see _daily_anchor_equity). The baseline is transfer-
+        immune book equity (_daily_book_anchor), so an intraday deposit/withdrawal
+        neither trips nor clears the breaker. Tighter, daily-resetting sibling of
+        the principal-anchored kill switch.
         """
-        day_start = self._daily_anchor_equity(equity)
+        day_start = self._daily_book_anchor(equity)
         try:
             check_daily_loss(equity, day_start)
         except RiskBreach as e:
