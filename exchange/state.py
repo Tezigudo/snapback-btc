@@ -185,7 +185,7 @@ def record_fill(side: str, qty: float, price: float, reason: str,
             "INSERT INTO fills(ts, side, qty, price, pnl_usd, reason, "
             "equity_after, client_order_id_root) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (datetime.utcnow().isoformat(), side, qty, price,
+            (datetime.now(UTC).isoformat(), side, qty, price,
              pnl_usd, reason, equity_after, client_order_id_root),
         )
 
@@ -198,7 +198,7 @@ def record_event(level: str, kind: str, msg: str | dict,
         c.execute(
             "INSERT INTO events(ts, level, kind, msg, signal_id) "
             "VALUES (?, ?, ?, ?, ?)",
-            (datetime.utcnow().isoformat(), level, kind, msg, signal_id),
+            (datetime.now(UTC).isoformat(), level, kind, msg, signal_id),
         )
 
 
@@ -239,7 +239,7 @@ def enqueue_bot_event(
     with _conn() as c:
         cur = c.execute(
             "INSERT INTO outbox(kind, payload, created_at) VALUES (?, ?, ?)",
-            (kind, body, datetime.utcnow().isoformat()),
+            (kind, body, datetime.now(UTC).isoformat()),
         )
         return int(cur.lastrowid or 0)
 
@@ -297,7 +297,7 @@ def outbox_dead_letter_over_limit(
     if not ids:
         return []
     placeholders = ",".join("?" * len(ids))
-    dead_at = datetime.utcnow().isoformat()
+    dead_at = datetime.now(UTC).isoformat()
     with _conn() as c:
         rows = c.execute(
             f"SELECT id, kind, payload FROM outbox "
