@@ -188,3 +188,89 @@ def test_new_utc_day_reallows_after_block(tmp: Path) -> None:
          patch.object(bot_mod, "datetime", day2_dt):
         assert b._daily_loss_blocks_entry(970.0) is False
         assert b._daily_loss_blocked is False
+
+
+# --------------------------------------------------------------------------
+# 4. Restart-dedup: persisted latch survives a simulated bot restart
+# --------------------------------------------------------------------------
+
+@_with_temp_db
+def test_breaker_does_not_re_emit_after_restart_same_day(tmp: Path) -> None:
+    """After the breaker fires, a simulated restart within the same UTC day
+    must NOT enqueue a second daily_loss_breaker outbox event.
+
+    Before the fix, self._daily_loss_blocked started as False on each restart,
+    causing a duplicate event every restart while equity stayed below threshold.
+    The fix persists 'daily_loss_breaker_date' to state.meta.
+    """
+    from exchange import state
+    alerts: list = []
+    fixed_dt = _fixed_datetime(datetime(2026, 6, 30, 14, 0, 0, tzinfo=UTC))
+
+    def run_bot():
+        b, bot_mod = _make_breaker_bot()
+        with patch.object(bot_mod, "send_alert", lambda *a, **k: alerts.append(a)), \
+             patch.object(bot_mod, "datetime", fixed_dt):
+            b._daily_anchor_equity(1000.0)
+            return b._daily_loss_blocks_entry(970.0)  # -3% → should block
+
+    # First run: breaker trips, event + alert emitted.
+    blocked = run_bot()
+    assert blocked is True
+    with sqlite3.connect(tmp) as c:
+        n_events = c.execute(
+            "SELECT COUNT(*) FROM outbox WHERE kind='daily_loss_breaker'"
+        ).fetchone()[0]
+    assert n_events == 1, "breaker should emit exactly one outbox event on first trip"
+    assert len(alerts) == 1
+
+    # Simulated restart: create a fresh bot object (self._daily_loss_blocked=False).
+    # The persisted latch in state.meta should prevent re-emission.
+    blocked_again = run_bot()
+    assert blocked_again is True
+    with sqlite3.connect(tmp) as c:
+        n_events_after = c.execute(
+            "SELECT COUNT(*) FROM outbox WHERE kind='daily_loss_breaker'"
+        ).fetchone()[0]
+    assert n_events_after == 1, (
+        "restart within same UTC day must NOT enqueue a second event; "
+        f"got {n_events_after}"
+    )
+    assert len(alerts) == 1, "alert must not fire again on restart"
+
+
+@_with_temp_db
+def test_breaker_emits_again_on_next_utc_day_after_restart(tmp: Path) -> None:
+    """The persistent latch is date-scoped: a breach on day 2 (after a restart)
+    should emit a fresh event, even though a latch from day 1 is still in meta.
+    """
+    from exchange import state
+    day1_dt = _fixed_datetime(datetime(2026, 6, 30, 14, 0, 0, tzinfo=UTC))
+    day2_dt = _fixed_datetime(datetime(2026, 7, 1, 8, 0, 0, tzinfo=UTC))
+    alerts: list = []
+
+    def run_bot(fixed_dt):
+        b, bot_mod = _make_breaker_bot()
+        with patch.object(bot_mod, "send_alert", lambda *a, **k: alerts.append(a)), \
+             patch.object(bot_mod, "datetime", fixed_dt):
+            b._daily_anchor_equity(1000.0)
+            return b._daily_loss_blocks_entry(970.0)
+
+    # Day 1: breaker trips.
+    run_bot(day1_dt)
+    with sqlite3.connect(tmp) as c:
+        n_day1 = c.execute(
+            "SELECT COUNT(*) FROM outbox WHERE kind='daily_loss_breaker'"
+        ).fetchone()[0]
+    assert n_day1 == 1
+
+    # Day 2 (new UTC day, anchor resets): fresh breach → should emit again.
+    run_bot(day2_dt)
+    with sqlite3.connect(tmp) as c:
+        n_total = c.execute(
+            "SELECT COUNT(*) FROM outbox WHERE kind='daily_loss_breaker'"
+        ).fetchone()[0]
+    assert n_total == 2, (
+        "a new UTC day must allow the breaker to emit again; "
+        f"got {n_total} total outbox events"
+    )

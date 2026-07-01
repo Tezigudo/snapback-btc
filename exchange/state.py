@@ -2,10 +2,14 @@
 
 Schema:
   meta(key TEXT PRIMARY KEY, value TEXT)
-    'deploy_start_equity' : float
-    'deploy_start_ts'     : ISO ts
-    'last_entry_bar_ts'   : ISO ts of bar bot last considered for entry
-    'consecutive_losses'  : int
+    'deploy_start_equity'       : float
+    'deploy_start_ts'           : ISO ts
+    'last_entry_bar_ts'         : ISO ts of bar bot last considered for entry
+    'consecutive_losses'        : int
+    'daily_anchor_date'         : YYYY-MM-DD UTC date of today's equity anchor
+    'daily_anchor_equity'       : float equity at UTC-day start
+    'daily_loss_breaker_date'   : YYYY-MM-DD UTC date when breaker was last emitted
+                                  (persisted latch; prevents re-emit on restart)
 
   fills(id INTEGER PRIMARY KEY, ts TEXT, side TEXT, qty REAL, price REAL,
         pnl_usd REAL, reason TEXT, equity_after REAL,
@@ -27,6 +31,13 @@ Schema:
     state.db is the source of truth; consolidate is a downstream read-only
     view. If consolidate is unreachable, events queue here and replay
     automatically when the API comes back.
+
+  dead_letter(id INTEGER PRIMARY KEY, outbox_id INTEGER, kind TEXT,
+              payload TEXT, reason TEXT, dead_at TEXT)
+    Outbox rows that were permanently rejected by the backend (persistent 4xx
+    after DEAD_LETTER_AFTER_ATTEMPTS retries). The payload is preserved here
+    so no data is lost silently — operators can inspect and replay manually
+    if needed. drain() moves rows here rather than discarding them.
 """
 
 from __future__ import annotations
@@ -102,12 +113,22 @@ def init_db() -> None:
             last_error TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_outbox_id ON outbox(id);
+        CREATE TABLE IF NOT EXISTS dead_letter (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            outbox_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            dead_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_dead_letter_dead_at ON dead_letter(dead_at);
         """)
         # Additive migrations for pre-existing databases.
         if "client_order_id_root" not in _columns(c, "fills"):
             c.execute("ALTER TABLE fills ADD COLUMN client_order_id_root TEXT")
         if "signal_id" not in _columns(c, "events"):
             c.execute("ALTER TABLE events ADD COLUMN signal_id TEXT")
+        # dead_letter table is created by the IF NOT EXISTS above; no ALTER needed.
 
 
 def get_meta(key: str, default: str | None = None) -> str | None:
@@ -238,6 +259,50 @@ def outbox_mark_failed(ids: list[int], error: str) -> None:
             f"WHERE id IN ({placeholders})",
             [error, *ids],
         )
+
+
+def outbox_dead_letter_over_limit(
+    ids: list[int], reason: str, max_attempts: int,
+) -> list[tuple[int, str, str]]:
+    """Move rows with attempts >= max_attempts from outbox to dead_letter.
+
+    Called by drain() after a persistent 4xx so poison rows cannot block
+    the entire queue forever. The full payload is preserved in dead_letter
+    so no data is lost silently — operators can inspect / replay manually.
+
+    Returns list of (outbox_id, kind, payload) for each moved row so the
+    caller can log them at ERROR level.
+    """
+    if not ids:
+        return []
+    placeholders = ",".join("?" * len(ids))
+    dead_at = datetime.utcnow().isoformat()
+    with _conn() as c:
+        rows = c.execute(
+            f"SELECT id, kind, payload FROM outbox "
+            f"WHERE id IN ({placeholders}) AND attempts >= ?",
+            [*ids, max_attempts],
+        ).fetchall()
+        if not rows:
+            return []
+        dead_ids = [int(r[0]) for r in rows]
+        c.executemany(
+            "INSERT INTO dead_letter(outbox_id, kind, payload, reason, dead_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [(r[0], r[1], r[2], reason, dead_at) for r in rows],
+        )
+        dead_placeholders = ",".join("?" * len(dead_ids))
+        c.execute(
+            f"DELETE FROM outbox WHERE id IN ({dead_placeholders})", dead_ids,
+        )
+        return [(int(r[0]), str(r[1]), str(r[2])) for r in rows]
+
+
+def dead_letter_size() -> int:
+    """Count rows currently in the dead_letter table (for monitoring)."""
+    with _conn() as c:
+        row = c.execute("SELECT COUNT(*) FROM dead_letter").fetchone()
+    return int(row[0]) if row else 0
 
 
 def outbox_size() -> int:

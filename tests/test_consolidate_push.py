@@ -6,6 +6,9 @@ The bot queues events in state.db `outbox` and pushes them to consolidate's
   - dedup behavior: external_id = "snapback-btc:<outbox.id>" is stable
   - HTTP failure leaves rows queued, increments attempts, doesn't lose data
   - Missing config (CONSOLIDATE_API_URL/TOKEN unset) → drain is a no-op
+  - Dead-letter policy: persistent 4xx rows are moved to dead_letter after K
+    attempts so they cannot block subsequent rows (head-of-line blocking fix)
+  - 5xx / network errors are NOT dead-lettered (transient, retry indefinitely)
 """
 
 from __future__ import annotations
@@ -13,9 +16,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 
 def _with_temp_db_and_env(test_fn):
@@ -180,14 +184,16 @@ def test_drain_keeps_rows_on_network_error(tmp: Path) -> None:
 
 
 @_with_temp_db_and_env
-def test_drain_keeps_rows_on_4xx(tmp: Path) -> None:
+def test_drain_keeps_rows_on_4xx_below_dead_letter_limit(tmp: Path) -> None:
+    """A 4xx where attempts < DEAD_LETTER_AFTER_ATTEMPTS keeps the row queued.
+
+    This verifies a row that hasn't yet exhausted its retry budget stays in the
+    outbox (old behavior preserved for the non-poison-pill case).
+    """
     from exchange import state
     from tools import consolidate_push
     state.init_db()
     state.enqueue_bot_event("heartbeat", equity_usd=101)
-
-    from urllib.error import HTTPError
-    from io import BytesIO
 
     def fake_urlopen(_req, timeout=None):
         raise HTTPError(
@@ -203,8 +209,144 @@ def test_drain_keeps_rows_on_4xx(tmp: Path) -> None:
 
     assert "error" in result
     assert "HTTP 401" in result["error"]
-    # Row stays queued for retry — operator must fix the token first.
+    # Row stays queued — only 1 attempt, well below the dead-letter limit.
     assert state.outbox_size() == 1
+    assert result.get("dead_lettered", 0) == 0
+
+
+@_with_temp_db_and_env
+def test_drain_dead_letters_row_after_k_4xx_attempts(tmp: Path) -> None:
+    """A row that has been 4xx-rejected K times must be moved to dead_letter
+    so it cannot block subsequent heartbeats head-of-line.
+
+    This is the core regression test for the 2026-06-30 incident where
+    kind='daily_loss_breaker' caused 2584+ heartbeats to pile up.
+    """
+    from exchange import state
+    from tools import consolidate_push
+    state.init_db()
+
+    # Use a small K so the test is fast without patching the module-level constant.
+    dead_letter_k = 3
+
+    poison_id = state.enqueue_bot_event("daily_loss_breaker", equity_usd=100.0)
+    good_id = state.enqueue_bot_event("heartbeat", equity_usd=101.0)
+    assert state.outbox_size() == 2
+
+    # Pre-load the poison row with (K-1) failed attempts so the next drain tips it over.
+    for _ in range(dead_letter_k - 1):
+        state.outbox_mark_failed([poison_id], "HTTP 400: ...")
+
+    def fake_urlopen(_req, timeout=None):
+        raise HTTPError(
+            url="https://example.test/bot-event/batch", code=400,
+            msg="Bad Request", hdrs={}, fp=BytesIO(b'{"error":"invalid_batch"}'),
+        )
+
+    with patch.dict("os.environ",
+                    {"CONSOLIDATE_API_URL": "https://example.test",
+                     "CONSOLIDATE_API_TOKEN": "tok"}), \
+         patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("tools.consolidate_push.DEAD_LETTER_AFTER_ATTEMPTS", dead_letter_k):
+        result = consolidate_push.drain()
+
+    # Poison row dead-lettered; good row still in outbox.
+    assert result.get("dead_lettered") == 1, f"expected dead_lettered=1, got {result}"
+    assert state.outbox_size() == 1, "poison row should be removed from outbox"
+    assert state.dead_letter_size() == 1, "poison row should be in dead_letter"
+
+    # Verify the dead_letter entry has the right data.
+    with sqlite3.connect(tmp) as c:
+        dl_row = c.execute(
+            "SELECT outbox_id, kind, reason FROM dead_letter"
+        ).fetchone()
+    assert dl_row[0] == poison_id
+    assert dl_row[1] == "daily_loss_breaker"
+    assert "400" in dl_row[2]
+
+    # Good row still drainable on the next call.
+    assert state.outbox_pending(10)[0][0] == good_id
+
+
+@_with_temp_db_and_env
+def test_drain_does_not_dead_letter_on_5xx(tmp: Path) -> None:
+    """5xx (transient server error) must NOT trigger dead-lettering, even after
+    many attempts. 5xx = server-side problem, not a bad row.
+    """
+    from exchange import state
+    from tools import consolidate_push
+    state.init_db()
+    row_id = state.enqueue_bot_event("heartbeat", equity_usd=101.0)
+
+    # Pre-load many failures (beyond the dead-letter threshold).
+    for _ in range(10):
+        state.outbox_mark_failed([row_id], "HTTP 503: ...")
+
+    def fake_urlopen(_req, timeout=None):
+        raise HTTPError(
+            url="https://example.test/bot-event/batch", code=503,
+            msg="Service Unavailable", hdrs={}, fp=BytesIO(b'{}'),
+        )
+
+    with patch.dict("os.environ",
+                    {"CONSOLIDATE_API_URL": "https://example.test",
+                     "CONSOLIDATE_API_TOKEN": "tok"}), \
+         patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = consolidate_push.drain()
+
+    # Row stays in outbox — 5xx never dead-letters.
+    assert state.outbox_size() == 1
+    assert state.dead_letter_size() == 0
+    assert result.get("dead_lettered", 0) == 0
+
+
+@_with_temp_db_and_env
+def test_dead_letter_good_rows_still_drain_after_poison(tmp: Path) -> None:
+    """After a poison row is dead-lettered, the remaining good rows drain
+    successfully on the next call. This is the head-of-line unblocking test.
+    """
+    from exchange import state
+    from tools import consolidate_push
+    state.init_db()
+
+    dead_letter_k = 2
+    poison_id = state.enqueue_bot_event("daily_loss_breaker", equity_usd=100.0)
+    # Pre-load poison row to the threshold.
+    for _ in range(dead_letter_k - 1):
+        state.outbox_mark_failed([poison_id], "HTTP 400: ...")
+
+    good_id = state.enqueue_bot_event("heartbeat", equity_usd=101.0)
+
+    call_count = 0
+    def fake_urlopen(_req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise HTTPError(
+                url="https://example.test/bot-event/batch", code=400,
+                msg="Bad Request", hdrs={}, fp=BytesIO(b'{"error":"invalid_batch"}'),
+            )
+        fake = MagicMock()
+        fake.status = 200
+        fake.read.return_value = b'{"ok":true,"inserted":1,"skipped":0,"errors":[]}'
+        fake.__enter__ = lambda self: self
+        fake.__exit__ = lambda self, *_a: None
+        return fake
+
+    with patch.dict("os.environ",
+                    {"CONSOLIDATE_API_URL": "https://example.test",
+                     "CONSOLIDATE_API_TOKEN": "tok"}), \
+         patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("tools.consolidate_push.DEAD_LETTER_AFTER_ATTEMPTS", dead_letter_k):
+        # First drain: poison row dead-lettered.
+        r1 = consolidate_push.drain()
+        # Second drain: good row goes through.
+        r2 = consolidate_push.drain()
+
+    assert r1.get("dead_lettered") == 1
+    assert r2.get("inserted") == 1
+    assert state.outbox_size() == 0
+    assert state.dead_letter_size() == 1
 
 
 @_with_temp_db_and_env
@@ -214,10 +356,10 @@ def test_drain_handles_partial_failure_207(tmp: Path) -> None:
     from exchange import state
     from tools import consolidate_push
     state.init_db()
-    state.enqueue_bot_event("heartbeat", equity_usd=101)
-    state.enqueue_bot_event("entry", signal_id="bad", side="long",
-                            qty=0.001, price_usd=65000)
-    state.enqueue_bot_event("heartbeat", equity_usd=101)
+    id1 = state.enqueue_bot_event("heartbeat", equity_usd=101)
+    id2 = state.enqueue_bot_event("entry", signal_id="bad", side="long",
+                                   qty=0.001, price_usd=65000)
+    id3 = state.enqueue_bot_event("heartbeat", equity_usd=101)
     assert state.outbox_size() == 3
 
     fake_response = MagicMock()

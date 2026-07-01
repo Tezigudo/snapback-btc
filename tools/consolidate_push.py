@@ -45,6 +45,14 @@ def _source() -> str:
 DEFAULT_TIMEOUT_S = 3.0
 DEFAULT_BATCH_LIMIT = 50
 
+# After this many failed attempts with a 4xx response, a row is moved from the
+# outbox to the dead_letter table so it can no longer block subsequent rows.
+# Transient 5xx / network errors do NOT count toward this limit — those stay
+# in the outbox and retry indefinitely. Configurable via env var for ops tuning.
+DEAD_LETTER_AFTER_ATTEMPTS: int = int(
+    os.environ.get("CONSOLIDATE_DEAD_LETTER_ATTEMPTS", "5")
+)
+
 
 def _config() -> tuple[str | None, str | None]:
     url = (os.environ.get("CONSOLIDATE_API_URL") or "").strip().rstrip("/")
@@ -122,14 +130,33 @@ def drain(limit: int = DEFAULT_BATCH_LIMIT, timeout_s: float = DEFAULT_TIMEOUT_S
             resp_status = int(resp.status)
             resp_data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        # 4xx and 5xx end up here. Server returns 500 when ALL events failed
-        # (transient or persistent — caller retries). 401 (bad token) is a
-        # config problem, not transient, but we still keep rows queued so
-        # the operator can fix .env without losing data.
         err_msg = f"HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:200]}"
-        log.warning("consolidate push failed: %s", err_msg)
-        state.outbox_mark_failed(ids, err_msg)
-        return {"error": err_msg, "queued": len(ids)}
+        if 400 <= e.code < 500:
+            # Client error: the batch payload itself was rejected (unknown kind,
+            # auth mismatch, schema violation). Increment attempts for all rows in
+            # the batch, then dead-letter any that have exceeded the retry budget.
+            # Without dead-lettering, a single bad row (e.g. unknown kind) causes
+            # every subsequent batch to fail — head-of-line blocking.
+            log.warning("consolidate push 4xx: %s", err_msg)
+            state.outbox_mark_failed(ids, err_msg)
+            dead = state.outbox_dead_letter_over_limit(ids, err_msg, DEAD_LETTER_AFTER_ATTEMPTS)
+            for row_id, kind, payload in dead:
+                log.error(
+                    "OUTBOX DEAD LETTER: row %s (kind=%s reached %d attempts) "
+                    "moved to dead_letter table — payload: %.500s",
+                    row_id, kind, DEAD_LETTER_AFTER_ATTEMPTS, payload,
+                )
+            return {
+                "error": err_msg,
+                "queued": len(ids) - len(dead),
+                "dead_lettered": len(dead),
+            }
+        else:
+            # 5xx — transient server error (Fly cold start, DB hiccup, etc.).
+            # Keep all rows in the outbox and retry on the next drain.
+            log.warning("consolidate push 5xx (transient): %s", err_msg)
+            state.outbox_mark_failed(ids, err_msg)
+            return {"error": err_msg, "queued": len(ids)}
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         # Transient network failure — keep in outbox, retry next drain.
         err_msg = f"net: {e}"

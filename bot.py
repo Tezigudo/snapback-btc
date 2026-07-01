@@ -489,32 +489,42 @@ class Bot:
             check_daily_loss(equity, day_start)
         except RiskBreach as e:
             loss_pct = (day_start - equity) / day_start * 100.0 if day_start > 0 else 0.0
+            # Dedupe: emit the outbox event + alert at most once per UTC day.
+            # self._daily_loss_blocked is an in-memory fast path; the persisted
+            # meta key 'daily_loss_breaker_date' ensures the latch survives a
+            # bot restart within the same UTC day (prevents the dashboard from
+            # receiving a duplicate event on every restart after a breach).
+            today = datetime.now(UTC).strftime("%Y-%m-%d")
             if not self._daily_loss_blocked:
-                # Log + event once per day, on the bar the breaker trips, to
-                # avoid spamming JSONL/outbox every poll for the rest of the day.
-                self.log.warning("DAILY LOSS BREAKER: %s — blocking new entries "
-                                 "until next UTC day.", e)
-                state.record_event("WARN", "daily_loss_breaker",
-                                   {"equity": equity, "day_start": day_start,
-                                    "loss_pct": loss_pct,
-                                    "threshold_pct": CEILINGS.MAX_DAILY_LOSS_PCT})
-                state.enqueue_bot_event(
-                    "daily_loss_breaker", equity_usd=float(equity),
-                    payload={"day_start_equity": float(day_start),
-                             "loss_pct": loss_pct,
-                             "threshold_pct": CEILINGS.MAX_DAILY_LOSS_PCT},
-                )
-                send_alert(
-                    "Bot daily-loss breaker tripped",
-                    f"Daily drawdown breached -{CEILINGS.MAX_DAILY_LOSS_PCT:.0f}%.\n"
-                    f"day_start={day_start:.2f}  current={equity:.2f}  "
-                    f"loss={loss_pct:.2f}%\n"
-                    f"New entries blocked until next UTC day. "
-                    f"Open position (if any) left to its brackets; no flatten.",
-                )
-                self._daily_loss_blocked = True
+                if state.get_meta("daily_loss_breaker_date") == today:
+                    self._daily_loss_blocked = True  # sync in-memory with persisted latch
+                else:
+                    # Log + event once per day, on the bar the breaker trips.
+                    self.log.warning("DAILY LOSS BREAKER: %s — blocking new entries "
+                                     "until next UTC day.", e)
+                    state.record_event("WARN", "daily_loss_breaker",
+                                       {"equity": equity, "day_start": day_start,
+                                        "loss_pct": loss_pct,
+                                        "threshold_pct": CEILINGS.MAX_DAILY_LOSS_PCT})
+                    state.enqueue_bot_event(
+                        "daily_loss_breaker", equity_usd=float(equity),
+                        payload={"day_start_equity": float(day_start),
+                                 "loss_pct": loss_pct,
+                                 "threshold_pct": CEILINGS.MAX_DAILY_LOSS_PCT},
+                    )
+                    send_alert(
+                        "Bot daily-loss breaker tripped",
+                        f"Daily drawdown breached -{CEILINGS.MAX_DAILY_LOSS_PCT:.0f}%.\n"
+                        f"day_start={day_start:.2f}  current={equity:.2f}  "
+                        f"loss={loss_pct:.2f}%\n"
+                        f"New entries blocked until next UTC day. "
+                        f"Open position (if any) left to its brackets; no flatten.",
+                    )
+                    state.set_meta("daily_loss_breaker_date", today)
+                    self._daily_loss_blocked = True
             return True
-        # Drawdown recovered or new day anchored — clear the latch.
+        # Drawdown recovered or new day anchored — clear the in-memory latch.
+        # (The persisted key expires naturally: next breach day uses a new date.)
         self._daily_loss_blocked = False
         return False
 
