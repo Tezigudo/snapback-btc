@@ -10,6 +10,18 @@ Schema:
     'daily_anchor_equity'       : float equity at UTC-day start
     'daily_loss_breaker_date'   : YYYY-MM-DD UTC date when breaker was last emitted
                                   (persisted latch; prevents re-emit on restart)
+    'principal_source'          : 'manual' | 'income_backfill' (kill-switch anchor)
+    'principal_base'            : float seed for P (manual base, else 0.0)
+    'principal_anchor'          : cached float P = base + Σ principal_ledger
+    'principal_income_watermark_ms' : int, newest income ts folded into P
+
+  principal_ledger(tran_id INTEGER PRIMARY KEY, income_type TEXT, income_usd REAL,
+        asset TEXT, ts_ms INTEGER, applied_at TEXT)
+    Net-deposited-principal ledger for the kill switch. Holds only
+    principal-moving income (TRANSFER/DEPOSIT/WITHDRAW) keyed by Binance's
+    stable tranId so re-fetching an overlapping income window on restart cannot
+    double-count. P = principal_base + SUM(income_usd) over USDT rows. See
+    exchange/principal.py.
 
   fills(id INTEGER PRIMARY KEY, ts TEXT, side TEXT, qty REAL, price REAL,
         pnl_usd REAL, reason TEXT, equity_after REAL,
@@ -45,7 +57,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .env import REPO_ROOT
@@ -122,6 +134,15 @@ def init_db() -> None:
             dead_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_dead_letter_dead_at ON dead_letter(dead_at);
+        CREATE TABLE IF NOT EXISTS principal_ledger (
+            tran_id INTEGER PRIMARY KEY,
+            income_type TEXT NOT NULL,
+            income_usd REAL NOT NULL,
+            asset TEXT NOT NULL,
+            ts_ms INTEGER NOT NULL,
+            applied_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_principal_ledger_ts ON principal_ledger(ts_ms);
         """)
         # Additive migrations for pre-existing databases.
         if "client_order_id_root" not in _columns(c, "fills"):
@@ -308,6 +329,61 @@ def dead_letter_size() -> int:
 def outbox_size() -> int:
     with _conn() as c:
         row = c.execute("SELECT COUNT(*) FROM outbox").fetchone()
+    return int(row[0]) if row else 0
+
+
+def principal_ledger_upsert(rows: list[tuple[int, str, float, str, int]]) -> int:
+    """Idempotently insert principal-moving income rows keyed by tran_id.
+
+    rows: (tran_id, income_type, income_usd, asset, ts_ms).
+    INSERT OR IGNORE on the tran_id PRIMARY KEY means a re-fetched (overlapping)
+    income window can never double-count. Returns the count of NEWLY inserted
+    rows (0 if every row was already present)."""
+    if not rows:
+        return 0
+    applied_at = datetime.now(UTC).isoformat()
+    with _conn() as c:
+        before = c.execute("SELECT COUNT(*) FROM principal_ledger").fetchone()[0]
+        c.executemany(
+            "INSERT OR IGNORE INTO principal_ledger"
+            "(tran_id, income_type, income_usd, asset, ts_ms, applied_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [(int(t), str(k), float(v), str(a), int(ts), applied_at)
+             for (t, k, v, a, ts) in rows],
+        )
+        after = c.execute("SELECT COUNT(*) FROM principal_ledger").fetchone()[0]
+    return int(after - before)
+
+
+def principal_ledger_sum(asset: str = "USDT") -> float:
+    """Signed sum of principal-moving income for one asset (the P contribution)."""
+    with _conn() as c:
+        row = c.execute(
+            "SELECT COALESCE(SUM(income_usd), 0) FROM principal_ledger WHERE asset=?",
+            (asset,),
+        ).fetchone()
+    return float(row[0]) if row else 0.0
+
+
+def principal_ledger_max_ts() -> int:
+    """Newest income ts_ms in the ledger (0 if empty) — the reconcile watermark."""
+    with _conn() as c:
+        row = c.execute("SELECT COALESCE(MAX(ts_ms), 0) FROM principal_ledger").fetchone()
+    return int(row[0]) if row else 0
+
+
+def principal_ledger_count() -> int:
+    with _conn() as c:
+        row = c.execute("SELECT COUNT(*) FROM principal_ledger").fetchone()
+    return int(row[0]) if row else 0
+
+
+def principal_ledger_non_usdt_count() -> int:
+    """Count of principal-moving rows in a non-USDT asset (excluded from P)."""
+    with _conn() as c:
+        row = c.execute(
+            "SELECT COUNT(*) FROM principal_ledger WHERE asset<>?", ("USDT",)
+        ).fetchone()
     return int(row[0]) if row else 0
 
 

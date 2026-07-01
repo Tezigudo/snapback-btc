@@ -57,7 +57,7 @@ from bot_internals import (
     limit_entry_price,
     resolve_strategy_name,
 )
-from exchange import state, trade_events
+from exchange import principal, state, trade_events
 from exchange.binance_client import BinanceClient
 from exchange.constraints import (
     DEFAULT_CONSTRAINTS,
@@ -267,6 +267,13 @@ class Bot:
         # Latch so the daily-loss breaker logs/alerts once per trip, not every
         # poll. Cleared on drawdown recovery or UTC-day rollover.
         self._daily_loss_blocked: bool = False
+        # Principal-anchor reconcile cadence. The kill switch compares equity to
+        # NET DEPOSITED PRINCIPAL (exchange/principal.py), refreshed from the
+        # Binance income ledger. DCA is monthly so hourly is ample once the
+        # anchor exists; retry faster while it is still uninitialised.
+        self._principal_reconcile_interval_s: float = 3600.0
+        self._principal_retry_interval_s: float = 60.0
+        self._last_principal_reconcile_ts: float = 0.0
         if self.dry_run:
             self.log.warning("DRY-RUN MODE: no real orders will be placed")
 
@@ -288,6 +295,24 @@ class Bot:
             self.client.set_leverage(self.symbol, self.leverage)
 
         state.init_db()
+
+        # Establish the principal anchor P (kill-switch denominator = NET
+        # DEPOSITED PRINCIPAL, not a balance snapshot). Best-effort: if the
+        # income backfill fails here, the loop retries and the kill switch
+        # stays fail-safe (disabled) until P is known. NEVER snapshots balance.
+        try:
+            P = principal.initialize(self.client, self.params, log=self.log)
+            self._last_principal_reconcile_ts = time.time()
+            if P is not None:
+                self.log.info(
+                    "Principal anchor P=%.2f USDT (kill floor=%.2f at fraction %.3f)",
+                    P, P * self.kill_fraction, self.kill_fraction)
+            else:
+                self.log.warning(
+                    "Principal anchor NOT established at boot — kill switch "
+                    "DISABLED until income reconcile succeeds.")
+        except Exception as e:
+            self.log.warning("Principal init failed at boot (will retry in loop): %s", e)
 
         equity = self.client.fetch_equity_usdt()
         if equity < self.min_capital_warn:
@@ -323,6 +348,7 @@ class Bot:
                 "dry_run": bool(self.dry_run),
                 "strategy_name": self.strategy_name,
                 "deploy_start_equity": float(start_eq),
+                "principal_anchor": principal.get_principal(),
                 "kill_switch_fraction": float(self.kill_fraction),
                 "leverage": int(self.leverage),
                 "order_type": self.order_type,
@@ -366,7 +392,15 @@ class Bot:
 
     def _format_deploy_summary(self, equity: float, mode: str) -> str:
         kill_pct = self.kill_fraction * 100.0
-        kill_usd = equity * self.kill_fraction
+        # Kill floor is anchored on DEPOSITED PRINCIPAL, not this boot's equity.
+        # Fall back to the equity figure only if the anchor isn't established yet
+        # (income backfill pending) — marked provisional so it isn't mistaken
+        # for the real floor.
+        P = principal.get_principal()
+        kill_anchor = P if (P is not None and P > 0) else equity
+        kill_usd = kill_anchor * self.kill_fraction
+        kill_anchor_label = ("principal" if (P is not None and P > 0)
+                             else "equity (PROVISIONAL — principal pending)")
         max_hold = int(
             (self.params.get("strategy") or {}).get("max_hold_bars", 0)
         )
@@ -392,7 +426,9 @@ class Bot:
             f"  Min recommended: ${self.min_capital_warn:,.2f} USDT"
             + ("  ⚠ BELOW FLOOR" if equity < self.min_capital_warn else "")
             + f"\n"
-            f"  Kill switch    : {kill_pct:.1f}% → exit at ${kill_usd:,.2f} USDT\n"
+            f"  Kill switch    : {kill_pct:.1f}% of {kill_anchor_label}\n"
+            f"                   → exit at ${kill_usd:,.2f} USDT "
+            f"(anchor ${kill_anchor:,.2f})\n"
             f"\n"
             f"Risk\n"
             f"  Per trade      : {self.risk_pct:.2f}% equity\n"
@@ -449,34 +485,61 @@ class Bot:
             self.log.warning("consolidate push raised (continuing): %s", e)
 
     def _check_kill_switch(self, equity: float) -> bool:
-        start = state.get_float("deploy_start_equity", 0.0)
-        if start <= 0:
+        # Anchor = NET DEPOSITED PRINCIPAL (God's rule), NOT a balance snapshot
+        # and NOT a high-water mark. principal.breached() is fail-safe: it never
+        # trips on an unknown/degenerate anchor, so a stale/wrong equity read or
+        # a not-yet-initialised P cannot cause a false-positive kill (the
+        # donchian $114.75 class of incident).
+        P = principal.get_principal()
+        if not principal.breached(equity, P, self.kill_fraction):
             return False
-        if equity < start * self.kill_fraction:
-            self.log.error("KILL SWITCH: equity %.2f < %.2f (start %.2f * %.2f)",
-                           equity, start * self.kill_fraction, start, self.kill_fraction)
-            # Touch ONLY this leg's self-halt flag — never the shared data/HALT.
-            self.halt_path.touch()
-            state.enqueue_bot_event(
-                "kill_switch", equity_usd=float(equity),
-                payload={"deploy_start_equity": float(start),
-                         "kill_switch_fraction": float(self.kill_fraction),
-                         "drawdown_pct": (equity/start - 1) * 100},
-            )
-            # Force a push so the dashboard sees this before the bot exits.
-            try:
-                consolidate_push.drain()
-            except Exception as e:
-                self.log.warning("kill-switch push failed: %s", e)
-            send_alert(
-                "BOT KILL SWITCH FIRED",
-                f"Equity drawdown breached -{(1-self.kill_fraction)*100:.0f}%.\n"
-                f"deploy_start={start:.2f}  current={equity:.2f}  "
-                f"drawdown={(equity/start - 1)*100:+.2f}%\n"
-                f"Position will be flattened, HALT file created, bot will exit.",
-            )
-            return True
-        return False
+        assert P is not None  # breached() guarantees P is a positive float here
+        floor = P * self.kill_fraction
+        self.log.error("KILL SWITCH: equity %.2f < %.2f (principal %.2f * %.2f)",
+                       equity, floor, P, self.kill_fraction)
+        # Touch ONLY this leg's self-halt flag — never the shared data/HALT.
+        self.halt_path.touch()
+        state.enqueue_bot_event(
+            "kill_switch", equity_usd=float(equity),
+            payload={"principal_anchor": float(P),
+                     "kill_switch_fraction": float(self.kill_fraction),
+                     "kill_floor": float(floor),
+                     "drawdown_vs_principal_pct": (equity / P - 1) * 100},
+        )
+        # Force a push so the dashboard sees this before the bot exits.
+        try:
+            consolidate_push.drain()
+        except Exception as e:
+            self.log.warning("kill-switch push failed: %s", e)
+        send_alert(
+            "BOT KILL SWITCH FIRED",
+            f"Equity fell below -{(1-self.kill_fraction)*100:.0f}% of DEPOSITED "
+            f"PRINCIPAL.\n"
+            f"principal={P:.2f}  floor={floor:.2f}  current={equity:.2f}  "
+            f"({(equity / P - 1)*100:+.2f}% vs principal)\n"
+            f"Position will be flattened, data/HALT_{self.instance} created, "
+            f"bot will exit.",
+        )
+        return True
+
+    def _maybe_reconcile_principal(self) -> None:
+        """Periodically refresh the principal anchor from the Binance income
+        ledger. Idempotent (tranId-keyed) so overlapping windows never
+        double-count. Never blocks or crashes the loop — failures are logged."""
+        now = time.time()
+        initialized = principal.is_initialized()
+        interval = (self._principal_reconcile_interval_s if initialized
+                    else self._principal_retry_interval_s)
+        if now - self._last_principal_reconcile_ts < interval:
+            return
+        self._last_principal_reconcile_ts = now
+        try:
+            if not initialized:
+                principal.initialize(self.client, self.params, log=self.log)
+            else:
+                principal.reconcile_recent(self.client, log=self.log)
+        except Exception as e:
+            self.log.warning("principal reconcile failed (continuing): %s", e)
 
     def _daily_anchor_equity(self, equity: float) -> float:
         """Return the UTC-day's starting equity, re-anchoring on date rollover.
@@ -873,6 +936,7 @@ class Bot:
                                f"Bot exiting.")
                     return 0
 
+                self._maybe_reconcile_principal()
                 equity = self.client.fetch_equity_usdt()
                 if self._check_kill_switch(equity):
                     if not self.dry_run:
