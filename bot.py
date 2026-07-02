@@ -615,6 +615,16 @@ class Bot:
         neither trips nor clears the breaker. Tighter, daily-resetting sibling of
         the principal-anchored kill switch.
         """
+        # Fail-safe (mirrors the kill switch): the transfer-immune baseline is
+        # derived from Part C's principal ledger. Until that ledger is
+        # initialised, principal_ledger_sum() is 0 and a later full-history
+        # backfill would look like one huge intraday deposit — inflating the book
+        # anchor and falsely blocking entries for the rest of the UTC day. So the
+        # breaker stays INACTIVE until P is ready (the same window the kill switch
+        # is fail-safe/disabled), and the daily anchor is not snapshotted yet.
+        if not principal.is_initialized():
+            self._daily_loss_blocked = False
+            return False
         day_start = self._daily_book_anchor(equity)
         try:
             check_daily_loss(equity, day_start)
