@@ -166,9 +166,10 @@ def test_initialize_filters_income_by_type(_td: Path) -> None:
     P = principal.initialize(rc, {"deploy": {}})
     assert P == 50.50
     assert state.principal_ledger_count() == 1  # only the TRANSFER lands in P
-    # The backfill issued a SERVER-SIDE incomeType filter for EACH principal
-    # type, and never an unfiltered whole-ledger fetch (must-fix 3).
-    assert set(rc.income_types_requested) == {"TRANSFER", "DEPOSIT", "WITHDRAW"}
+    # The backfill issued a SERVER-SIDE incomeType filter (TRANSFER — the only
+    # valid futures principal-income type), never an unfiltered whole-ledger
+    # fetch (must-fix 3) and never the invalid DEPOSIT/WITHDRAW (-1130).
+    assert set(rc.income_types_requested) == {"TRANSFER"}
     assert None not in rc.income_types_requested
 
 

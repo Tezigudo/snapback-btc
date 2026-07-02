@@ -2,14 +2,13 @@
 
 The kill switch trips at `equity < P * kill_fraction`, where P = NET DEPOSITED
 PRINCIPAL — NOT a high-water mark and NOT a balance snapshot. P is built purely
-from Binance USDM-futures income-ledger events of type TRANSFER / DEPOSIT /
-WITHDRAW:
+from Binance USDM-futures income-ledger events of type TRANSFER (signed):
 
     P = principal_base + Σ(USDT principal-moving income)
 
 Trading income (REALIZED_PNL, FUNDING_FEE, COMMISSION) is EXCLUDED, so bot P&L
 never moves P. A spot->futures DCA (positive TRANSFER) RAISES P; a withdrawal
-(negative TRANSFER/WITHDRAW) LOWERS P.
+(negative TRANSFER) LOWERS P.
 
 Idempotency (the reason a wrong-account over-read can never corrupt the anchor
 the way a balance snapshot could): every principal-moving income event is stored
@@ -39,7 +38,11 @@ from . import state
 
 # Income types that move deposited principal. Binance already SIGNS `income`
 # (deposit in = +, withdrawal out = −), so a plain signed sum is net principal.
-PRINCIPAL_INCOME_TYPES: frozenset[str] = frozenset({"TRANSFER", "DEPOSIT", "WITHDRAW"})
+# NOTE: only TRANSFER is a valid Binance USDM-futures income-type filter value
+# for principal moves — it is SIGNED (spot->futures in = +, futures->spot out =
+# −), so a signed sum is net principal. DEPOSIT/WITHDRAW are NOT valid futures
+# incomeType values; sending them to /fapi/v1/income returns error -1130.
+PRINCIPAL_INCOME_TYPES: frozenset[str] = frozenset({"TRANSFER"})
 # P is USDT-denominated. Non-USDT principal transfers (e.g. BNB moved into
 # futures) are stored but NOT summed into P — they need manual USDT valuation.
 PRINCIPAL_ASSET = "USDT"
@@ -153,7 +156,8 @@ def _fetch_principal_income(
     client: Any, start_ms: int, *, log: Any = None,
 ) -> list[dict[str, Any]]:
     """Fetch principal-moving income with a SERVER-SIDE incomeType filter, one
-    call per type (TRANSFER / DEPOSIT / WITHDRAW).
+    call per type (currently just TRANSFER — the only valid futures
+    principal-income type; DEPOSIT/WITHDRAW return Binance -1130).
 
     Why per-type instead of one unfiltered /fapi/v1/income fetch: on a busy
     account (v1's MAIN account especially) the ledger is dominated by
