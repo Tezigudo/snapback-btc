@@ -1,29 +1,59 @@
-"""Generate a static dashboard.html for the live bot.
+"""Generate a static dashboard.html for a live bot LEG.
 
-Reads state.db + heartbeat + logs/bot.jsonl, writes reports/dashboard.html.
+Reads a leg's state.db + heartbeat + jsonl, writes reports/dashboard[_<instance>].html.
 Designed to run from a cron every ~60s so the HTML stays fresh.
 
-No external deps — pure stdlib. Auto-refreshes in browser every 30s.
+Per-leg aware: `--instance <name>` picks that leg's files AND its HALT flag.
+A leg that self-halts writes data/HALT_<instance> (not the shared data/HALT), so
+the dashboard reports THAT leg as HALTED via exchange.env.halt_source. Default
+instance is v1 (unchanged output path reports/dashboard.html).
+
+Only third-party touch is exchange.env (local module) for the HALT semantics;
+everything else is stdlib. Auto-refreshes in browser every 30s.
 """
 
 from __future__ import annotations
 
+import argparse
 import html
 import json
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from exchange.env import halt_source, is_halted  # per-leg HALT semantics
+
 LOCAL_TZ = ZoneInfo("Asia/Bangkok")
 REPO_ROOT = Path(__file__).resolve().parents[1]
+LOCK_FLAG = REPO_ROOT / "confirm_mainnet.lock"
+
+# Per-leg file names, mirroring bot.INSTANCE_PROFILES. Kept as a local map so the
+# dashboard stays lightweight (no bot/ccxt import). Default v1 preserves the
+# legacy output path exactly.
+INSTANCE_FILES: dict[str, dict[str, str]] = {
+    "v1":            {"state": "state.db",              "hb": "heartbeat",              "log": "bot.jsonl",           "out": "dashboard.html"},
+    "donchian":      {"state": "state_donchian.db",     "hb": "heartbeat_donchian",     "log": "donchian.jsonl",      "out": "dashboard_donchian.html"},
+    "cnh_short":     {"state": "state_cnh_short.db",     "hb": "heartbeat_cnh_short",     "log": "cnh_short.jsonl",     "out": "dashboard_cnh_short.html"},
+    "cnh_short_sol": {"state": "state_cnh_short_sol.db", "hb": "heartbeat_cnh_short_sol", "log": "cnh_short_sol.jsonl", "out": "dashboard_cnh_short_sol.html"},
+}
+
+# Module-level path handles; reassigned per --instance in main().
 STATE_DB = REPO_ROOT / "data" / "state.db"
 HEARTBEAT = REPO_ROOT / "data" / "heartbeat"
 JSONL = REPO_ROOT / "logs" / "bot.jsonl"
 OUT = REPO_ROOT / "reports" / "dashboard.html"
-HALT_FLAG = REPO_ROOT / "data" / "HALT"
-LOCK_FLAG = REPO_ROOT / "confirm_mainnet.lock"
+
+
+def _apply_instance(instance: str) -> None:
+    """Point the module path handles at `instance`'s leg files."""
+    global STATE_DB, HEARTBEAT, JSONL, OUT
+    f = INSTANCE_FILES[instance]
+    STATE_DB = REPO_ROOT / "data" / f["state"]
+    HEARTBEAT = REPO_ROOT / "data" / f["hb"]
+    JSONL = REPO_ROOT / "logs" / f["log"]
+    OUT = REPO_ROOT / "reports" / f["out"]
 
 
 def to_local(iso_ts: str) -> str:
@@ -31,7 +61,7 @@ def to_local(iso_ts: str) -> str:
     try:
         dt = datetime.fromisoformat(iso_ts)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return iso_ts
@@ -89,11 +119,20 @@ def read_log_tail(n: int = 30) -> list[dict]:
     return out
 
 
-def render_html(db: dict, logs: list[dict]) -> str:
+def render_html(db: dict, logs: list[dict], instance: str = "v1") -> str:
     now_utc = time.time()
     hb_age = (now_utc - HEARTBEAT.stat().st_mtime) if HEARTBEAT.exists() else None
     alive = hb_age is not None and hb_age < 60
-    halted = HALT_FLAG.exists()
+    # Per-leg HALT: this leg is halted when the GLOBAL data/HALT exists OR its
+    # own data/HALT_<instance> exists. halt_source names which one fired.
+    halt_by = halt_source(instance)
+    halted = is_halted(instance)
+    if halt_by == "global":
+        halt_note = "GLOBAL data/HALT (manual stop-all)"
+    elif halt_by is not None:
+        halt_note = f"self data/HALT_{instance}"
+    else:
+        halt_note = ""
     mainnet_locked = LOCK_FLAG.exists()
 
     meta = db["meta"]
@@ -175,6 +214,7 @@ def render_html(db: dict, logs: list[dict]) -> str:
     pnl_sign = "+" if pnl_pct >= 0 else ""
     generated_at = epoch_to_local(now_utc)
     hb_text = fmt_age(hb_age) if hb_age is not None else "never"
+    status_sub = f"HALT: {halt_note}" if halted else f"Heartbeat {hb_text}"
     deploy_text = to_local(deploy_start_ts) if deploy_start_ts else "—"
     mode_text = "MAINNET" + (" 🔒" if mainnet_locked else "")
 
@@ -234,14 +274,14 @@ def render_html(db: dict, logs: list[dict]) -> str:
 </head>
 <body>
 
-<h1>snapback-btc — live dashboard</h1>
+<h1>snapback-btc — live dashboard <span style="opacity:.6;font-size:14px">[{html.escape(instance)}]</span></h1>
 <div class="sub">All timestamps shown in Bangkok time (GMT+7). Auto-refresh every 30s.</div>
 
 <div class="grid">
   <div class="card">
     <div class="lbl">Status</div>
     <div class="val"><span class="badge {status_class}">{status_label}</span></div>
-    <div class="sub" style="margin:6px 0 0">Heartbeat {hb_text}</div>
+    <div class="sub" style="margin:6px 0 0">{html.escape(status_sub)}</div>
   </div>
   <div class="card">
     <div class="lbl">Mode</div>
@@ -313,9 +353,15 @@ def render_html(db: dict, logs: list[dict]) -> str:
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser(description="Render a live-bot leg dashboard.")
+    ap.add_argument("--instance", default="v1", choices=list(INSTANCE_FILES),
+                    help="Which leg to render (picks its state.db/heartbeat/jsonl "
+                         "and its per-leg HALT flag). Default v1.")
+    args = ap.parse_args()
+    _apply_instance(args.instance)
     db = read_db()
     logs = read_log_tail(150)
-    html_out = render_html(db, logs)
+    html_out = render_html(db, logs, args.instance)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(html_out, encoding="utf-8")
     print(f"✓ wrote {OUT}")

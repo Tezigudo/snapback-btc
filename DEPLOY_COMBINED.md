@@ -210,9 +210,33 @@ To revert the config:
 git checkout HEAD~1 config/params.yaml config/params_donchian.yaml
 ```
 
+## Per-leg HALT cutover (feat/leg-isolation) — MANDATORY one-time deploy step
+
+The kill switch no longer touches the shared `data/HALT`. Each leg now self-halts
+to `data/HALT_<instance>` (`data/HALT_v1`, `data/HALT_donchian`,
+`data/HALT_cnh_short`). The shared `data/HALT` is now a GLOBAL manual stop-all only.
+
+**At deploy of this branch you MUST remove the stale shared HALT, or the cascade
+recurs on boot:**
+
+```bash
+# The 07-01 incident left a global data/HALT on the droplet. Under the new code
+# is_halted(instance) still honours the GLOBAL data/HALT, so if it is left in
+# place EVERY leg re-halts immediately on boot — exactly the cascade we fixed.
+ls -l /root/snapback-btc/data/HALT           # confirm the stale global flag
+rm /root/snapback-btc/data/HALT              # remove it at cutover
+# If one leg (e.g. cnh_short) should stay DOWN, self-halt only that leg instead:
+#   touch /root/snapback-btc/data/HALT_cnh_short
+```
+
+Anything that read `data/HALT` as "a leg died" (dashboards, `build_dashboard.py`)
+should move to the per-leg `data/HALT_<instance>` files. `is_halted()` with no
+instance still checks only the global flag (safe default for generic tools).
+
 ## Risk reminders
 
 - **Kill-switch is per-bot**. v1 at −35.5% halts ONLY v1. Donchian keeps trading on its own account. Intentional.
+- **Kill-switch is now self-scoped at the FILE level too**: a leg's kill switch writes `data/HALT_<instance>`, never the shared `data/HALT`, so one leg tripping can no longer cascade-halt its siblings (07-01 fix).
 - **First live trade is real money.** Watch the first entry from each bot for fill price, qty, SL/TP placement, clientOrderId tagging. If anything looks wrong, halt that bot and reconcile.
 - **Live diverges from backtest:** Donchian leg uses fixed 5×ATR TP rather than the backtest's Donchian channel-exit. The 14-day dry-run will show any drift.
 - **Don't manually intervene mid-trade.** If you close a position by hand on the exchange, the bot's state.db won't know — it'll think it has a position that no longer exists. Use `touch data/HALT` to stop the bot first, then close manually.

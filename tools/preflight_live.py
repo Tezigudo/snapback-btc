@@ -22,7 +22,7 @@ import sys
 
 from alerts import is_configured as alerts_configured
 from alerts import send_alert
-from bot import compute_qty, load_params
+from bot import INSTANCE_PROFILES, compute_qty, load_params
 from exchange.binance_client import BinanceClient
 from exchange.constraints import (
     DEFAULT_CONSTRAINTS,
@@ -30,7 +30,12 @@ from exchange.constraints import (
     passes_minimums,
     round_qty_down,
 )
-from exchange.env import get_api_credentials, get_env, is_halted
+from exchange.env import (
+    get_api_credentials,
+    get_env,
+    halt_source,
+    load_env_for_instance,
+)
 from risk import (
     CEILINGS,
     RiskBreach,
@@ -65,13 +70,31 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--send-test-email", action="store_true",
                     help="Actually send the SMTP test email (default just checks config).")
+    ap.add_argument("--instance", default="v1", choices=list(INSTANCE_PROFILES),
+                    help="Which leg to validate: loads its .env.<instance> overlay + "
+                         "config and checks its per-leg data/HALT_<instance>. Default v1.")
     args = ap.parse_args()
+    instance = args.instance
 
     failures: list[str] = []
     warnings: list[str] = []
 
     # 1. env + lockfile
     section("Environment")
+    # Overlay this leg's sub-account keys BEFORE any authenticated call, so we
+    # validate the SAME account the leg will trade (not v1's base .env). This is
+    # also fail-loud: a sub-account leg missing its .env.<instance> aborts here.
+    try:
+        instance_env = load_env_for_instance(instance)
+        if instance_env is not None:
+            ok(f"loaded per-instance env overlay: {instance_env.name}")
+        else:
+            ok(f"instance {instance!r} runs on the base .env (no overlay needed)")
+    except Exception as e:
+        fail(f"per-instance env load failed: {e}")
+        failures.append("instance env")
+        return _summarize(failures, warnings)
+
     try:
         env = get_env()
         ok(f"BINANCE_ENV={env}")
@@ -96,11 +119,19 @@ def main() -> int:
         failures.append("creds")
         return _summarize(failures, warnings)
 
-    if is_halted():
-        warn("data/HALT file exists — bot would refuse to enter. Remove before live.")
-        warnings.append("HALT file present")
+    # Per-leg HALT: the leg is halted by the GLOBAL data/HALT (stops every leg)
+    # OR its own data/HALT_<instance> (self-halt). Check the instance's view.
+    halt_by = halt_source(instance)
+    if halt_by == "global":
+        warn("GLOBAL data/HALT exists — stops ALL legs. Bot would flatten + "
+             "refuse to enter. Remove data/HALT before live.")
+        warnings.append("global HALT present")
+    elif halt_by is not None:
+        warn(f"self-halt data/HALT_{instance} exists — this leg would flatten + "
+             f"refuse to enter. Remove data/HALT_{instance} before live.")
+        warnings.append(f"HALT_{instance} present")
     else:
-        ok("No data/HALT file. Bot will run.")
+        ok(f"No data/HALT or data/HALT_{instance}. Bot will run.")
 
     # 2. SMTP
     section("Alerts (SMTP)")
@@ -126,7 +157,7 @@ def main() -> int:
         failures.append("ccxt client")
         return _summarize(failures, warnings)
 
-    params = load_params()
+    params = load_params(INSTANCE_PROFILES[instance]["config"])
     symbol = params["symbol"]
 
     try:

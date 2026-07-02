@@ -373,7 +373,9 @@ class TestBootOrphanSweep:
         mc.fetch_position.return_value = _flat()
         mc.cancel_open_orders.return_value = 1  # one orphan found
 
-        with _boot_patches(), self._state_patches():
+        with _boot_patches(), self._state_patches(), \
+             patch("bot.principal.initialize", MagicMock(return_value=None)), \
+             patch("bot.principal.get_principal", MagicMock(return_value=None)):
             bot.boot()
 
         mc.cancel_open_orders.assert_called_once_with(
@@ -385,7 +387,9 @@ class TestBootOrphanSweep:
         mc.fetch_equity_usdt.return_value = 1000.0
         mc.fetch_position.return_value = _flat()
 
-        with _boot_patches(), self._state_patches():
+        with _boot_patches(), self._state_patches(), \
+             patch("bot.principal.initialize", MagicMock(return_value=None)), \
+             patch("bot.principal.get_principal", MagicMock(return_value=None)):
             bot.boot()
 
         mc.cancel_open_orders.assert_not_called()
@@ -403,7 +407,9 @@ class TestBootOrphanSweep:
         mc.fetch_equity_usdt.return_value = 1000.0
         mc.fetch_position.return_value = _open()
 
-        with _boot_patches(), self._state_patches():
+        with _boot_patches(), self._state_patches(), \
+             patch("bot.principal.initialize", MagicMock(return_value=None)), \
+             patch("bot.principal.get_principal", MagicMock(return_value=None)):
             bot.boot()
 
         # The new flat-path else-branch must not run when a position is open.

@@ -149,6 +149,53 @@ class BinanceClient:
             usdt = bal.get("USDT", {})
             return float(usdt.get("total", 0.0) or 0.0)
 
+    def fetch_income(
+        self, start_ms: int, end_ms: int | None = None,
+        income_type: str | None = None,
+        page_limit: int = 1000, max_pages: int = 50,
+        caller_log: Any = None,
+    ) -> list[dict[str, Any]]:
+        """Read-only paginated GET /fapi/v1/income from start_ms (ascending).
+
+        Returns raw income rows (each has incomeType, income, asset, tranId,
+        time). Dedup/idempotency is the CALLER's job (by tranId) — this method
+        only reads. NEVER places, cancels, or modifies anything.
+
+        Used by the principal anchor (exchange/principal.py) to build P from
+        TRANSFER/DEPOSIT/WITHDRAW events. The time-cursor pagination is for
+        completeness of the fetch; same-ms boundary rows are re-covered on the
+        next overlapping call and de-duplicated by tranId in the ledger.
+
+        `caller_log`: when the page cap is hit (older rows TRUNCATED), the
+        warning is surfaced to this logger too — not just the module logger — so
+        a leg's own log/alerts pipeline sees a silent-transfer-drop risk. Pass
+        the bot's `log` here.
+        """
+        rows: list[dict[str, Any]] = []
+        cursor = int(start_ms)
+        for _ in range(max_pages):
+            params: dict[str, Any] = {"startTime": cursor, "limit": page_limit}
+            if end_ms is not None:
+                params["endTime"] = int(end_ms)
+            if income_type:
+                params["incomeType"] = income_type
+            page = self.ex.fapiPrivateGetIncome(params)
+            if not page:
+                break
+            rows.extend(page)
+            if len(page) < page_limit:
+                break
+            cursor = int(page[-1].get("time") or cursor) + 1
+        else:
+            (caller_log or log).warning(
+                "fetch_income hit the %d-page cap (%d rows) for incomeType=%s — "
+                "older principal rows may be TRUNCATED; a dropped TRANSFER would "
+                "understate deposited principal P. Raise max_pages or narrow the "
+                "window.",
+                max_pages, len(rows), income_type or "ALL",
+            )
+        return rows
+
     def fetch_position(self, symbol: str) -> Position:
         positions = self.ex.fetch_positions([symbol])
         for p in positions:
