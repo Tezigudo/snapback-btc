@@ -28,9 +28,12 @@ symbol: BTC/USDT:USDT
 #   "multifactor-v1" (default) — v1 RSI/vol/EMA/funding filters, fixed 1.5%/3% SL/TP.
 #   "v3-all-wider-4" — v3 ported: TA confirmations (trendline/SR/Fib) + dist-ema gate
 #                      + vol-regime gate + ATR-based stops (4×/8× ATR, k=4.0).
-#                      Best in extended walk-forward 2020-2026: 10/12 wins at 10bps
-#                      stress, 0/12 kill-switch hits. See EXTENDED_WALKFORWARD.html.
-#                      Switch ONLY after stopping bot cleanly + restarting in tmux.
+#                      ⚠ DO NOT SWITCH (corrected 2026-07-12): reports/
+#                      EXTENDED_WALKFORWARD.html actually shows wider-4 at
+#                      4/12 wins / −27.8% cumulative vs multifactor-v1's
+#                      8/12 / +88.1% at 5bps (worse at 10bps). "Best" only
+#                      ever meant best AMONG the v3 wider variants — all of
+#                      which lose to multifactor-v1. Kept for reference only.
 #                      Requires ~30 days of warm-up before vol-regime gate is valid.
 strategy_name: multifactor-v1
 
