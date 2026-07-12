@@ -1,6 +1,18 @@
 # Manual trading vs the bots — separation runbook
 
-Date: 2026-07-12 · Owner: God · Status: ACTION REQUIRED (one-time, ~10 min)
+Date: 2026-07-12 · Owner: God · Status: **DONE 2026-07-12** (inverted variant)
+
+> **Executed with the roles flipped:** instead of moving manual play off the
+> main account, the **v1 bot moved to its own new sub-account** and the main
+> account became the manual-trading account. Cutover 06:09 UTC: new key in
+> `.env.v1` (+ base `.env` rotated to the same sub-account key so the hourly
+> consolidate push follows the bot), old `state.db` archived at
+> `archive/state.db.v1-mainaccount.pre-migration-20260712`, fresh principal
+> P=$142.93 / kill floor $92.19. The transfer-while-running tripped a
+> false-positive kill switch (equity 0 vs stale principal) — expected,
+> HALT_v1 cleared during migration. Remaining: God deletes the old
+> main-account API key on Binance. The "standing rules" below still apply,
+> with v1/donchian sub-accounts as the protected zone.
 
 ## Why this exists
 
