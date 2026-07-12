@@ -2,7 +2,7 @@
 
 The breaker (risk.check_daily_loss + bot._daily_loss_blocks_entry) blocks NEW
 entries for the rest of the UTC day once intraday drawdown hits
-MAX_DAILY_LOSS_PCT (3.5% since 2026-07-12; one full 2.75%-risk SL no longer
+MAX_DAILY_LOSS_PCT (4.5% since 2026-07-12; one full 3.5%-risk SL no longer
 freezes the day). It is a tighter, daily-resetting sibling of the cumulative
 kill-switch (_check_kill_switch) and does NOT flatten or HALT.
 
@@ -154,7 +154,7 @@ def test_under_threshold_allows_entry(tmp: Path) -> None:
     with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
          patch.object(bot_mod, "datetime", fixed_dt):
         b._daily_anchor_equity(1000.0)
-        # -1.5% loss, under the 3.5% ceiling → not blocked.
+        # -1.5% loss, under the 4.5% ceiling → not blocked.
         assert b._daily_loss_blocks_entry(985.0) is False
         assert b._daily_loss_blocked is False
 
@@ -168,11 +168,11 @@ def test_over_threshold_blocks_and_logs_event_once(tmp: Path) -> None:
     with patch.object(bot_mod, "send_alert", lambda *a, **k: alerts.append(a)), \
          patch.object(bot_mod, "datetime", fixed_dt):
         b._daily_anchor_equity(1000.0)
-        # -4% loss → blocked (over the 3.5% ceiling).
-        assert b._daily_loss_blocks_entry(960.0) is True
+        # -5% loss → blocked (over the 4.5% ceiling).
+        assert b._daily_loss_blocks_entry(950.0) is True
         assert b._daily_loss_blocked is True
         # Still blocked on subsequent polls the same day...
-        assert b._daily_loss_blocks_entry(955.0) is True
+        assert b._daily_loss_blocks_entry(945.0) is True
         # ...but the event/alert fires only ONCE (latched).
         with sqlite3.connect(tmp) as c:
             n = c.execute(
@@ -191,11 +191,11 @@ def test_new_utc_day_reallows_after_block(tmp: Path) -> None:
     with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
          patch.object(bot_mod, "datetime", day1_dt):
         b._daily_anchor_equity(1000.0)
-        assert b._daily_loss_blocks_entry(960.0) is True  # -4% → blocked today
+        assert b._daily_loss_blocks_entry(950.0) is True  # -5% → blocked today
     # New UTC day → re-anchor to today's equity → fresh 0% loss → allowed.
     with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
          patch.object(bot_mod, "datetime", day2_dt):
-        assert b._daily_loss_blocks_entry(960.0) is False
+        assert b._daily_loss_blocks_entry(950.0) is False
         assert b._daily_loss_blocked is False
 
 
@@ -221,7 +221,7 @@ def test_breaker_does_not_re_emit_after_restart_same_day(tmp: Path) -> None:
         with patch.object(bot_mod, "send_alert", lambda *a, **k: alerts.append(a)), \
              patch.object(bot_mod, "datetime", fixed_dt):
             b._daily_anchor_equity(1000.0)
-            return b._daily_loss_blocks_entry(960.0)  # -4% → should block
+            return b._daily_loss_blocks_entry(950.0)  # -5% → should block
 
     # First run: breaker trips, event + alert emitted.
     blocked = run_bot()
@@ -263,7 +263,7 @@ def test_breaker_emits_again_on_next_utc_day_after_restart(tmp: Path) -> None:
         with patch.object(bot_mod, "send_alert", lambda *a, **k: alerts.append(a)), \
              patch.object(bot_mod, "datetime", fixed_dt):
             b._daily_anchor_equity(1000.0)
-            return b._daily_loss_blocks_entry(960.0)
+            return b._daily_loss_blocks_entry(950.0)
 
     # Day 1: breaker trips.
     run_bot(day1_dt)
@@ -354,13 +354,13 @@ def test_intraday_deposit_does_not_mask_real_loss(tmp: Path) -> None:
     with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
          patch.object(bot_mod, "datetime", fixed_dt):
         b._daily_anchor_equity(1000.0)          # baseline ledger sum = 0
-        # Trading lost 4.5% (1000 -> 955); THEN a $100 deposit is reconciled,
-        # lifting raw equity to 1055 (ABOVE the raw 1000 anchor).
+        # Trading lost 5.5% (1000 -> 945); THEN a $100 deposit is reconciled,
+        # lifting raw equity to 1045 (ABOVE the raw 1000 anchor).
         _reconcile_transfer(100.0, tran_id=2)
-        # Raw anchor would report +5.5% and ALLOW entries (masking the loss).
-        # Book anchor = 1000 + 100 = 1100; (1100-1055)/1100 = 4.1% -> blocked.
-        assert b._daily_book_anchor(1055.0) == 1100.0
-        assert b._daily_loss_blocks_entry(1055.0) is True   # latch starts False
+        # Raw anchor would report +4.5% and ALLOW entries (masking the loss).
+        # Book anchor = 1000 + 100 = 1100; (1100-1045)/1100 = 5.0% -> blocked.
+        assert b._daily_book_anchor(1045.0) == 1100.0
+        assert b._daily_loss_blocks_entry(1045.0) is True   # latch starts False
         assert b._daily_loss_blocked is True
 
 
@@ -377,7 +377,7 @@ def test_book_anchor_resets_at_midnight_ignoring_prior_day_transfer(tmp: Path) -
          patch.object(bot_mod, "datetime", day1):
         b._daily_anchor_equity(1000.0)
         _reconcile_transfer(100.0, tran_id=3)   # a deposit happened on day 1
-        assert b._daily_loss_blocks_entry(1055.0) is True   # 4.1% book loss -> blocked
+        assert b._daily_loss_blocks_entry(1045.0) is True   # 5.0% book loss -> blocked
     # New UTC day: anchor + principal baseline BOTH re-snapshot to today.
     with patch.object(bot_mod, "send_alert", lambda *a, **k: None), \
          patch.object(bot_mod, "datetime", day2):
@@ -386,8 +386,8 @@ def test_book_anchor_resets_at_midnight_ignoring_prior_day_transfer(tmp: Path) -
         assert b._daily_book_anchor(1100.0) == 1100.0
         assert b._daily_loss_blocks_entry(1100.0) is False  # fresh 0% day -> allowed
         assert b._daily_loss_blocked is False
-        # A fresh 4% trading loss on day 2 still blocks (baseline uninflated).
-        assert b._daily_loss_blocks_entry(1056.0) is True
+        # A fresh 5% trading loss on day 2 still blocks (baseline uninflated).
+        assert b._daily_loss_blocks_entry(1045.0) is True
 
 
 # (d) The breaker is block-ONLY: it must NEVER write a per-leg or global HALT,
@@ -437,9 +437,9 @@ def test_legacy_anchor_without_principal_baseline_seeds_safely(tmp: Path) -> Non
         # yielding a zero delta -> book anchor == raw anchor.
         assert b._daily_book_anchor(1000.0) == 1000.0
         assert float(state.get_meta("daily_anchor_principal_sum")) == 800.0
-        # A real 4% loss then still blocks: the 800 pre-existing principal did
+        # A real 5% loss then still blocks: the 800 pre-existing principal did
         # NOT inflate the baseline.
-        assert b._daily_loss_blocks_entry(960.0) is True
+        assert b._daily_loss_blocks_entry(950.0) is True
 
 
 # (cold-start) The breaker is INACTIVE until Part C's principal ledger is
@@ -469,5 +469,5 @@ def test_breaker_inactive_until_principal_initialised(tmp: Path) -> None:
         # baseline (not read as an intraday deposit) → a flat day is allowed...
         assert b._daily_loss_blocks_entry(1000.0) is False
         assert float(state.get_meta("daily_anchor_principal_sum")) == 130.0
-        # ...and a genuine 4% trading loss still blocks.
-        assert b._daily_loss_blocks_entry(960.0) is True
+        # ...and a genuine 5% trading loss still blocks.
+        assert b._daily_loss_blocks_entry(950.0) is True

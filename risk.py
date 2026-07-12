@@ -29,11 +29,13 @@ class RiskCeilings:
     # flatten or HALT — open positions keep their exchange-native brackets, and
     # the daily anchor resets at the next UTC midnight. The tighter,
     # daily-resetting sibling of the cumulative kill-switch.
-    # Raised 2.0 → 3.5 on 2026-07-12 (RISK_REVIEW, user-approved): sizing risks
-    # 2.75% of equity per trade, so at 2.0 a single full stop-loss froze the leg
-    # for the rest of the day — a halt no backtest models. 3.5 tolerates exactly
-    # one full SL (2.75% + slippage) and still halts before a second.
-    MAX_DAILY_LOSS_PCT: float = 3.5
+    # Raised 2.0 → 3.5 → 4.5 on 2026-07-12 (RISK_REVIEW, user-approved): the
+    # breaker must exceed one full stop-loss or a single normal SL freezes the
+    # leg for the rest of the UTC day — a halt no backtest models. Moves in
+    # lockstep with sizing risk_per_trade_pct (now 3.5% per the sizing sweep,
+    # reports/sizing_sweep_2026.json): 4.5 tolerates exactly one full SL
+    # (3.5% + slippage) and still halts before a second consecutive one.
+    MAX_DAILY_LOSS_PCT: float = 4.5
 
     # Single-symbol simplicity for v1.
     MAX_OPEN_POSITIONS: int = 1
