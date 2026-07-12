@@ -53,9 +53,15 @@ strategy:
   volume_multiple: 2.0
 
   # Funding-rate sentiment gate (refuse crowded trade direction).
-  # Funding > +0.05% per 8h = extremely long-crowded → block new longs.
-  # Funding < -0.05% per 8h = extremely short-crowded → block new shorts.
-  funding_extreme_threshold: 0.0005
+  # Funding > +0.15% per 8h = extremely long-crowded → block new longs.
+  # Funding < -0.15% per 8h = extremely short-crowded → block new shorts.
+  # Relaxed 0.0005 → 0.0015 on 2026-07-12 per MULTIFACTOR_V1_DEEPENING.md rec #2,
+  # re-validated on the deployed 4H-gated geometry across the 5 OOS windows
+  # (reports/fundrelax_0015_validation.json): +77.93%/5-5/PSR 0.9969 →
+  # +81.94%/4-5/PSR 0.9922, both evidence_of_edge. At 0.0015 no in-sample
+  # signal is blocked (identical to no_funding); the gate remains as tail
+  # protection for true 2021-style squeeze regimes only.
+  funding_extreme_threshold: 0.0015
   require_funding_not_extreme: true
 
   # Snapback-v1 funding fields (unused by multifactor-v1; kept for YAML loader compat).
