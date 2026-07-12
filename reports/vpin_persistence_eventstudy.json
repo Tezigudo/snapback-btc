@@ -1,0 +1,76 @@
+{
+  "construction": "V* monthly trailing-30d/50, VPIN N=50, p90 trailing 1500 buckets",
+  "study_window": "2022-01-01 .. 2026-06-02",
+  "arms": {
+    "K3_persistence": {
+      "n_events_total": 556,
+      "ungated_r4": {
+        "n": 556,
+        "gross_mean_bps": -6.06,
+        "t_stat": -1.1,
+        "win_rate_pct": 48.7,
+        "net_mean_bps_at_15bps": -21.06,
+        "events_per_year": 126.0
+      },
+      "ungated_r8": {
+        "n": 556,
+        "gross_mean_bps": -6.17,
+        "t_stat": -0.8,
+        "win_rate_pct": 47.5,
+        "net_mean_bps_at_15bps": -21.17,
+        "events_per_year": 126.0
+      },
+      "htf_gated_r4": {
+        "n": 272,
+        "gross_mean_bps": -7.65,
+        "t_stat": -0.9,
+        "win_rate_pct": 48.5,
+        "net_mean_bps_at_15bps": -22.65,
+        "events_per_year": 61.6
+      },
+      "htf_gated_r8": {
+        "n": 272,
+        "gross_mean_bps": -2.74,
+        "t_stat": -0.24,
+        "win_rate_pct": 48.5,
+        "net_mean_bps_at_15bps": -17.74,
+        "events_per_year": 61.6
+      }
+    },
+    "K1_refutation": {
+      "n_events_total": 866,
+      "ungated_r4": {
+        "n": 866,
+        "gross_mean_bps": 0.02,
+        "t_stat": 0.0,
+        "win_rate_pct": 47.9,
+        "net_mean_bps_at_15bps": -14.98,
+        "events_per_year": 196.2
+      },
+      "ungated_r8": {
+        "n": 866,
+        "gross_mean_bps": 6.11,
+        "t_stat": 1.02,
+        "win_rate_pct": 48.7,
+        "net_mean_bps_at_15bps": -8.89,
+        "events_per_year": 196.2
+      },
+      "htf_gated_r4": {
+        "n": 437,
+        "gross_mean_bps": -4.31,
+        "t_stat": -0.65,
+        "win_rate_pct": 45.1,
+        "net_mean_bps_at_15bps": -19.31,
+        "events_per_year": 99.0
+      },
+      "htf_gated_r8": {
+        "n": 437,
+        "gross_mean_bps": 6.01,
+        "t_stat": 0.67,
+        "win_rate_pct": 48.1,
+        "net_mean_bps_at_15bps": -8.99,
+        "events_per_year": 99.0
+      }
+    }
+  }
+}
