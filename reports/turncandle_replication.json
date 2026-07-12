@@ -1,0 +1,156 @@
+{
+  "construction": "dir=sign(prev 15m c-o), hold=1 bar",
+  "windows": {
+    "paper_era": {
+      "min_0": {
+        "n": 23353,
+        "gross_mean_bps": -0.592,
+        "t_stat": -2.04,
+        "win_rate_pct": 45.75,
+        "sharpe_ann_gross": -1.25,
+        "net_mean_bps_at_5bps": -5.592,
+        "net_mean_bps_at_10bps": -10.592,
+        "net_mean_bps_at_15bps": -15.592,
+        "net_mean_bps_at_20bps": -20.592
+      },
+      "min_15": {
+        "n": 23352,
+        "gross_mean_bps": -1.515,
+        "t_stat": -5.49,
+        "win_rate_pct": 46.3,
+        "sharpe_ann_gross": -3.362,
+        "net_mean_bps_at_5bps": -6.515,
+        "net_mean_bps_at_10bps": -11.515,
+        "net_mean_bps_at_15bps": -16.515,
+        "net_mean_bps_at_20bps": -21.515
+      },
+      "min_30": {
+        "n": 23352,
+        "gross_mean_bps": 1.294,
+        "t_stat": 4.34,
+        "win_rate_pct": 48.3,
+        "sharpe_ann_gross": 2.661,
+        "net_mean_bps_at_5bps": -3.706,
+        "net_mean_bps_at_10bps": -8.706,
+        "net_mean_bps_at_15bps": -13.706,
+        "net_mean_bps_at_20bps": -18.706
+      },
+      "min_45": {
+        "n": 23352,
+        "gross_mean_bps": 0.758,
+        "t_stat": 2.81,
+        "win_rate_pct": 48.89,
+        "sharpe_ann_gross": 1.72,
+        "net_mean_bps_at_5bps": -4.242,
+        "net_mean_bps_at_10bps": -9.242,
+        "net_mean_bps_at_15bps": -14.242,
+        "net_mean_bps_at_20bps": -19.242
+      },
+      "all_turns": {
+        "n": 93409,
+        "gross_mean_bps": -0.014,
+        "t_stat": -0.1,
+        "win_rate_pct": 47.31,
+        "sharpe_ann_gross": -0.059,
+        "net_mean_bps_at_5bps": -5.014,
+        "net_mean_bps_at_10bps": -10.014,
+        "net_mean_bps_at_15bps": -15.014,
+        "net_mean_bps_at_20bps": -20.014
+      }
+    },
+    "post_pub": {
+      "min_0": {
+        "n": 29953,
+        "gross_mean_bps": -0.544,
+        "t_stat": -3.67,
+        "win_rate_pct": 46.26,
+        "sharpe_ann_gross": -1.984,
+        "net_mean_bps_at_5bps": -5.544,
+        "net_mean_bps_at_10bps": -10.544,
+        "net_mean_bps_at_15bps": -15.544,
+        "net_mean_bps_at_20bps": -20.544
+      },
+      "min_15": {
+        "n": 29952,
+        "gross_mean_bps": -0.609,
+        "t_stat": -4.21,
+        "win_rate_pct": 47.34,
+        "sharpe_ann_gross": -2.278,
+        "net_mean_bps_at_5bps": -5.609,
+        "net_mean_bps_at_10bps": -10.609,
+        "net_mean_bps_at_15bps": -15.609,
+        "net_mean_bps_at_20bps": -20.609
+      },
+      "min_30": {
+        "n": 29952,
+        "gross_mean_bps": -0.012,
+        "t_stat": -0.08,
+        "win_rate_pct": 48.07,
+        "sharpe_ann_gross": -0.043,
+        "net_mean_bps_at_5bps": -5.012,
+        "net_mean_bps_at_10bps": -10.012,
+        "net_mean_bps_at_15bps": -15.012,
+        "net_mean_bps_at_20bps": -20.012
+      },
+      "min_45": {
+        "n": 29952,
+        "gross_mean_bps": 0.305,
+        "t_stat": 2.21,
+        "win_rate_pct": 48.18,
+        "sharpe_ann_gross": 1.195,
+        "net_mean_bps_at_5bps": -4.695,
+        "net_mean_bps_at_10bps": -9.695,
+        "net_mean_bps_at_15bps": -14.695,
+        "net_mean_bps_at_20bps": -19.695
+      },
+      "all_turns": {
+        "n": 119809,
+        "gross_mean_bps": -0.215,
+        "t_stat": -2.94,
+        "win_rate_pct": 47.46,
+        "sharpe_ann_gross": -1.588,
+        "net_mean_bps_at_5bps": -5.215,
+        "net_mean_bps_at_10bps": -10.215,
+        "net_mean_bps_at_15bps": -15.215,
+        "net_mean_bps_at_20bps": -20.215
+      }
+    }
+  },
+  "min0_decay_by_year": {
+    "2020": {
+      "n": 8784,
+      "gross_mean_bps": -1.764,
+      "t_stat": -3.99
+    },
+    "2021": {
+      "n": 8760,
+      "gross_mean_bps": -0.112,
+      "t_stat": -0.2
+    },
+    "2022": {
+      "n": 8760,
+      "gross_mean_bps": 0.277,
+      "t_stat": 0.76
+    },
+    "2023": {
+      "n": 8760,
+      "gross_mean_bps": -0.062,
+      "t_stat": -0.26
+    },
+    "2024": {
+      "n": 8784,
+      "gross_mean_bps": -1.211,
+      "t_stat": -3.81
+    },
+    "2025": {
+      "n": 8760,
+      "gross_mean_bps": -0.758,
+      "t_stat": -2.97
+    },
+    "2026": {
+      "n": 3663,
+      "gross_mean_bps": 0.46,
+      "t_stat": 1.02
+    }
+  }
+}
