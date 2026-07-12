@@ -1,0 +1,190 @@
+{
+  "protocol": "locked cfg + 4H gate (SOL parquet), no funding col",
+  "commission_note": "per-side",
+  "walk_forward": {
+    "quarters": [
+      {
+        "q": "2021Q1",
+        "trades": 23,
+        "return_pct": -25.32,
+        "max_dd_pct": -25.62
+      },
+      {
+        "q": "2021Q2",
+        "trades": 3,
+        "return_pct": -5.38,
+        "max_dd_pct": -6.19
+      },
+      {
+        "q": "2021Q3",
+        "trades": 20,
+        "return_pct": 12.24,
+        "max_dd_pct": -13.46
+      },
+      {
+        "q": "2021Q4",
+        "trades": 8,
+        "return_pct": 8.02,
+        "max_dd_pct": -6.69
+      },
+      {
+        "q": "2022Q1",
+        "trades": 8,
+        "return_pct": 10.29,
+        "max_dd_pct": -7.88
+      },
+      {
+        "q": "2022Q2",
+        "trades": 2,
+        "return_pct": -4.49,
+        "max_dd_pct": -4.71
+      },
+      {
+        "q": "2022Q3",
+        "trades": 7,
+        "return_pct": -0.26,
+        "max_dd_pct": -5.95
+      },
+      {
+        "q": "2022Q4",
+        "trades": 8,
+        "return_pct": -8.04,
+        "max_dd_pct": -15.13
+      },
+      {
+        "q": "2023Q1",
+        "trades": 11,
+        "return_pct": 22.59,
+        "max_dd_pct": -7.92
+      },
+      {
+        "q": "2023Q2",
+        "trades": 10,
+        "return_pct": -7.53,
+        "max_dd_pct": -19.4
+      },
+      {
+        "q": "2023Q3",
+        "trades": 4,
+        "return_pct": -1.62,
+        "max_dd_pct": -6.96
+      },
+      {
+        "q": "2023Q4",
+        "trades": 20,
+        "return_pct": 7.61,
+        "max_dd_pct": -12.25
+      },
+      {
+        "q": "2024Q1",
+        "trades": 13,
+        "return_pct": 23.35,
+        "max_dd_pct": -6.95
+      },
+      {
+        "q": "2024Q2",
+        "trades": 5,
+        "return_pct": -3.21,
+        "max_dd_pct": -9.15
+      },
+      {
+        "q": "2024Q3",
+        "trades": 12,
+        "return_pct": -8.59,
+        "max_dd_pct": -14.83
+      },
+      {
+        "q": "2024Q4",
+        "trades": 14,
+        "return_pct": 11.21,
+        "max_dd_pct": -8.82
+      },
+      {
+        "q": "2025Q1",
+        "trades": 6,
+        "return_pct": 4.13,
+        "max_dd_pct": -4.82
+      },
+      {
+        "q": "2025Q2",
+        "trades": 10,
+        "return_pct": -3.7,
+        "max_dd_pct": -8.64
+      },
+      {
+        "q": "2025Q3",
+        "trades": 13,
+        "return_pct": -8.65,
+        "max_dd_pct": -14.72
+      },
+      {
+        "q": "2025Q4",
+        "trades": 5,
+        "return_pct": 6.2,
+        "max_dd_pct": -4.9
+      },
+      {
+        "q": "2026Q1",
+        "trades": 6,
+        "return_pct": 17.49,
+        "max_dd_pct": -4.43
+      }
+    ],
+    "n_quarters": 21,
+    "n_sufficient": 20,
+    "n_positive_sufficient": 10,
+    "pct_positive_sufficient": 50.0,
+    "gate_70pct": false,
+    "worst_quarter": {
+      "q": "2021Q1",
+      "trades": 23,
+      "return_pct": -25.32,
+      "max_dd_pct": -25.62
+    }
+  },
+  "cost_stress": {
+    "5bps": {
+      "compounded_pct": 41.9322,
+      "windows_positive": "5/5",
+      "n_trades": 92,
+      "per_window": [
+        2.263,
+        14.3683,
+        19.3798,
+        1.3734,
+        0.2771
+      ],
+      "psr_wf": 0.9992,
+      "interpretation": "evidence_of_edge"
+    },
+    "10bps": {
+      "compounded_pct": 19.9443,
+      "windows_positive": "3/5",
+      "n_trades": 92,
+      "per_window": [
+        0.2274,
+        10.069,
+        15.5229,
+        -3.3504,
+        -2.6221
+      ],
+      "psr_wf": 0.8781,
+      "interpretation": "insufficient_evidence"
+    },
+    "15bps": {
+      "compounded_pct": 1.3317,
+      "windows_positive": "2/5",
+      "n_trades": 92,
+      "per_window": [
+        -1.7712,
+        5.9239,
+        11.784,
+        -7.8621,
+        -5.4427
+      ],
+      "psr_wf": 0.5522,
+      "interpretation": "insufficient_evidence"
+    }
+  },
+  "verdict": "SHELF"
+}
