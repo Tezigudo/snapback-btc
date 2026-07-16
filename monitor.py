@@ -63,7 +63,10 @@ DEFAULTS: dict[str, Any] = {
 LEGS: list[dict[str, str]] = [
     {"name": "v1",         "heartbeat": "heartbeat",            "log": "bot.jsonl",        "state": "state.db",            "systemd": "snapback-btc",                   "live": True},
     {"name": "donchian",   "heartbeat": "heartbeat_donchian",   "log": "donchian.jsonl",   "state": "state_donchian.db",   "systemd": "snapback-btc-donchian",          "live": False},
-    {"name": "cnh_short",  "heartbeat": "heartbeat_cnh_short",  "log": "cnh_short.jsonl",  "state": "state_cnh_short.db",  "systemd": "snapback-btc-cnh-hybrid-short",  "live": False},
+    # cnh_short retired 2026-07-12 (archive/cnh_short_retired_20260712). Its
+    # permanent DOWN/STALE alerts every 5 min were failing sends that kept the
+    # MailerSend account paused for "high API error rate" — do not re-add a
+    # leg here unless its systemd unit actually runs.
 ]
 
 
