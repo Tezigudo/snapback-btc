@@ -28,7 +28,11 @@ strategy:
   donchian_period_exit: 20    # cons params (20-bar exit channel)
 
   # Directional regime gate — block longs in downtrend, shorts in uptrend.
-  # 0.03 = require EMA-slope > +3% (long) or < -3% (short).
+  # Units are PERCENT-PER-BAR of EMA(120) endpoint-difference over the slope
+  # window (backtest semantics, regime_classifier.ema_slope_signed): 0.03 =
+  # +0.03%/bar ≈ +0.9% EMA move across the 30-bar window (long side; short
+  # mirrors negative). NOT "+3% over the window" — that was the old live
+  # formula's pre-10adaef semantics.
   regime_ema_period: 120
   regime_slope_window: 30
   slope_trend_threshold_pct: 0.03
