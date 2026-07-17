@@ -48,9 +48,13 @@ strategy:
   ema_period: 200               # kept for backtest-prep warm-up sizing
   mf_trend_ema_period: 200
 
-  # Volume confirmation: current vol > 2.0 * 20-bar SMA
+  # Volume confirmation: current vol > 1.5 * 20-bar SMA
+  # Lowered from 2.0 (2026-07-16 frequency sweep, PR #5): the whole 1.0-1.75x
+  # band beat the 2.0 baseline OOS — plateau pick, not peak-chasing — and the
+  # 4H regime gate now does the low-volume regime filtering that 2.0 was
+  # originally protecting against. Full metrics + fee-stress in PR #5.
   volume_ma_period: 20
-  volume_multiple: 2.0
+  volume_multiple: 1.5
 
   # Funding-rate sentiment gate (refuse crowded trade direction).
   # Funding > +0.05% per 8h = extremely long-crowded → block new longs.
