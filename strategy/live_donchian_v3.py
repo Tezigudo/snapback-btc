@@ -45,25 +45,36 @@ SLOPE_TREND_THRESHOLD_PCT = 0.03
 def _ema_slope_signed(close: pd.Series, ema_period: int, slope_window: int) -> float:
     """Mirror of strategy.regime_classifier.ema_slope_signed at the last bar.
 
-    Returns the linear-regression slope of EMA(close, ema_period) over the
-    last `slope_window` points, as a fraction of the EMA mid-value
-    (positive = uptrend, negative = downtrend).
+    Byte-for-byte port of the backtest formula evaluated on the last bar:
+
+        ema = close.ewm(span=ema_period, adjust=False).mean()
+        slope_per_bar = (ema[-1] - ema[-1 - slope_window]) / slope_window
+        signed_pct    = (slope_per_bar / close[-1]) * 100.0
+
+    i.e. the signed EMA endpoint-difference per bar, divided by the CURRENT
+    close (not the EMA window mean), expressed in percent-per-bar. Positive =
+    uptrend, negative = downtrend. The gate compares this against
+    `slope_trend_threshold_pct` (live config = 0.03), so units must be
+    percent-per-bar to match the backtest's directional gate exactly.
+
+    NOTE on EWM seeding: the live bot feeds ~1500 4h bars (bot.py fetch_ohlcv
+    limit=1500), well past the ~400-bar (1-alpha)^n seed-decay horizon for
+    ema_period=120, so the last-bar EMA matches the backtest's full-history
+    EMA at the same timestamp. The `ema()` helper uses the identical
+    ewm(span=..., adjust=False) recursion; min_periods only affects head NaNs.
     """
     e = ema(close, ema_period)
     if len(e) < slope_window + 1:
         return float("nan")
-    window = e.iloc[-slope_window:].values
-    if not np.all(np.isfinite(window)):
+    ema_last = float(e.iloc[-1])
+    ema_prev = float(e.iloc[-1 - slope_window])
+    if not (np.isfinite(ema_last) and np.isfinite(ema_prev)):
         return float("nan")
-    x = np.arange(slope_window, dtype=float)
-    slope = np.polyfit(x, window, 1)[0]   # absolute slope per bar
-    mid = float(np.mean(window))
-    if mid <= 0:
+    cur_close = float(close.iloc[-1])
+    if cur_close <= 0:
         return float("nan")
-    # Normalised to % of mid level, multiplied by the window length so
-    # threshold has the same meaning as the backtest's directional gate
-    # (where slope_trend_threshold_pct is % over the whole window).
-    return float(slope * slope_window / mid)
+    slope_per_bar = (ema_last - ema_prev) / slope_window
+    return (slope_per_bar / cur_close) * 100.0
 
 
 def evaluate_signal_donchian_v3(
