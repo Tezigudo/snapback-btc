@@ -297,7 +297,9 @@ class BinanceClient:
     ) -> dict[str, Any]:
         """Place market entry + stop-market SL (+ optional take-profit-market TP).
 
-        Returns {"entry": order, "sl": order, "tp": order}.
+        Returns {"entry": order, "sl": order, "tp": order | None} — `tp` is
+        None when place_tp=False (channel-exit strategies manage the profit
+        side themselves).
         Brackets are reduce-only and trigger off mark price.
 
         place_tp=False places entry + SL ONLY and returns "tp": None — for
