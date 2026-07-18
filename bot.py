@@ -799,9 +799,11 @@ class Bot:
             # Evaluate CLOSED bars only. Binance returns the still-forming
             # current bar as the last row; the backtest only ever sees closed
             # bars, so drop it here to keep the channel-exit decision in parity.
+            # No extra length precheck: channel_exit_signal carries the
+            # backtest's own warmup/NaN guard (max(entry, exit, atr)+1 bars),
+            # and suppressing an EXIT on a short fetch is worse than checking
+            # (Sourcery, PR #7).
             df = df.iloc[:-1]
-            if len(df) < 250:
-                return
             should_exit, dbg = channel_exit_signal(df, pos.side, self.params)
             if not should_exit:
                 return
