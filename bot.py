@@ -52,10 +52,12 @@ import yaml
 from alerts import send_alert
 from bot_internals import (
     SignalDecision,
+    channel_exit_signal,
     evaluate_for_strategy,
     gate_status,
     limit_entry_price,
     resolve_strategy_name,
+    strategy_uses_channel_exit,
 )
 from exchange import state, trade_events
 from exchange.binance_client import BinanceClient
@@ -584,6 +586,11 @@ class Bot:
         except Exception:
             self.log.exception("pre-entry cancel_open_orders failed (continuing)")
 
+        # Channel-exit strategies (donchian-v3) place entry + SL ONLY — the
+        # live Donchian channel cross (see _maybe_channel_exit) closes the
+        # trade, so there is no TP leg. Every other strategy keeps its TP.
+        place_tp = not strategy_uses_channel_exit(self.strategy_name)
+
         if self.order_type == "limit":
             limit_price = limit_entry_price(
                 decision.side, decision.price, self.limit_offset_bps)
@@ -592,6 +599,7 @@ class Bot:
                 sl_distance=decision.sl_distance, tp_distance=decision.tp_distance,
                 timeout_s=self.limit_timeout_s,
                 client_order_id_root=signal_id,
+                place_tp=place_tp,
             )
             trade_events.record_limit_entry(
                 side=decision.side,
@@ -613,6 +621,7 @@ class Bot:
             self.symbol, decision.side, qty,
             decision.sl_price, decision.tp_price,
             client_order_id_root=signal_id,
+            place_tp=place_tp,
         )
         trade_events.record_market_entry(
             side=decision.side, qty=qty, price=decision.price,
@@ -766,6 +775,68 @@ class Bot:
         except Exception as e:
             self.log.warning("time-stop check failed: %s", e)
 
+    def _maybe_channel_exit(self, equity: float) -> None:
+        """Donchian-v3 real exit: close an open position when the last CLOSED
+        4h bar crosses the opposite Donchian exit channel (10-bar). This is the
+        strategy's actual profit-taking mechanism — the entry places NO TP leg.
+
+        Strategy-gated: a no-op for every other leg (v1/multifactor, cnh,
+        v3all), which keep their TP brackets and never reach this code.
+
+        Structurally mirrors _maybe_time_stop: fetch position, evaluate, and on
+        a trigger close reduce-only (COID-tagged, close_leg='ce'), record the
+        fill with reason='channel_exit', enqueue the exit event, alert. The
+        surviving SL sibling is swept by close_position's own COID-scoped
+        cancel_open_orders before the reduce-only close is placed.
+        """
+        if not strategy_uses_channel_exit(self.strategy_name):
+            return
+        try:
+            pos = self.client.fetch_position(self.symbol)
+            if pos.side == "flat":
+                return
+            df = self.client.fetch_ohlcv(self.symbol, self.entry_tf, limit=1500)
+            # Evaluate CLOSED bars only. Binance returns the still-forming
+            # current bar as the last row; the backtest only ever sees closed
+            # bars, so drop it here to keep the channel-exit decision in parity.
+            # No extra length precheck: channel_exit_signal carries the
+            # backtest's own warmup/NaN guard (max(entry, exit, atr)+1 bars),
+            # and suppressing an EXIT on a short fetch is worse than checking
+            # (Sourcery, PR #7).
+            df = df.iloc[:-1]
+            should_exit, dbg = channel_exit_signal(df, pos.side, self.params)
+            if not should_exit:
+                return
+            if self.dry_run:
+                self.log.info("DRY-RUN: would channel-exit close %s %.4f BTC (%s)",
+                              pos.side, pos.qty, dbg.get("reason"))
+                return
+            root = state.latest_entry_coid_root()
+            self.log.info("Channel-exit firing: closing %s (root=%s) close=%.2f "
+                          "exit_lower=%.2f exit_upper=%.2f",
+                          pos.side, root or "—", dbg.get("cur_close", float("nan")),
+                          dbg.get("exit_lower", float("nan")),
+                          dbg.get("exit_upper", float("nan")))
+            self.client.close_position(self.symbol,
+                                       client_order_id_root=root, close_leg="ce")
+            state.record_fill(side="close", qty=pos.qty, price=0.0,
+                              reason="channel_exit", equity_after=equity,
+                              client_order_id_root=root)
+            state.enqueue_bot_event(
+                "exit", signal_id=root, side=pos.side, qty=float(pos.qty),
+                equity_usd=float(equity),
+                payload={"reason": "channel_exit",
+                         "cur_close": dbg.get("cur_close"),
+                         "exit_lower": dbg.get("exit_lower"),
+                         "exit_upper": dbg.get("exit_upper")},
+            )
+            send_alert("Bot channel-exit close",
+                       f"Closed {pos.side} {pos.qty:.4f} BTC on Donchian channel "
+                       f"cross. Equity: {equity:.2f}\n"
+                       f"signal_id: {root or '(untagged)'}")
+        except Exception as e:
+            self.log.warning("channel-exit check failed: %s", e)
+
     def loop(self) -> int:
         self.log.info("Bot loop started. poll=%.1fs symbol=%s", self.poll_s, self.symbol)
         backoff_s = self.poll_s
@@ -807,6 +878,7 @@ class Bot:
 
                 self._detect_bracket_exit(equity)
                 self._maybe_time_stop(equity)
+                self._maybe_channel_exit(equity)
                 self._maybe_enter(equity)
                 self._maybe_push_consolidate(equity)
                 backoff_s = self.poll_s

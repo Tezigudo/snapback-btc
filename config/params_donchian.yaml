@@ -13,7 +13,7 @@
 symbol: BTC/USDT:USDT
 
 # Donchian-v3 cons strategy (resurrected from git bf4a9dc on 2026-05-23).
-# 80/20 channel + slope-gate ON @ 3% + ATR-SL 1.5× + time-stop 48 bars on 4h.
+# 80/10 channel + slope-gate ON @ 3% + ATR-SL 1.5× + time-stop 48 bars on 4h.
 # Backtest evidence: realistic sim 2019-09 → 2026-05 at $50.50 base
 # → $675 final, Sharpe 0.86, 99.4% fire rate of 177 signals.
 strategy_name: donchian-v3
@@ -24,8 +24,13 @@ timeframes:
 
 strategy:
   # Donchian channels (Turtle-style breakout) — read by strategy/live_donchian_v3.py
+  # The live bot now EXITS on the real Donchian channel cross (long closes when
+  # a closed 4h bar prints below the exit-channel low, short above the high) —
+  # entry places entry+SL only, NO TP leg. Validated 2026-07-16 sweep: the
+  # 80/10 geometry beats the old 80/20 on every dimension (+31pp OOS, +18%
+  # trades/yr, better DD). See bot._maybe_channel_exit + channel_exit_signal.
   donchian_period_entry: 80   # cons params (80-bar entry channel)
-  donchian_period_exit: 20    # cons params (20-bar exit channel)
+  donchian_period_exit: 10    # validated exit channel (was 20; live channel cross)
 
   # Directional regime gate — block longs in downtrend, shorts in uptrend.
   # Units are PERCENT-PER-BAR of EMA(120) endpoint-difference over the slope
@@ -37,10 +42,10 @@ strategy:
   regime_slope_window: 30
   slope_trend_threshold_pct: 0.03
 
-  # ATR-based stop-loss (no TP — let Donchian channel exit close the trade)
+  # ATR-based stop-loss (no TP — the Donchian channel exit closes the trade)
   atr_period: 20              # ATR(20) on 4h
   atr_sl_multiple: 1.5        # SL distance = 1.5 × ATR
-  atr_tp_multiple: 1.5        # kept for compat; not used by Donchian
+  atr_tp_multiple: 1.5        # unused by Donchian — entry places NO TP leg
   atr_trail_multiple: 0.0     # 0 = no trailing stop (cons params disabled it)
 
   # Time stop — flatten after 48 bars (8 days on 4h) if neither SL nor channel-exit fires
