@@ -74,6 +74,59 @@ def sma(series: pd.Series, period: int) -> pd.Series:
     return series.rolling(window=period, min_periods=period).mean()
 
 
+def bollinger_bands(
+    close: pd.Series,
+    period: int = 20,
+    n_std: float = 2.0,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Bollinger Bands. Returns (upper, mid, lower).
+
+    mid   = SMA(close, period)
+    upper = mid + n_std * rolling_std(close, period, ddof=0)
+    lower = mid - n_std * rolling_std(close, period, ddof=0)
+
+    Uses population std (ddof=0) to match TradingView / most charting platforms.
+    NaN values populate the head for the first `period - 1` bars (warm-up).
+    """
+    if period <= 0:
+        raise ValueError("period must be > 0")
+    mid = close.rolling(window=period, min_periods=period).mean()
+    sd = close.rolling(window=period, min_periods=period).std(ddof=0)
+    upper = mid + n_std * sd
+    lower = mid - n_std * sd
+    return upper, mid, lower
+
+
+def keltner_channel(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    ema_period: int = 20,
+    atr_period: int = 20,
+    mult: float = 1.5,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Keltner Channels. Returns (upper, mid, lower).
+
+    mid   = EMA(close, ema_period)
+    upper = mid + mult * ATR(high, low, close, atr_period)
+    lower = mid - mult * ATR(high, low, close, atr_period)
+
+    Convention matches Chester Keltner's original (EMA mid) with Linda Raschke's
+    ATR-based bands. Used jointly with Bollinger Bands to detect "squeezes":
+    when BB upper < KC upper AND BB lower > KC lower, realized volatility is
+    suppressed and breakouts that follow tend to be outsized.
+
+    NaN values populate the head until both EMA and ATR are warmed up.
+    """
+    if ema_period <= 0 or atr_period <= 0:
+        raise ValueError("ema_period and atr_period must be > 0")
+    mid = ema(close, ema_period)
+    atr_v = atr(high, low, close, atr_period)
+    upper = mid + mult * atr_v
+    lower = mid - mult * atr_v
+    return upper, mid, lower
+
+
 def macd(
     close: pd.Series,
     fast: int = 12,
@@ -395,3 +448,466 @@ def recent_swing_pair(
     last_high = float(high.values[start + high_idx[-1]])
     last_low = float(low.values[start + low_idx[-1]])
     return last_high, last_low
+
+
+# ---------------------------------------------------------------------------
+# ADX dual-regime helpers (adx-dual-regime-v1)
+# ---------------------------------------------------------------------------
+
+def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    """Wilder's Average Directional Index. Returns the ADX line only (not +DI / -DI).
+
+    Computation is two Wilder-smoothing passes so the warm-up period is roughly
+    2 × `period` bars — NaN values populate the head until both passes converge.
+    Traders use ADX above 25 as confirmation that a trend is strong enough to
+    follow; below 25 indicates range / chop where mean-reversion strategies
+    outperform breakout ones.
+
+    Convention identical to ``atr()``: Wilder EWM with alpha = 1/period and
+    adjust=False. No NaN fill mid-series — gaps propagate.
+    """
+    if period <= 0:
+        raise ValueError("period must be > 0")
+
+    prev_high  = high.shift(1)
+    prev_low   = low.shift(1)
+    prev_close = close.shift(1)
+
+    # True Range (same as atr's TR)
+    tr = pd.concat(
+        [
+            (high - low).abs(),
+            (high - prev_close).abs(),
+            (low  - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    # Directional movement
+    up_move   = high - prev_high
+    down_move = prev_low - low
+
+    plus_dm  = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+
+    # Wilder smooth: pass 1
+    alpha = 1.0 / period
+    sm_tr       = tr.ewm(alpha=alpha, adjust=False, min_periods=period).mean()
+    sm_plus_dm  = plus_dm.ewm(alpha=alpha, adjust=False, min_periods=period).mean()
+    sm_minus_dm = minus_dm.ewm(alpha=alpha, adjust=False, min_periods=period).mean()
+
+    # Directional Indicators
+    plus_di  = 100.0 * sm_plus_dm / sm_tr.replace(0.0, np.nan)
+    minus_di = 100.0 * sm_minus_dm / sm_tr.replace(0.0, np.nan)
+
+    # DX (directional index) — undefined when both DIs are zero
+    di_sum  = plus_di + minus_di
+    dx = 100.0 * (plus_di - minus_di).abs() / di_sum.replace(0.0, np.nan)
+
+    # Wilder smooth: pass 2 → ADX
+    adx_line = dx.ewm(alpha=alpha, adjust=False, min_periods=period).mean()
+    return adx_line
+
+
+def supertrend(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 10,
+    multiplier: float = 3.0,
+) -> pd.DataFrame:
+    """Supertrend indicator. Returns a DataFrame with columns `supertrend`
+    (the trailing line) and `direction` (+1 = uptrend/long, -1 = downtrend/short).
+
+    Standard construction:
+        mid = (high + low) / 2
+        basic_upper = mid + multiplier * ATR(period)
+        basic_lower = mid - multiplier * ATR(period)
+        final_upper[i] = basic_upper[i] if (basic_upper[i] < final_upper[i-1] or
+                                             close[i-1] > final_upper[i-1])
+                         else final_upper[i-1]
+        final_lower[i] = basic_lower[i] if (basic_lower[i] > final_lower[i-1] or
+                                             close[i-1] < final_lower[i-1])
+                         else final_lower[i-1]
+        direction flips to +1 when close crosses above final_upper, flips to -1
+        when close crosses below final_lower, else carries forward.
+        supertrend = final_lower when direction == +1, else final_upper.
+
+    LOOKAHEAD: every value at bar i is computed from data through bar i only
+    (close[i], high[i], low[i], ATR[i] which itself only uses bars <= i). The
+    caller is responsible for reading `[-1]` (the last CLOSED bar) in
+    `next()` — same convention as the rest of this file's indicators.
+
+    NaN values populate the head until ATR(period) warms up (first `period`
+    bars). Never filled mid-series.
+    """
+    if period <= 0:
+        raise ValueError("period must be > 0")
+
+    mid = (high + low) / 2.0
+    atr_v = atr(high, low, close, period)
+    basic_upper = mid + multiplier * atr_v
+    basic_lower = mid - multiplier * atr_v
+
+    n = len(close)
+    final_upper = np.full(n, np.nan, dtype=float)
+    final_lower = np.full(n, np.nan, dtype=float)
+    direction = np.full(n, np.nan, dtype=float)
+    st = np.full(n, np.nan, dtype=float)
+
+    bu = basic_upper.values
+    bl = basic_lower.values
+    c = close.values
+
+    first_valid = atr_v.first_valid_index()
+    if first_valid is None:
+        return pd.DataFrame(
+            {"supertrend": st, "direction": direction}, index=close.index
+        )
+    start = close.index.get_loc(first_valid)
+
+    final_upper[start] = bu[start]
+    final_lower[start] = bl[start]
+    # Initial direction: uptrend if close is above the lower band, else downtrend.
+    direction[start] = 1.0 if c[start] > final_lower[start] else -1.0
+    st[start] = final_lower[start] if direction[start] == 1.0 else final_upper[start]
+
+    for i in range(start + 1, n):
+        final_upper[i] = (
+            bu[i]
+            if (bu[i] < final_upper[i - 1] or c[i - 1] > final_upper[i - 1])
+            else final_upper[i - 1]
+        )
+        final_lower[i] = (
+            bl[i]
+            if (bl[i] > final_lower[i - 1] or c[i - 1] < final_lower[i - 1])
+            else final_lower[i - 1]
+        )
+
+        if direction[i - 1] == 1.0:
+            direction[i] = -1.0 if c[i] < final_lower[i] else 1.0
+        else:
+            direction[i] = 1.0 if c[i] > final_upper[i] else -1.0
+
+        st[i] = final_lower[i] if direction[i] == 1.0 else final_upper[i]
+
+    return pd.DataFrame({"supertrend": st, "direction": direction}, index=close.index)
+
+
+def donchian_channel(
+    high: pd.Series, low: pd.Series, period: int = 20
+) -> tuple[pd.Series, pd.Series]:
+    """Donchian channel — rolling high and rolling low over `period` bars.
+
+    Returns ``(upper, lower)`` where:
+      - ``upper = rolling_max(high, period)``
+      - ``lower = rolling_min(low,  period)``
+
+    The channel is NOT shifted internally; the strategy is responsible for
+    shifting by 1 when judging breakouts so that bar ``i`` is compared to the
+    channel formed by bars ``[i-period, i-1]`` rather than the current bar's
+    own high/low. Traders use Donchian channels in trend-following systems
+    (Richard Dennis / Turtle Trading) — a close above the upper band signals
+    a 20-bar breakout and triggers a long entry; below lower band triggers short.
+
+    NaN values populate the head for the first ``period - 1`` bars (warm-up).
+    """
+    if period <= 0:
+        raise ValueError("period must be > 0")
+    upper = high.rolling(window=period, min_periods=period).max()
+    lower = low.rolling(window=period, min_periods=period).min()
+    return upper, lower
+
+
+# ---------------------------------------------------------------------------
+# Divergence helpers (divergence-v1 / divergence-v2)
+# ---------------------------------------------------------------------------
+
+def mfi(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    volume: pd.Series,
+    period: int = 14,
+) -> pd.Series:
+    """Money Flow Index — RSI-style volume oscillator (0-100).
+
+    Bounded indicator suitable for divergence pivot detection across regimes
+    (unlike cumulative OBV which drifts unboundedly). Computation:
+
+        typical_price = (high + low + close) / 3
+        money_flow    = typical_price * volume
+        positive_mf   = money_flow where typical_price > prev typical_price else 0
+        negative_mf   = money_flow where typical_price < prev typical_price else 0
+        mf_ratio      = rolling_sum(positive_mf, period) / rolling_sum(negative_mf, period)
+        mfi           = 100 - (100 / (1 + mf_ratio))
+
+    Edge cases (matching RSI convention):
+        - When negative_mf_sum == 0 (all periods positive): MFI = 100.
+        - Head NaNs: populated for first `period` bars (warmup). Never mid-filled.
+
+    Pure pandas/numpy — no pandas-ta dependency.
+    """
+    if period <= 0:
+        raise ValueError("period must be > 0")
+    tp = (high + low + close) / 3.0
+    mf = tp * volume
+    tp_diff = tp.diff()
+    pos_mf = mf.where(tp_diff > 0, 0.0)
+    neg_mf = mf.where(tp_diff < 0, 0.0)
+    # Rolling sums — min_periods=period so head is NaN until warm-up completes.
+    pos_sum = pos_mf.rolling(window=period, min_periods=period).sum()
+    neg_sum = neg_mf.rolling(window=period, min_periods=period).sum()
+    mf_ratio = pos_sum / neg_sum.replace(0.0, np.nan)
+    result = 100.0 - (100.0 / (1.0 + mf_ratio))
+    # All-positive window (neg_sum == 0 and pos_sum > 0): MFI = 100.
+    result = result.where(~((neg_sum == 0) & (pos_sum > 0)), 100.0)
+    return result
+
+
+def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
+    """On Balance Volume — cumulative signed volume.
+
+    OBV[0] = 0 by convention. Each subsequent bar adds volume when price
+    closed higher, subtracts it when lower, and leaves OBV unchanged on a
+    flat close. Traders use OBV divergence (price makes a new extreme while
+    OBV fails to confirm) as a leading signal of trend exhaustion. When OBV
+    diverges from price *and* RSI diverges the same way, the combined signal
+    is much stronger than either indicator alone.
+
+    NaN-fill rule (per file convention): only bar 0 is pinned to 0 to
+    establish the initial accumulator value. Mid-series NaNs (data gaps) are
+    NOT filled — they propagate through the cumsum so the caller can see
+    the gap rather than silently hiding it.
+    """
+    signed_vol = np.sign(close.diff()) * volume
+    # Pin bar 0 to 0 (convention: OBV starts at 0, no prior close to compare).
+    # Only this one head element is set — mid-series NaNs are NOT filled so
+    # data gaps propagate forward (per the file's NaN discipline).
+    signed_vol.iloc[0] = 0.0
+    return signed_vol.cumsum()
+
+
+def session_poc(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    volume: pd.Series,
+    session: str = "UTC_day",
+    n_bins: int = 50,
+) -> pd.Series:
+    """Previous-session Point of Control (highest-volume price bin from the
+    most-recent CLOSED session).
+
+    For each bar i, return the POC of the session that ended STRICTLY BEFORE
+    bar i. Lookahead-safe: bar i never sees its own session's volume.
+
+    session = "UTC_day" → 00:00 UTC daily session boundary.
+
+    Implementation:
+      1. Group bars by UTC day (floor to midnight).
+      2. For each session, compute a volume-by-price histogram with n_bins bins
+         spanning [session_low, session_high]. Each bar contributes its volume to
+         the bin that contains its typical price (high+low+close)/3. When
+         session_high == session_low (single price, degenerate session), POC is
+         set to session_low directly.
+      3. POC = midpoint of the highest-volume bin.
+      4. Forward-fill the POC across the FOLLOWING session's bars. Bars in the
+         very first session see NaN (no prior session exists).
+
+    The lookahead guard is enforced by computing each session's POC from the
+    bars WITHIN that session, then mapping each bar to the POC of the session
+    IMMEDIATELY PRIOR (via shift(1) on the per-session POC series before
+    reindex). Bars in the current session can never see the current session's
+    still-accumulating volume.
+
+    Parameters
+    ----------
+    high, low, close, volume : pd.Series
+        OHLCV, must share a DatetimeIndex. Index must be timezone-naive (UTC
+        convention in this repo — tz is stripped by the data loader).
+    session : str
+        Session granularity. Only "UTC_day" is implemented; other values raise
+        NotImplementedError.
+    n_bins : int
+        Number of price bins for the volume histogram. Default 50. Sensitivity
+        note: bin_width = (session_high - session_low) / n_bins, so larger
+        n_bins gives finer resolution at the cost of more noise per bin.
+
+    Returns
+    -------
+    pd.Series indexed same as inputs.
+        NaN for bars in the first session (no prior session POC available).
+    """
+    if session != "UTC_day":
+        raise NotImplementedError(f"session={session!r} not implemented; only 'UTC_day' is supported")
+    if n_bins <= 0:
+        raise ValueError("n_bins must be > 0")
+
+    # Group bars by UTC calendar day. Index is timezone-naive in this repo.
+    day_key = high.index.floor("D")
+
+    # Build per-session POC: one value per unique day label.
+    unique_days = np.sort(np.unique(day_key))
+
+    poc_by_day: dict[pd.Timestamp, float] = {}
+
+    for day in unique_days:
+        mask = day_key == day
+        h = high.values[mask]
+        lo = low.values[mask]
+        c = close.values[mask]
+        v = volume.values[mask]
+
+        if len(h) == 0:
+            continue
+
+        s_high = float(h.max())
+        s_low = float(lo.min())
+
+        if s_high <= s_low or not np.isfinite(s_high) or not np.isfinite(s_low):
+            # Degenerate session (single bar or flat prices) — POC is the midpoint.
+            poc_by_day[day] = (s_high + s_low) / 2.0
+            continue
+
+        # Typical price for each bar in the session.
+        tp = (h + lo + c) / 3.0
+
+        # Histogram: n_bins equally-spaced bins over [s_low, s_high].
+        # bin_edges has n_bins+1 elements; bin i covers [edges[i], edges[i+1]).
+        bin_edges = np.linspace(s_low, s_high, n_bins + 1)
+        bin_volume = np.zeros(n_bins, dtype=float)
+
+        for k in range(len(tp)):
+            if not np.isfinite(tp[k]) or not np.isfinite(v[k]):
+                continue
+            # Find bin index — clip to [0, n_bins-1] to handle boundary exactly.
+            idx = int(np.searchsorted(bin_edges[1:], tp[k], side="right"))
+            idx = min(idx, n_bins - 1)
+            bin_volume[idx] += v[k]
+
+        best_bin = int(np.argmax(bin_volume))
+        poc_price = (bin_edges[best_bin] + bin_edges[best_bin + 1]) / 2.0
+        poc_by_day[day] = poc_price
+
+    # Convert to a Series indexed by day timestamp.
+    if not poc_by_day:
+        return pd.Series(np.nan, index=high.index)
+
+    poc_series = pd.Series(poc_by_day)
+    poc_series.index = pd.DatetimeIndex(poc_series.index)
+    poc_series = poc_series.sort_index()
+
+    # Shift by 1 so each day maps to the PRIOR day's POC (lookahead guard).
+    poc_prior = poc_series.shift(1)
+
+    # Reindex to bar-level: each bar gets the POC of its session's prior session.
+    # Use forward-fill: the POC is constant within a session (it never changes
+    # mid-session since it's from the prior session).
+    bar_days = pd.DatetimeIndex(day_key)
+    poc_bar = poc_prior.reindex(bar_days, method="ffill")
+    poc_bar.index = high.index
+
+    return poc_bar
+
+
+def find_divergence(
+    price: pd.Series,
+    indicator: pd.Series,
+    swing_mask: pd.Series,
+    kind: str,
+    k: int,
+    min_separation: int,
+    max_separation: int,
+) -> pd.Series:
+    """Lookahead-safe divergence detector based on causally-registered swing fractals.
+
+    A swing detected at bar ``i`` by ``swing_high_low(k)`` is not knowable
+    until bar ``i + k`` (its *confirmation bar*). This function shifts the
+    swing mask forward by ``k`` so that ``registered_mask[j]`` is True only
+    if ``j - k`` was a swing, and bar ``j`` is the earliest we could know
+    that.  The divergence fires at bar ``j == b2 + k`` — exactly once — so
+    downstream callers get a single True on the confirmation bar of the
+    more-recent swing, never a sticky True.
+
+    Parameters
+    ----------
+    price:
+        ``low`` for bullish divergence; ``high`` for bearish divergence.
+    indicator:
+        RSI, OBV, or any other Series aligned to the same index.
+    swing_mask:
+        UNSHIFTED boolean mask from ``swing_high_low()`` — True on the bar
+        that IS the swing. The shift-by-``k`` is applied internally.
+    kind:
+        ``"regular_bullish"``  — price LL + indicator HL → long signal
+        ``"regular_bearish"``  — price HH + indicator LH → short signal
+    k:
+        Same ``k`` passed to ``swing_high_low()``. Must be ≥ 1.
+    min_separation:
+        Minimum bar distance between the two swing bars (b2 - b1 ≥ this).
+    max_separation:
+        Maximum bar distance between the two swing bars (b2 - b1 ≤ this).
+
+    Returns
+    -------
+    pd.Series of bool, same index as ``price``.
+        True on bar ``b2 + k`` when a qualifying divergence is confirmed;
+        False everywhere else.
+    """
+    if kind not in ("regular_bullish", "regular_bearish"):
+        raise ValueError(f"kind must be 'regular_bullish' or 'regular_bearish', got {kind!r}")
+    if k < 1:
+        raise ValueError("k must be >= 1")
+
+    n = len(price)
+    result = np.zeros(n, dtype=bool)
+
+    price_vals = price.values
+    ind_vals = indicator.values
+    mask_vals = swing_mask.values  # unshifted — swing at position i
+
+    # Build a list of swing bar positions (integer positions, not index labels).
+    swing_positions = np.where(mask_vals)[0]
+
+    # For each swing bar i, it registers at i+k. Walk all potential firing bars.
+    # A firing bar is j = b2 + k, where b2 is a swing bar and b1 < b2 is an
+    # earlier swing bar satisfying separation constraints + divergence geometry.
+    # We need only the two most-recent swing bars up to the firing bar.
+
+    for pos, b2 in enumerate(swing_positions):
+        j = b2 + k  # the firing/confirmation bar for this swing
+        if j >= n:
+            break  # b2+k is out of range
+
+        # Find b1: the most-recent swing bar strictly before b2 whose
+        # registration bar (b1+k) is also ≤ j (i.e. b1 <= b2 means b1+k ≤ j).
+        # Of the swings preceding b2, find the one immediately before it.
+        if pos == 0:
+            continue  # no prior swing to pair with
+
+        b1 = swing_positions[pos - 1]
+        sep = b2 - b1
+
+        if sep < min_separation or sep > max_separation:
+            continue
+
+        # Both b1 and b2 must have valid (non-NaN) indicator values.
+        ind_b1 = ind_vals[b1]
+        ind_b2 = ind_vals[b2]
+        if not (np.isfinite(ind_b1) and np.isfinite(ind_b2)):
+            continue
+
+        price_b1 = price_vals[b1]
+        price_b2 = price_vals[b2]
+
+        if kind == "regular_bullish":
+            # Price: lower low; Indicator: higher low
+            if price_b2 < price_b1 and ind_b2 > ind_b1:
+                result[j] = True
+        else:  # regular_bearish
+            # Price: higher high; Indicator: lower high
+            if price_b2 > price_b1 and ind_b2 < ind_b1:
+                result[j] = True
+
+    return pd.Series(result, index=price.index)
