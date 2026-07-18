@@ -246,11 +246,18 @@ class BinanceClient:
         self, symbol: str, side: str, qty: float,
         sl_price: float, tp_price: float,
         client_order_id_root: str | None = None,
+        place_tp: bool = True,
     ) -> dict[str, Any]:
-        """Place market entry + stop-market SL + take-profit-market TP brackets.
+        """Place market entry + stop-market SL (+ optional take-profit-market TP).
 
         Returns {"entry": order, "sl": order, "tp": order}.
         Brackets are reduce-only and trigger off mark price.
+
+        place_tp=False places entry + SL ONLY and returns "tp": None — for
+        strategies that manage their own exit (donchian-v3 closes on the live
+        Donchian channel cross, so it has no TP leg). `tp_price` is ignored when
+        place_tp is False. Default True preserves the v1/multifactor behaviour
+        byte-for-byte.
 
         Hedge mode: when self.hedge_mode is True, every leg includes the
         position_side matching the entry (LONG for long entries, SHORT for
@@ -285,21 +292,26 @@ class BinanceClient:
         sl = self._create_order_with_coid_retry(
             symbol, "STOP_MARKET", bracket_side, qty, None, sl_params)
 
-        tp_params: dict[str, Any] = {"stopPrice": float(tp_price), "reduceOnly": True,
-                                      "workingType": "MARK_PRICE"}
-        if (coid := _coid(client_order_id_root, "t", self.coid_prefix)):
-            tp_params["newClientOrderId"] = coid
-        if pos_side is not None:
-            tp_params["positionSide"] = pos_side
-        tp = self._create_order_with_coid_retry(
-            symbol, "TAKE_PROFIT_MARKET", bracket_side, qty, None, tp_params)
+        tp = None
+        if place_tp:
+            tp_params: dict[str, Any] = {"stopPrice": float(tp_price), "reduceOnly": True,
+                                          "workingType": "MARK_PRICE"}
+            if (coid := _coid(client_order_id_root, "t", self.coid_prefix)):
+                tp_params["newClientOrderId"] = coid
+            if pos_side is not None:
+                tp_params["positionSide"] = pos_side
+            tp = self._create_order_with_coid_retry(
+                symbol, "TAKE_PROFIT_MARKET", bracket_side, qty, None, tp_params)
         return {"entry": entry, "sl": sl, "tp": tp}
 
     def _place_brackets(
         self, symbol: str, side: str, qty: float,
         fill_price: float, sl_distance: float, tp_distance: float,
         client_order_id_root: str | None = None,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        place_tp: bool = True,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Place SL (+ optional TP) brackets after a fill. place_tp=False
+        returns (sl, None) and skips the TP leg — see market_order_with_bracket."""
         bracket_side = "sell" if side == "long" else "buy"
         pos_side = self._position_side(side)
         if side == "long":
@@ -316,14 +328,16 @@ class BinanceClient:
             sl_params["positionSide"] = pos_side
         sl = self._create_order_with_coid_retry(
             symbol, "STOP_MARKET", bracket_side, qty, None, sl_params)
-        tp_params: dict[str, Any] = {"stopPrice": float(tp_price), "reduceOnly": True,
-                                      "workingType": "MARK_PRICE"}
-        if (coid := _coid(client_order_id_root, "t", self.coid_prefix)):
-            tp_params["newClientOrderId"] = coid
-        if pos_side is not None:
-            tp_params["positionSide"] = pos_side
-        tp = self._create_order_with_coid_retry(
-            symbol, "TAKE_PROFIT_MARKET", bracket_side, qty, None, tp_params)
+        tp = None
+        if place_tp:
+            tp_params: dict[str, Any] = {"stopPrice": float(tp_price), "reduceOnly": True,
+                                          "workingType": "MARK_PRICE"}
+            if (coid := _coid(client_order_id_root, "t", self.coid_prefix)):
+                tp_params["newClientOrderId"] = coid
+            if pos_side is not None:
+                tp_params["positionSide"] = pos_side
+            tp = self._create_order_with_coid_retry(
+                symbol, "TAKE_PROFIT_MARKET", bracket_side, qty, None, tp_params)
         return sl, tp
 
     def limit_order_with_bracket(
@@ -331,8 +345,13 @@ class BinanceClient:
         limit_price: float, sl_distance: float, tp_distance: float,
         timeout_s: float = 20.0, poll_s: float = 2.0,
         client_order_id_root: str | None = None,
+        place_tp: bool = True,
     ) -> dict[str, Any]:
         """Place a maker-style limit entry; fall back to market if not filled.
+
+        place_tp=False places entry + SL ONLY (returned "tp" is None) for
+        channel-exit strategies; `tp_distance` is ignored then. Default True
+        preserves the v1/multifactor behaviour byte-for-byte.
 
         sl_distance and tp_distance are PRICE units. Brackets are computed AFTER
         the entry fills (based on actual fill price), so a slow limit fill that
@@ -382,7 +401,7 @@ class BinanceClient:
                 log.info("limit filled fully @ %.2f after %.0fs", avg_price, elapsed)
                 sl, tp = self._place_brackets(
                     symbol, side, filled_qty, avg_price, sl_distance, tp_distance,
-                    client_order_id_root=client_order_id_root)
+                    client_order_id_root=client_order_id_root, place_tp=place_tp)
                 return {"entry": o, "sl": sl, "tp": tp, "filled_as": "limit",
                         "fill_price": avg_price, "filled_qty": filled_qty}
             if last_status in ("canceled", "rejected", "expired"):
@@ -413,7 +432,7 @@ class BinanceClient:
             # Filled fully right at the cancel boundary.
             sl, tp = self._place_brackets(
                 symbol, side, filled_qty, avg_price, sl_distance, tp_distance,
-                client_order_id_root=client_order_id_root)
+                client_order_id_root=client_order_id_root, place_tp=place_tp)
             return {"entry": entry, "sl": sl, "tp": tp, "filled_as": "limit",
                     "fill_price": avg_price, "filled_qty": filled_qty}
 
@@ -426,7 +445,7 @@ class BinanceClient:
                         partial_qty, qty)
             sl, tp = self._place_brackets(
                 symbol, side, partial_qty, avg_price, sl_distance, tp_distance,
-                client_order_id_root=client_order_id_root)
+                client_order_id_root=client_order_id_root, place_tp=place_tp)
             return {"entry": entry, "sl": sl, "tp": tp, "filled_as": "limit_partial",
                     "fill_price": avg_price, "filled_qty": partial_qty}
 
@@ -449,7 +468,7 @@ class BinanceClient:
             market_fill = float(limit_price)
         sl, tp = self._place_brackets(
             symbol, side, qty, market_fill, sl_distance, tp_distance,
-            client_order_id_root=client_order_id_root)
+            client_order_id_root=client_order_id_root, place_tp=place_tp)
         return {"entry": market_entry, "sl": sl, "tp": tp,
                 "filled_as": "market_fallback",
                 "fill_price": market_fill, "filled_qty": qty}

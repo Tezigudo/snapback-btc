@@ -13,9 +13,30 @@ from dataclasses import dataclass
 import pandas as pd
 
 from strategy.live_cnh_hybrid_short import evaluate_signal_cnh_hybrid_short
-from strategy.live_donchian_v3 import evaluate_signal_donchian_v3
+
+# channel_exit_signal is re-exported here on purpose: bot.py imports it from
+# bot_internals (byte-identical between main and droplet) rather than adding a
+# new import to the heavily-diverging exchange/env/risk import block — keeps the
+# eventual droplet cherry-pick's bot.py diff inside non-diverging regions.
+from strategy.live_donchian_v3 import (  # noqa: F401  (channel_exit_signal re-exported for bot.py)
+    channel_exit_signal,
+    evaluate_signal_donchian_v3,
+)
 from strategy.live_multifactor_v1 import evaluate_signal
 from strategy.live_v3all_wider4 import evaluate_signal_v3all_wider4
+
+
+def strategy_uses_channel_exit(strategy_name: str) -> bool:
+    """True for strategies that close via a live Donchian channel-cross exit
+    instead of a fixed TP bracket. Currently only donchian-v3.
+
+    Centralised so the two callers agree on exactly ONE predicate:
+      - the entry path omits the TP leg (place_tp = not this), and
+      - the loop hook (bot._maybe_channel_exit) runs the channel-exit check.
+    Every other strategy (v1/multifactor, cnh, v3all) is untouched: it keeps
+    its TP bracket and never runs the channel-exit check.
+    """
+    return strategy_name == "donchian-v3"
 
 
 def resolve_strategy_name(params: dict) -> str:
@@ -79,7 +100,9 @@ def evaluate_for_strategy(
       - "v3-all-wider-4": evaluator returns (side, sl_dist, tp_dist, dbg) — SL/TP
         are already in price units from ATR×k math.
       - "donchian-v3": Donchian-cons breakout on 4h bars. Returns (side, sl_dist,
-        tp_dist, dbg). SL = 1.5×ATR; TP = 5×ATR (approximation of channel-exit).
+        tp_dist, dbg). SL = 1.5×ATR. The entry places NO TP leg — the live
+        Donchian channel cross (bot._maybe_channel_exit / channel_exit_signal)
+        closes the trade; tp_dist here is advisory telemetry only.
       - default ("multifactor-v1"): evaluator returns (side, dbg); SL/TP come
         from fixed-pct multipliers in params (`sl_pct`, `tp_pct`) applied to
         the close price.
