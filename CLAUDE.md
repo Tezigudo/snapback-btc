@@ -4,8 +4,8 @@ This repo runs a deterministic Binance Futures BTC/USDT perpetual bot. You (Clau
 
 ## Active strategy: multifactor-v1
 - Locked 2026-05-17 for 90-day testnet deploy. See `DEPLOY.md` and `PATH2_RESULTS.html`.
-- Config in `config/params.yaml`. Backtest: 5 OOS windows → +55.73% compounded, 4 of 5 positive.
-- Worst window: 2024 H1 (-12.56%, chop). Kill switch fires at -15% equity drawdown.
+- Config in `config/params.yaml`. Backtest (re-locked 2026-06-02 with 4H EMA200 gate): 5 OOS windows → +77.93% compounded, 5 of 5 positive. (Pre-gate was +55.73%, 4 of 5 — superseded.)
+- Worst window: 2024 H2 (-16.72% max DD). Kill switch fires at -35.5% equity drawdown (kill_switch_equity_fraction 0.645).
 - Old strategies (carry, donchian, fmom, snapback-v2, multifactor v2/mtf) **removed from repo** post-cleanup. Recover from git history if needed.
 
 ## Your role
@@ -164,6 +164,7 @@ Active: [new session]
 Last: [first session]
 
 ## Session Continuity
-State: No changes or facts in this session.
+State: /Users/god/.claude/projects/-Users-god-Desktop-work-snapback-btc/memory/todo_leg_turn_of_candle_15m.md (create)
+Files: tools/_postfrac_wf_mf_4h_btc_sol_portfolio.py, /Users/god/.claude/projects/-Users-god-Desktop-work-snapback-btc/memory/btc_sol_portfolio_validation_result.md, BTC_SOL_PORTFOLIO_VERDICT.md, tools/_postfrac_mf_4h_btc_sol_portfolio.py, strategy/signals_multifactor.py
 
 # === END COGNILAYER ===

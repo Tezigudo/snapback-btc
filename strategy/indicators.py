@@ -509,6 +509,91 @@ def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> 
     return adx_line
 
 
+def supertrend(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 10,
+    multiplier: float = 3.0,
+) -> pd.DataFrame:
+    """Supertrend indicator. Returns a DataFrame with columns `supertrend`
+    (the trailing line) and `direction` (+1 = uptrend/long, -1 = downtrend/short).
+
+    Standard construction:
+        mid = (high + low) / 2
+        basic_upper = mid + multiplier * ATR(period)
+        basic_lower = mid - multiplier * ATR(period)
+        final_upper[i] = basic_upper[i] if (basic_upper[i] < final_upper[i-1] or
+                                             close[i-1] > final_upper[i-1])
+                         else final_upper[i-1]
+        final_lower[i] = basic_lower[i] if (basic_lower[i] > final_lower[i-1] or
+                                             close[i-1] < final_lower[i-1])
+                         else final_lower[i-1]
+        direction flips to +1 when close crosses above final_upper, flips to -1
+        when close crosses below final_lower, else carries forward.
+        supertrend = final_lower when direction == +1, else final_upper.
+
+    LOOKAHEAD: every value at bar i is computed from data through bar i only
+    (close[i], high[i], low[i], ATR[i] which itself only uses bars <= i). The
+    caller is responsible for reading `[-1]` (the last CLOSED bar) in
+    `next()` — same convention as the rest of this file's indicators.
+
+    NaN values populate the head until ATR(period) warms up (first `period`
+    bars). Never filled mid-series.
+    """
+    if period <= 0:
+        raise ValueError("period must be > 0")
+
+    mid = (high + low) / 2.0
+    atr_v = atr(high, low, close, period)
+    basic_upper = mid + multiplier * atr_v
+    basic_lower = mid - multiplier * atr_v
+
+    n = len(close)
+    final_upper = np.full(n, np.nan, dtype=float)
+    final_lower = np.full(n, np.nan, dtype=float)
+    direction = np.full(n, np.nan, dtype=float)
+    st = np.full(n, np.nan, dtype=float)
+
+    bu = basic_upper.values
+    bl = basic_lower.values
+    c = close.values
+
+    first_valid = atr_v.first_valid_index()
+    if first_valid is None:
+        return pd.DataFrame(
+            {"supertrend": st, "direction": direction}, index=close.index
+        )
+    start = close.index.get_loc(first_valid)
+
+    final_upper[start] = bu[start]
+    final_lower[start] = bl[start]
+    # Initial direction: uptrend if close is above the lower band, else downtrend.
+    direction[start] = 1.0 if c[start] > final_lower[start] else -1.0
+    st[start] = final_lower[start] if direction[start] == 1.0 else final_upper[start]
+
+    for i in range(start + 1, n):
+        final_upper[i] = (
+            bu[i]
+            if (bu[i] < final_upper[i - 1] or c[i - 1] > final_upper[i - 1])
+            else final_upper[i - 1]
+        )
+        final_lower[i] = (
+            bl[i]
+            if (bl[i] > final_lower[i - 1] or c[i - 1] < final_lower[i - 1])
+            else final_lower[i - 1]
+        )
+
+        if direction[i - 1] == 1.0:
+            direction[i] = -1.0 if c[i] < final_lower[i] else 1.0
+        else:
+            direction[i] = 1.0 if c[i] > final_upper[i] else -1.0
+
+        st[i] = final_lower[i] if direction[i] == 1.0 else final_upper[i]
+
+    return pd.DataFrame({"supertrend": st, "direction": direction}, index=close.index)
+
+
 def donchian_channel(
     high: pd.Series, low: pd.Series, period: int = 20
 ) -> tuple[pd.Series, pd.Series]:

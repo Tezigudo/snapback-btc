@@ -1,18 +1,19 @@
-# AFK Dashboard — 2026-06-02 (Tue)
+# AFK Dashboard — 2026-06-02 (Tue) → 22:18 ICT update
 
-**Read this when you're back at 21:50 ICT.** Times shown ICT (GMT+7).
+**You're back from the shower. Read this.** Times shown ICT (GMT+7).
 
 ---
 
-## TL;DR
+## TL;DR — latest state (22:18 ICT)
 
 | Question | Answer |
 |---|---|
-| Bot live? | **✓ GREEN** at 20:31 ICT. 3 legs active, heartbeats 3-22s. Zero errors / NaN / tracebacks since today's 19:07 deploy. |
+| Bot live? | **✓ GREEN.** 3 legs active. v1 heartbeat 6s, donchian 24s, cnh_short 21s. No HALT file. |
+| AFK package wired? | **✓ DEPLOYED.** monitor.py + daily_digest.py live on droplet (commit f727547). Cron `*/5` + `0 1 UTC` installed. SMTP smoke email in your inbox confirms the wire. First tick fired clean (no alerts, 0-byte log = green silence). |
+| Short-TF research? | **✓ DONE.** Workflow `w85lvn48z` filed **5 fresh TODO_LEG candidates** across 5 distinct feature classes + a 7.7KB synthesis at `SHORT_TF_RESEARCH_REPORT.md`. Honest negative: no clean peer-reviewed 5m/30m BTC perp edge exists in public lit. |
 | Anything broken? | No. |
-| Anything that needs your call at 21:50? | Push 3 local commits + deploy AFK package. See **"Approval needed"** below. |
-| Anything to celebrate? | Locked +77.93% is now **measurement-validated** (re-measured: +77.952%, matches within noise). Live↔backtest parity **100%** across 8,736 bars. |
-| Big findings from research? | (1) **Cost-sensitivity yellow flag** on deployed strategy: PSR 0.978→0.949 going from 5→10 bps commission. Fine at $101.95, watch at scale. (2) **KC squeeze breakout SHELVED** as first real TODO_LEG validation. (3) Workflow validating 4 more TODO_LEG + 3 more ablations + adversarial refute pass — landing before sign-off. |
+| Anything that needs your call now? | Optional: pick a TODO_LEG to start validating, or just go to bed. Recommended cheapest-first: **RV-surprise gate on AdaptiveTrend** (~6k tokens, no new data). |
+| Earlier wins still standing? | Locked +77.93% measurement-validated. Live↔backtest parity 100%. Cost-sensitivity yellow flag documented. |
 
 ---
 
@@ -215,4 +216,27 @@ When you give me the green light again:
 
 ---
 
-_Generated 2026-06-02. Last update: 20:35 ICT. Files written by Claude during the AFK window 19:30–20:35 ICT._
+## 22:18 ICT update — what happened while you showered
+
+**AFK package deploy (steps 1-4 above): DONE.**
+- monitor.py + daily_digest.py pushed to main (commit f727547), cherry-picked to droplet branch, pulled on droplet
+- SMTP smoke test sent → email in your inbox = wire OK
+- Cron installed: `*/5` monitor + `0 1 UTC` daily digest
+- First monitor tick fired clean (log = 0 bytes = no alerts = green)
+
+**Short-TF research (step 5 above): DONE.**
+- Workflow `w85lvn48z` ran 4 agents (lit sweep + multi-feature stacks + microstructure + synthesis)
+- 5 new TODO_LEG candidates filed, ranked cheapest-first:
+  1. **RV-surprise gate on AdaptiveTrend V1** — vol-regime class, ~6k tokens, no new data
+  2. **Cross-asset BTC+SOL portfolio** — operationalizes the SOL transfer finding, ~9k tokens
+  3. **Turn-of-15m-candle seasonality** — Heliyon 2023 (sample ended Aug 2022); needs 2023-2026 OOS replication
+  4. **VPIN persistence** — RIBAF 2026 peer-reviewed BTC; uses already-patched 9-col 15m parquet
+  5. **OI-velocity divergence** — gated on Tardis.dev archive ingestion (Binance API only ~30d)
+- Honest negative: no clean peer-reviewed 5m/30m BTC perp edge exists in public lit. Refuted: intraday TSMOM (graveyard), VPIN/OFI 24h hold (graveyard), HFT 3-sec horizon (wrong game).
+- Full synthesis: `SHORT_TF_RESEARCH_REPORT.md` (7.7KB) + 5 TODO_LEG memory files.
+
+**Pick-up next**: if you want validation to start now, **RV-surprise gate** is cheapest and bolts onto the PSR-0.93 AdaptiveTrend V1 base — just say go.
+
+---
+
+_Generated 2026-06-02. Last update: 22:18 ICT. Files written by Claude across the AFK window 19:30–22:18 ICT._

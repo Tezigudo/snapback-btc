@@ -71,6 +71,25 @@ from strategy.signals_donchian import (
     DonchianBreakoutBTCv3, DonchianRiderV1,
     attach_donchian, attach_rider,
 )
+# 2026-06-14: native-4h Supertrend trend-follower for bake-off vs donchian-v3.
+from strategy.signals_supertrend import SupertrendBTC, attach_supertrend
+# 2026-06-14: Supertrend variants for walk-forward bake-off (experiments/walkforward.py).
+from strategy.signals_supertrend_variants import (
+    SupertrendADX,
+    SupertrendADXDonchExit,
+    SupertrendDonchExit,
+    SupertrendDual,
+    SupertrendEMA,
+    SupertrendTrail,
+    SupertrendVolAdaptive,
+    attach_supertrend_adx,
+    attach_supertrend_adx_donchexit,
+    attach_supertrend_donchexit,
+    attach_supertrend_dual,
+    attach_supertrend_ema,
+    attach_supertrend_trail,
+    attach_supertrend_voladapt,
+)
 
 # multifactor-v1/v2/v3 use a single entry TF (15m); no second-TF prep required.
 # Donchian-v3 and rider-v1 are single-TF (entry_tf == channel TF, typically 4h).
@@ -81,6 +100,9 @@ _TF_AGNOSTIC_STRATEGIES = {
     "v3-atr-stops-only", "v3-all",
     "donchian-v3",
     "rider-v1",
+    "supertrend",
+    "st-adx", "st-ema", "st-dual", "st-donchexit", "st-voladapt",
+    "st-adx-donchexit", "st-trail",
 }
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
@@ -143,6 +165,17 @@ STRATEGIES: dict[str, type[Strategy]] = {
     "donchian-v3": DonchianBreakoutBTCv3,
     # 2026-05-30: 4h native trend-rider (long-only, fixed TP bracket).
     "rider-v1": DonchianRiderV1,
+    # 2026-06-14: 4h native Supertrend trend-follower (long + short, ATR bracket).
+    "supertrend": SupertrendBTC,
+    # 2026-06-14: Supertrend variants for walk-forward bake-off.
+    "st-adx": SupertrendADX,
+    "st-ema": SupertrendEMA,
+    "st-dual": SupertrendDual,
+    "st-donchexit": SupertrendDonchExit,
+    "st-voladapt": SupertrendVolAdaptive,
+    # 2026-06-14 round 2: ADX+Donchian-exit combo + chandelier trailing stop.
+    "st-adx-donchexit": SupertrendADXDonchExit,
+    "st-trail": SupertrendTrail,
 }
 
 # No strategy in the current codebase needs regime columns.
@@ -152,6 +185,31 @@ _REGIME_STRATEGIES: set[str] = set()
 _DONCHIAN_STRATEGIES: set[str] = {"donchian-v3"}
 # rider-v1 needs native-4h RiderDonHi/RiderEma/RiderAtr attached by attach_rider().
 _RIDER_STRATEGIES: set[str] = {"rider-v1"}
+# supertrend (and variants) need native-4h STLine/STDir/STAtr attached by an
+# attach_* function. _SUPERTREND_ATTACH_FNS maps each key to its attach
+# function and the set of extra class-attr-derived kwargs it needs (beyond
+# the shared period/multiplier/atr_period).
+_SUPERTREND_STRATEGIES: set[str] = {
+    "supertrend", "st-adx", "st-ema", "st-dual", "st-donchexit", "st-voladapt",
+    "st-adx-donchexit", "st-trail",
+}
+_SUPERTREND_ATTACH_FNS: dict[str, tuple] = {
+    "supertrend": (attach_supertrend, {}),
+    "st-adx": (attach_supertrend_adx, {"adx_period": "st_adx_period"}),
+    "st-ema": (attach_supertrend_ema, {"ema_period": "st_ema_period"}),
+    "st-dual": (attach_supertrend_dual, {
+        "slow_period": "st_slow_period", "slow_multiplier": "st_slow_multiplier",
+    }),
+    "st-donchexit": (attach_supertrend_donchexit, {"donch_period": "st_donch_period"}),
+    "st-voladapt": (attach_supertrend_voladapt, {
+        "multiplier_low": "st_mult_low", "multiplier_high": "st_mult_high",
+        "vol_lookback": "st_vol_lookback",
+    }),
+    "st-adx-donchexit": (attach_supertrend_adx_donchexit, {
+        "adx_period": "st_adx_period", "donch_period": "st_donch_period",
+    }),
+    "st-trail": (attach_supertrend_trail, {"adx_period": "st_adx_period"}),
+}
 
 
 # --- Funding accounting ------------------------------------------------------
@@ -292,10 +350,16 @@ def _prepare_tf_agnostic_data(
     rider_donchian_n: int = 55,
     rider_atr_period: int = 14,
     rider_ema_period: int = 200,
+    with_supertrend: bool = False,
+    supertrend_period: int = 10,
+    supertrend_multiplier: float = 3.0,
+    supertrend_strategy_name: str = "supertrend",
+    supertrend_extra_kwargs: dict | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Pull klines at entry_tf + funding; attach Donchian channels (computed
     on the SAME entry_tf — single-TF Donchian, not multi-TF) if requested.
     For rider-v1 (with_rider=True), attaches native-4h RiderDonHi/RiderEma/RiderAtr.
+    For supertrend (with_supertrend=True), attaches native-4h STLine/STDir/STAtr.
 
     Returns (prepared_df, funding_in_span). Used for carry + donchian + rider
     backtests when entry_tf != 15m, where snapback's 15m+1h prep doesn't
@@ -312,6 +376,8 @@ def _prepare_tf_agnostic_data(
         # trades and inflating trade counts / WR.  NaN bars at the head are skipped
         # by the isfinite guard in DonchianRiderV1.next().
         warmup_bars = 0
+    elif with_supertrend:
+        warmup_bars = max(supertrend_period, atr_period) * 3
     else:
         warmup_bars = max(donchian_entry, atr_period) * 3
     tf_minutes = {"1m": 1, "5m": 5, "15m": 15, "30m": 30,
@@ -344,6 +410,26 @@ def _prepare_tf_agnostic_data(
             atr_period=rider_atr_period,
             ema_period=rider_ema_period,
         )
+    if with_supertrend:
+        attach_fn, _ = _SUPERTREND_ATTACH_FNS[supertrend_strategy_name]
+        extra = dict(supertrend_extra_kwargs or {})
+        if supertrend_strategy_name == "st-voladapt":
+            # attach_supertrend_voladapt has no single `multiplier` kwarg —
+            # it takes multiplier_low/multiplier_high (supplied via extra).
+            prepared = attach_fn(
+                prepared,
+                period=supertrend_period,
+                atr_period=atr_period,
+                **extra,
+            )
+        else:
+            prepared = attach_fn(
+                prepared,
+                period=supertrend_period,
+                multiplier=supertrend_multiplier,
+                atr_period=atr_period,
+                **extra,
+            )
 
     naive_start = start.replace(tzinfo=None) if start.tzinfo else start
     naive_end = end.replace(tzinfo=None) if end.tzinfo else end
@@ -473,6 +559,14 @@ def run_backtest(
                 rider_donchian_n=getattr(cls, "rider_donchian_n", 55),
                 rider_atr_period=getattr(cls, "rider_atr_period", 14),
                 rider_ema_period=getattr(cls, "rider_ema_period", 200),
+                with_supertrend=(strategy_name in _SUPERTREND_STRATEGIES),
+                supertrend_period=getattr(cls, "st_period", 10),
+                supertrend_multiplier=getattr(cls, "st_multiplier", 3.0),
+                supertrend_strategy_name=strategy_name,
+                supertrend_extra_kwargs={
+                    kwarg: getattr(cls, attr)
+                    for kwarg, attr in _SUPERTREND_ATTACH_FNS.get(strategy_name, (None, {}))[1].items()
+                } if strategy_name in _SUPERTREND_ATTACH_FNS else None,
             )
         else:
             if timeframe != "15m":

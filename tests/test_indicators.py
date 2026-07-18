@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from strategy.indicators import atr, ema, rsi, sma
+from strategy.indicators import atr, ema, rsi, sma, supertrend
 
 
 def _series(*values, freq="1h"):
@@ -72,3 +72,39 @@ def test_sma_window_arithmetic():
     # SMA(1,2,3) = 2, SMA(2,3,4) = 3, ...
     assert m.iloc[0] == pytest.approx(2.0)
     assert m.iloc[-1] == pytest.approx(9.0)
+
+
+def test_supertrend_warmup_is_nan():
+    n = 40
+    idx = pd.date_range("2024-01-01", periods=n, freq="4h", tz="UTC").tz_localize(None)
+    close = pd.Series(np.linspace(100, 140, n), index=idx)
+    high = close + 1
+    low = close - 1
+    st = supertrend(high, low, close, period=10, multiplier=3.0)
+    # ATR(10) warms up over the first (period - 1) bars — supertrend/direction
+    # NaN there, matching atr()'s own warm-up convention.
+    assert st["supertrend"].iloc[:9].isna().all()
+    assert st["direction"].iloc[:9].isna().all()
+    assert not st["supertrend"].iloc[9:].isna().all()
+
+
+def test_supertrend_flips_direction_on_trend_reversal():
+    # Strong uptrend (tight range, steadily rising) for 40 bars, then a sharp
+    # sustained downtrend for 40 bars. Direction should be +1 during the
+    # uptrend and flip to -1 once the downtrend is established.
+    n_up = 40
+    n_down = 40
+    idx = pd.date_range("2024-01-01", periods=n_up + n_down, freq="4h", tz="UTC").tz_localize(None)
+    up = np.linspace(100, 200, n_up)
+    down = np.linspace(200, 50, n_down)
+    close = pd.Series(np.concatenate([up, down]), index=idx)
+    high = close + 1
+    low = close - 1
+
+    st = supertrend(high, low, close, period=10, multiplier=3.0)
+
+    # Late in the uptrend (well past warm-up), direction is +1 (long).
+    assert st["direction"].iloc[30] == 1.0
+
+    # Late in the downtrend, direction must have flipped to -1 (short).
+    assert st["direction"].iloc[-1] == -1.0
