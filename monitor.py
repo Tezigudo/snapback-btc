@@ -212,17 +212,29 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
             fill = conn.execute(
                 "SELECT equity_after FROM fills WHERE equity_after IS NOT NULL "
                 "ORDER BY id DESC LIMIT 1").fetchone()
-        anchor = (float(rows.get("principal_anchor", 0) or 0)
-                  or float(rows.get("deploy_start_equity", 0) or 0)
-                  or None)
+        def _pos_float(key: str) -> float | None:
+            """Parse one meta key defensively — a malformed value in one key
+            must not invalidate the whole equity read (Sourcery, PR #6)."""
+            try:
+                v = float(rows.get(key))
+            except (TypeError, ValueError):
+                return None
+            return v if v > 0 else None
+
+        anchor = _pos_float("principal_anchor") or _pos_float("deploy_start_equity")
         today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
-        daily = float(rows.get("daily_anchor_equity", 0) or 0)
-        if rows.get("daily_anchor_date") == today and daily > 0:
+        daily = _pos_float("daily_anchor_equity")
+        if rows.get("daily_anchor_date") == today and daily is not None:
             current: float | None = daily
-        elif fill and fill[0]:
-            current = float(fill[0])
+        elif fill is not None and fill[0] is not None:
+            # equity_after of 0.0 is a VALID (and alarming) reading — do not
+            # truthiness-filter it away.
+            try:
+                current = float(fill[0])
+            except (TypeError, ValueError):
+                current = daily
         else:
-            current = daily or None
+            current = daily
         return current, anchor
     except Exception as e:
         log.warning("monitor: db read failed for %s: %s", db_path, e)
