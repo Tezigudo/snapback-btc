@@ -38,8 +38,8 @@ DEFAULT_TIMEOUT_MS = 15_000
 #   signal_id: millisecond epoch when the bot decided on the signal
 #              (passed in by bot.py — anchors all 3 legs of a trade)
 #   leg      : "e" entry, "s" stop-loss, "t" take-profit,
-#              "x" time-stop close, "bf" boot-flatten, "h" HALT close,
-#              "k" kill-switch close
+#              "x" time-stop close, "ce" channel-exit close,
+#              "bf" boot-flatten, "h" HALT close, "k" kill-switch close
 # Binance allows alnum + ._-, max 36 chars. snap-v1-<13 digit ms>-tx = 24 chars.
 # Donchian leg uses prefix "snap-d3-" to distinguish in fills/logs.
 _COID_PREFIX_DEFAULT = "snap-v1-"
@@ -481,6 +481,7 @@ class BinanceClient:
 
         close_leg names the exit reason for tagging:
           - "x"  time-stop
+          - "ce" Donchian channel-exit close
           - "bf" boot-flatten (recovering from a stale position)
           - "h"  HALT-triggered close
           - "k"  kill-switch close

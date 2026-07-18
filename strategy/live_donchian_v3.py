@@ -25,6 +25,14 @@ CALLER CONTRACT: pass a frame whose last row is a CLOSED bar — drop Binance's
 still-forming last row first. bot._maybe_channel_exit does exactly that, so the
 live exit sees the same closed-bar series the backtest steps over.
 
+KNOWN LIVE↔BACKTEST DIVERGENCE (same-bar flip, accepted): the bot's loop runs
+the channel-exit check and then entry evaluation in the SAME iteration, so a
+close that pierces both the 10-bar exit channel AND the opposite 80-bar entry
+channel (with the slope gate agreeing) can exit and enter the opposite side on
+one bar. The backtest returns after its exit branch and can only re-enter at
+the NEXT bar. Verification panel 2026-07-18: narrow, directionally sensible,
+mirrors the accepted time-stop→re-enter behavior — documented, not gated.
+
 NO TP: the Donchian entry places entry + SL ONLY (no TP leg — "let the channel
 exit close the trade"). ATR_TP_K below is retained purely as an advisory
 reference level in logs/telemetry; it is NEVER placed as an order.
