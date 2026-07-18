@@ -215,8 +215,8 @@ def test_drain_handles_partial_failure_207(tmp: Path) -> None:
     from tools import consolidate_push
     state.init_db()
     state.enqueue_bot_event("heartbeat", equity_usd=101)
-    state.enqueue_bot_event("entry", signal_id="bad", side="long",
-                            qty=0.001, price_usd=65000)
+    id2 = state.enqueue_bot_event("entry", signal_id="bad", side="long",
+                                  qty=0.001, price_usd=65000)
     state.enqueue_bot_event("heartbeat", equity_usd=101)
     assert state.outbox_size() == 3
 
