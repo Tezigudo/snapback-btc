@@ -1,5 +1,13 @@
 # DEPLOY.md — 1-month real-money plan (small capital)
 
+> ## ⚠️ CURRENT DEPLOY REALITY (2026-07) — read this first, the rest of this doc is the historical 2026-05 plan
+>
+> - **Two legs run as systemd services on the droplet** (root@152.42.241.43, repo at `/root/snapback-btc` on the curated **`droplet` branch** — NOT main): `snapback-btc.service` (v1 multifactor, 15m, own sub-account, principal $142.93) and `snapback-btc-donchian.service` (donchian-v3, 4h, principal $130.53). tmux instructions below are obsolete.
+> - **Kill switch is principal-anchored at fraction 0.645 (−35.5% from net deposited principal)**, not the −18%/−15% deploy-start numbers below. Daily-loss breaker: 4.5% (blocks new entries, no flatten). Per-leg HALT files (`data/HALT_v1`, …).
+> - **Deploy procedure**: PR → review → merge to main → cherry-pick the deployable commits onto `droplet` (worktree: `/Users/god/Desktop/work/snapback-droplet-wt`) → `uv run pytest -q` → **`tools/check_deploy_drift.sh`** (must pass) → push → on droplet: `git reset --hard origin/droplet` → restart the affected service(s).
+> - **NEVER restart a service while its leg holds a position — boot FLATTENS any open position in live mode** (`stale_position_at_boot`). Verify flat first: last `fills` row in the leg's state DB, or the gates log line (only prints when flat and evaluating).
+> - Alert email = MailerSend (trial tier, fragile — paused 2026-07 for error-rate; monitor spam fix shipped). The consolidate dashboard is the reliable channel.
+
 Updated 2026-05-17. Strategy: **multifactor-v1**. Capital: **$60 USDT** (real). Duration: **30 days**.
 
 Backtest evidence: `PATH2_RESULTS.html` + `TRADING_HISTORY.html` (6 OOS windows, +55% compounded, 4 of 6 positive).

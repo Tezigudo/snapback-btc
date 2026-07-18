@@ -14,6 +14,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+research = pytest.importorskip(
+    "research",
+    reason="research package was removed from the repo post-cleanup",
+)
+
 from research.agents.base import FoldResult
 from research.agents.deterministic import DeterministicResearcher
 from research.scoring import (
