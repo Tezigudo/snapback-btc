@@ -1,24 +1,40 @@
-"""Live signal evaluator for Donchian-v3 cons.
+"""Live signal evaluator + channel-exit check for the Donchian-v3 leg.
 
-Pure-function port of `DonchianBreakoutBTCv3` (strategy/signals_donchian.py)
-for use in `bot.py`. Reads recent OHLCV bars, evaluates the LAST CLOSED
-bar, returns (side, sl_distance, tp_distance, debug).
+Pure-function ports of `DonchianBreakoutBTCv3` (strategy/signals_donchian.py)
+for use in `bot.py`:
+  - evaluate_signal_donchian_v3() : entry evaluation on the last CLOSED bar.
+  - channel_exit_signal()         : in-position Donchian-channel EXIT check.
 
-LIVE DIVERGES FROM BACKTEST in one place. The backtest exits on Donchian
-exit-channel (20-bar opposite extreme). The live bot uses a fixed-multiple
-TP because the existing bot loop is fire-and-forget on SL/TP brackets —
-managing channel exits would require a separate live-position monitor loop.
+EXIT SEMANTICS (channel_exit_signal) — byte-for-byte with the backtest.
+The backtest closes an open position on the Donchian EXIT-channel cross,
+computed exactly as attach_donchian / DonchianBreakoutBTCv3.next():
 
-To approximate "let winners run" without a per-tick exit monitor:
-  - SL distance = atr_sl_multiple × ATR(20, 4h)   = 1.5 × ATR (cons)
-  - TP distance = 5 × ATR(20, 4h)                  ≈ 3.3:1 R:R
-  - Time stop at `time_stop_bars` (48 bars × 4h = 8 days)
+    exit_upper = Close.rolling(N_exit, min_periods=N_exit).max().shift(1)
+    exit_lower = Close.rolling(N_exit, min_periods=N_exit).min().shift(1)
+    long  exits when close <  exit_lower      (STRICT '<')
+    short exits when close >  exit_upper      (STRICT '>')
 
-This is acceptable because the realistic backtest sim showed Donchian-cons
-wins last ~3-5×ATR on average. The 14-day dry-run on the droplet is
-designed to surface any meaningful divergence before live trading.
+The `.shift(1)` makes the channel the max/min of the N closes STRICTLY BEFORE
+the current bar; `close` is the current (last CLOSED) bar's close, so the
+channel can never peek at the bar being tested. channel_exit_signal mirrors
+this AND next()'s NaN guard over (upper, lower, exit_upper, exit_lower, atr).
+Validated live geometry: 80-bar entry channel + 10-bar exit channel
+(config donchian_period_exit=10 — the sweep winner over the old 20).
 
-Returns:
+CALLER CONTRACT: pass a frame whose last row is a CLOSED bar — drop Binance's
+still-forming last row first. bot._maybe_channel_exit does exactly that, so the
+live exit sees the same closed-bar series the backtest steps over.
+
+NO TP: the Donchian entry places entry + SL ONLY (no TP leg — "let the channel
+exit close the trade"). ATR_TP_K below is retained purely as an advisory
+reference level in logs/telemetry; it is NEVER placed as an order.
+
+TIME-STOP: the backtest IGNORES time_stop_bars (pre-existing known divergence).
+The live bot KEEPS the time-stop (bot._maybe_time_stop) as an extra max-hold
+safety ON TOP of the channel exit — it can only ever close EARLIER than the
+channel, never override a channel-exit decision.
+
+Returns (evaluate_signal_donchian_v3):
   side ∈ {'long', 'short', None}
   sl_distance, tp_distance — price units (NaN if side is None)
   debug — dict for logging
@@ -32,11 +48,12 @@ import pandas as pd
 from strategy.indicators import atr, ema
 
 # Cons params (locked 2026-05-23). See config/params_donchian.yaml.
+# Fallback defaults only — config/params_donchian.yaml is the source of truth.
 PERIOD_ENTRY = 80
-PERIOD_EXIT = 20             # for debug logging only — live exits on SL/TP
+PERIOD_EXIT = 10             # validated live EXIT channel (config drives this)
 ATR_PERIOD = 20
 ATR_SL_K = 1.5
-ATR_TP_K = 5.0               # simplified — see module docstring
+ATR_TP_K = 5.0               # advisory telemetry only — entry places NO TP order
 REGIME_EMA_PERIOD = 120
 REGIME_SLOPE_WINDOW = 30
 SLOPE_TREND_THRESHOLD_PCT = 0.03
@@ -150,3 +167,81 @@ def evaluate_signal_donchian_v3(
         return "short", sl_dist, tp_dist, debug
 
     return None, float("nan"), float("nan"), {**debug, "reason": "no_breakout"}
+
+
+def channel_exit_signal(
+    bars_4h: pd.DataFrame,
+    position_side: str,
+    params: dict,
+) -> tuple[bool, dict]:
+    """Decide whether an OPEN donchian-v3 position closes on the Donchian
+    exit-channel cross, evaluated on the LAST CLOSED 4h bar.
+
+    Byte-for-byte with DonchianBreakoutBTCv3.next()'s in-position exit branch
+    (strategy/signals_donchian.py). next() guards at the top on all of
+    (upper, lower, exit_upper, exit_lower, atr) being finite, then closes:
+
+        long  when close_v <  exit_lower
+        short when close_v >  exit_upper
+
+    STRICT comparisons — a close exactly AT the channel does NOT exit. The
+    exit-channel columns use the same `.rolling(N).max()/min().shift(1)`
+    convention as attach_donchian, so the channel is the extreme of the N
+    closes strictly BEFORE the current bar and never peeks at it.
+
+    The full NaN guard (incl. the 80-bar entry channel and ATR) is replicated
+    even though only exit_upper/exit_lower drive the decision: it makes the
+    warmup window match the backtest bar-for-bar. In practice all indicators
+    are finite by the time a position is open (entry needs the 80-bar channel),
+    so the entry-channel/ATR terms never suppress a real exit. ATR is a
+    guard-only input here and is computed with the live (unshifted) convention,
+    consistent with evaluate_signal_donchian_v3.
+
+    CALLER CONTRACT: bars_4h.iloc[-1] MUST be a CLOSED bar (drop Binance's
+    forming last row first). Returns (should_exit, debug). should_exit is
+    False for a flat/unknown side, during warmup, or on any NaN indicator —
+    this function never raises.
+    """
+    if position_side not in ("long", "short"):
+        return False, {"reason": "not_in_position", "side": position_side}
+
+    s = params.get("strategy", {})
+    period_entry = int(s.get("donchian_period_entry", PERIOD_ENTRY))
+    period_exit = int(s.get("donchian_period_exit", PERIOD_EXIT))
+    atr_period = int(s.get("atr_period", ATR_PERIOD))
+
+    # +1 for the shift(1): the newest channel value needs N closes STRICTLY
+    # before the current bar, i.e. N+1 rows total.
+    need = max(period_entry, period_exit, atr_period) + 1
+    if len(bars_4h) < need:
+        return False, {"reason": "warmup", "have": len(bars_4h), "need": need}
+
+    close, high, low = bars_4h["Close"], bars_4h["High"], bars_4h["Low"]
+
+    # Same shift convention as attach_donchian: rolling extreme of the N closes
+    # ending at the PREVIOUS bar (shift(1)), read at the last (current) bar.
+    upper = close.rolling(period_entry, min_periods=period_entry).max().shift(1).iloc[-1]
+    lower = close.rolling(period_entry, min_periods=period_entry).min().shift(1).iloc[-1]
+    exit_upper = close.rolling(period_exit, min_periods=period_exit).max().shift(1).iloc[-1]
+    exit_lower = close.rolling(period_exit, min_periods=period_exit).min().shift(1).iloc[-1]
+    atr_v = atr(high, low, close, atr_period).iloc[-1]
+    cur_close = float(close.iloc[-1])
+
+    # next()'s NaN guard — same five indicators (+ the current close).
+    if not all(np.isfinite([upper, lower, exit_upper, exit_lower, atr_v, cur_close])):
+        return False, {"reason": "nan_indicators", "side": position_side}
+
+    debug = {
+        "side": position_side,
+        "cur_close": cur_close,
+        "exit_upper": float(exit_upper),
+        "exit_lower": float(exit_lower),
+        "period_exit": period_exit,
+    }
+
+    # Exit branch — mirrors next() exactly (strict inequalities).
+    if position_side == "long" and cur_close < exit_lower:
+        return True, {**debug, "reason": "channel_exit_long"}
+    if position_side == "short" and cur_close > exit_upper:
+        return True, {**debug, "reason": "channel_exit_short"}
+    return False, {**debug, "reason": "hold"}
