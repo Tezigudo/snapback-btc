@@ -24,10 +24,17 @@ class RiskCeilings:
     # without a separate RISK_REVIEW.
     MAX_LEVERAGE: int = 20
 
-    # If equity drawdown today exceeds this %, block NEW entries until the
-    # next UTC day (no flatten). 4.5 = one full 3.5%-risk stop-out does not
-    # freeze the leg; a second consecutive one does. Backport of the deployed
-    # value (2.0→3.5→4.5, RISK_REVIEW-approved 2026-07-12, droplet eac6071).
+    # If equity drawdown since this UTC day's start reaches this %, block NEW
+    # entries for the rest of the day (bot._daily_loss_blocks_entry). Does NOT
+    # flatten or HALT — open positions keep their exchange-native brackets, and
+    # the daily anchor resets at the next UTC midnight. The tighter,
+    # daily-resetting sibling of the cumulative kill-switch.
+    # Raised 2.0 → 3.5 → 4.5 on 2026-07-12 (RISK_REVIEW, user-approved): the
+    # breaker must exceed one full stop-loss or a single normal SL freezes the
+    # leg for the rest of the UTC day — a halt no backtest models. Moves in
+    # lockstep with sizing risk_per_trade_pct (now 3.5% per the sizing sweep,
+    # reports/sizing_sweep_2026.json): 4.5 tolerates exactly one full SL
+    # (3.5% + slippage) and still halts before a second consecutive one.
     MAX_DAILY_LOSS_PCT: float = 4.5
 
     # Single-symbol simplicity for v1.
