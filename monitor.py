@@ -62,7 +62,7 @@ DEFAULTS: dict[str, Any] = {
 
 LEGS: list[dict[str, str]] = [
     {"name": "v1",         "heartbeat": "heartbeat",            "log": "bot.jsonl",        "state": "state.db",            "systemd": "snapback-btc",                   "live": True},
-    {"name": "donchian",   "heartbeat": "heartbeat_donchian",   "log": "donchian.jsonl",   "state": "state_donchian.db",   "systemd": "snapback-btc-donchian",          "live": False},
+    {"name": "donchian",   "heartbeat": "heartbeat_donchian",   "log": "donchian.jsonl",   "state": "state_donchian.db",   "systemd": "snapback-btc-donchian",          "live": True},   # real-money since 2026-07-02
     # cnh_short retired 2026-07-12 (archive/cnh_short_retired_20260712). Its
     # permanent DOWN/STALE alerts every 5 min were failing sends that kept the
     # MailerSend account paused for "high API error rate" — do not re-add a
@@ -188,19 +188,42 @@ def _systemd_active(unit: str) -> bool:
 
 
 def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
-    """Return (current_equity, deploy_start_equity) or (None, None) on any failure.
+    """Return (current_equity, anchor_equity) or (None, None) on any failure.
 
-    Currently reads `deploy_start_equity` from meta; real equity is what the bot
-    logs on each tick. For monitor purposes we approximate "current" with the
-    latest bot.jsonl `current=` line; if not parseable, just return the anchor.
+    Anchor: `principal_anchor` (net deposited principal, what the bot's kill
+    switch actually uses) when the leg has one, else `deploy_start_equity`.
+    The old code returned deploy_start_equity for BOTH values, so drop_pct
+    was always 0 and the equity check could never fire.
+
+    Current: freshest of the bot's per-UTC-day breaker anchor
+    (`daily_anchor_equity`, refreshed on the first tick of each UTC day) and
+    the last fill's `equity_after`. Granularity is day/trade — this catches
+    multi-day bleeds and post-stop-out drops; intraday protection lives
+    in-process (daily-loss breaker + kill switch).
     """
     try:
         import sqlite3
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0) as conn:
-            cur = conn.execute("SELECT key, value FROM meta WHERE key = ?", ("deploy_start_equity",))
+            cur = conn.execute(
+                "SELECT key, value FROM meta WHERE key IN "
+                "('principal_anchor', 'deploy_start_equity', "
+                "'daily_anchor_equity', 'daily_anchor_date')")
             rows = dict(cur.fetchall())
-        anchor = float(rows.get("deploy_start_equity", 0) or 0) or None
-        return anchor, anchor  # current ≈ anchor unless we parse logs; bot log line "Resuming deploy" has it
+            fill = conn.execute(
+                "SELECT equity_after FROM fills WHERE equity_after IS NOT NULL "
+                "ORDER BY id DESC LIMIT 1").fetchone()
+        anchor = (float(rows.get("principal_anchor", 0) or 0)
+                  or float(rows.get("deploy_start_equity", 0) or 0)
+                  or None)
+        today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+        daily = float(rows.get("daily_anchor_equity", 0) or 0)
+        if rows.get("daily_anchor_date") == today and daily > 0:
+            current: float | None = daily
+        elif fill and fill[0]:
+            current = float(fill[0])
+        else:
+            current = daily or None
+        return current, anchor
     except Exception as e:
         log.warning("monitor: db read failed for %s: %s", db_path, e)
         return None, None
@@ -289,7 +312,7 @@ def _check_leg(leg: dict[str, str], cfg: dict[str, Any], state: dict[str, Any]) 
                 _emit(
                     f"EQUITY DROP {drop_pct:.1f}%: {name}",
                     f"Equity ${cur:.2f} vs anchor ${anchor:.2f} = -{drop_pct:.2f}%. "
-                    f"Kill switch fires at -15%. Investigate immediately.",
+                    f"Bot kill switch flattens at -35.5% from principal. Investigate immediately.",
                     state, kind=f"equity_alert:{name}", cooldown_min=cooldown,
                 )
             elif drop_pct >= float(cfg["equity_drop_warn_pct"]):
