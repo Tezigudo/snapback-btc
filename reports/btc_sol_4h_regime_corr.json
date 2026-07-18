@@ -1,0 +1,13 @@
+{
+  "window_start": "2022-01-01 00:00:00",
+  "window_end": "2026-05-30 12:00:00",
+  "n_bars_aligned": 9664,
+  "ema_period": 200,
+  "pearson": 0.681068,
+  "spearman": 0.681068,
+  "regime_agree_pct": 83.8162,
+  "btc_long_regime_pct": 49.8965,
+  "sol_long_regime_pct": 43.957,
+  "gate_threshold": 0.95,
+  "gate_pass": true
+}

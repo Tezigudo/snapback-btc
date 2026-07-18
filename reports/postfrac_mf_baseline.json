@@ -1,0 +1,252 @@
+{
+  "strategy_id": "mf_baseline",
+  "strategy_class": "strategy.signals_multifactor:DayTradeMultiFactorBTC",
+  "cash": 1000000.0,
+  "commission": 0.0005,
+  "margin": 0.05,
+  "price_scale": 0.001,
+  "config": {
+    "rsi_period": 14,
+    "rsi_long_threshold": 35.0,
+    "rsi_short_threshold": 70.0,
+    "volume_ma_period": 20,
+    "volume_multiple": 2.0,
+    "mf_trend_ema_period": 200,
+    "require_trend": true,
+    "require_candlestick": false,
+    "require_macd": false,
+    "require_funding_not_extreme": true,
+    "funding_extreme_threshold": 0.0005,
+    "sl_pct": 0.015,
+    "tp_pct": 0.03,
+    "max_hold_bars": 1344,
+    "risk_per_trade_pct": 2.75,
+    "leverage": 20,
+    "allow_shorts": true,
+    "use_mtf_4h_gate": false
+  },
+  "windows": [
+    "2022_H1",
+    "2023_H1",
+    "2024_H1",
+    "2024_H2",
+    "2025_H1"
+  ],
+  "per_window": [
+    {
+      "label": "2022_H1",
+      "start": "2022-01-01",
+      "end": "2022-06-30",
+      "trades": 28,
+      "return_pct": 1.6809,
+      "max_dd_pct": -11.6527,
+      "win_rate_pct": 25.0,
+      "equity_final": 1016808.6332
+    },
+    {
+      "label": "2023_H1",
+      "start": "2023-01-01",
+      "end": "2023-06-30",
+      "trades": 43,
+      "return_pct": 28.8424,
+      "max_dd_pct": -14.9511,
+      "win_rate_pct": 34.8837,
+      "equity_final": 1288424.0935
+    },
+    {
+      "label": "2024_H1",
+      "start": "2024-01-01",
+      "end": "2024-06-30",
+      "trades": 22,
+      "return_pct": 4.1125,
+      "max_dd_pct": -9.8969,
+      "win_rate_pct": 27.2727,
+      "equity_final": 1041124.7446
+    },
+    {
+      "label": "2024_H2",
+      "start": "2024-07-01",
+      "end": "2024-12-31",
+      "trades": 42,
+      "return_pct": 2.8806,
+      "max_dd_pct": -15.1812,
+      "win_rate_pct": 23.8095,
+      "equity_final": 1028806.2029
+    },
+    {
+      "label": "2025_H1",
+      "start": "2025-01-01",
+      "end": "2025-06-30",
+      "trades": 33,
+      "return_pct": 7.2798,
+      "max_dd_pct": -9.5282,
+      "win_rate_pct": 30.303,
+      "equity_final": 1072798.0344
+    }
+  ],
+  "summary": {
+    "n_trades": 168,
+    "compounded_pct": 50.5402,
+    "windows_positive": "5/5",
+    "per_window_return_pct": [
+      1.6809,
+      28.8424,
+      4.1125,
+      2.8806,
+      7.2798
+    ]
+  },
+  "psr": {
+    "n_trades": 5,
+    "point_sharpe": 0.792221,
+    "sr_se_lo": 0.268969,
+    "psr_vs_hurdle": 0.995786,
+    "psr_lo_adjusted": 0.995786,
+    "sr_lo_adjusted": 0.792221,
+    "lo_eta": 1.0,
+    "min_trl": 3,
+    "skew": 2.054548,
+    "kurt": 7.305634,
+    "interpretation": "evidence_of_edge"
+  },
+  "legacy_psr_stitched": {
+    "n_trades": 168,
+    "point_sharpe": 0.099696,
+    "sr_se_lo": 0.073458,
+    "psr_vs_hurdle": 0.911994,
+    "psr_lo_adjusted": 0.911994,
+    "sr_lo_adjusted": 0.099696,
+    "lo_eta": 1.0,
+    "min_trl": 248,
+    "skew": 0.974677,
+    "kurt": 2.494058,
+    "interpretation": "insufficient_evidence"
+  },
+  "canonical": {
+    "aggregation_method": "v2_equity_curve",
+    "aggregation_version": "v2_equity_curve",
+    "n_windows": 5,
+    "n_trades_sum": 168,
+    "compounded_pct": 50.5402,
+    "windows_positive": "5/5",
+    "windows_positive_pct": 100.0,
+    "per_window_return_pct": [
+      1.6809,
+      28.8424,
+      4.1125,
+      2.8806,
+      7.2798
+    ],
+    "psr_per_window": [
+      {
+        "label": "2022_H1",
+        "n_trades": 28,
+        "point_sharpe": 0.033773,
+        "sr_se_lo": 0.18589,
+        "psr_vs_hurdle": 0.570798,
+        "psr_lo_adjusted": 0.570798,
+        "sr_lo_adjusted": 0.033773,
+        "lo_eta": 1.0,
+        "min_trl": 2297,
+        "skew": 0.971823,
+        "kurt": 2.258697,
+        "interpretation": "insufficient_evidence"
+      },
+      {
+        "label": "2023_H1",
+        "n_trades": 43,
+        "point_sharpe": 0.198577,
+        "sr_se_lo": 0.142628,
+        "psr_vs_hurdle": 0.915588,
+        "psr_lo_adjusted": 0.894752,
+        "sr_lo_adjusted": 0.180713,
+        "lo_eta": 0.910039,
+        "min_trl": 62,
+        "skew": 0.664247,
+        "kurt": 1.673446,
+        "interpretation": "insufficient_evidence"
+      },
+      {
+        "label": "2024_H1",
+        "n_trades": 22,
+        "point_sharpe": 0.074866,
+        "sr_se_lo": 0.205962,
+        "psr_vs_hurdle": 0.638756,
+        "psr_lo_adjusted": 0.638756,
+        "sr_lo_adjusted": 0.074866,
+        "lo_eta": 1.0,
+        "min_trl": 452,
+        "skew": 0.919249,
+        "kurt": 2.47925,
+        "interpretation": "insufficient_evidence"
+      },
+      {
+        "label": "2024_H2",
+        "n_trades": 42,
+        "point_sharpe": 0.040464,
+        "sr_se_lo": 0.149396,
+        "psr_vs_hurdle": 0.605498,
+        "psr_lo_adjusted": 0.600494,
+        "sr_lo_adjusted": 0.038501,
+        "lo_eta": 0.951498,
+        "min_trl": 1550,
+        "skew": 1.58399,
+        "kurt": 4.649468,
+        "interpretation": "insufficient_evidence"
+      },
+      {
+        "label": "2025_H1",
+        "n_trades": 33,
+        "point_sharpe": 0.093365,
+        "sr_se_lo": 0.164871,
+        "psr_vs_hurdle": 0.711457,
+        "psr_lo_adjusted": 0.705161,
+        "sr_lo_adjusted": 0.090294,
+        "lo_eta": 0.967105,
+        "min_trl": 280,
+        "skew": 1.152469,
+        "kurt": 3.122901,
+        "interpretation": "insufficient_evidence"
+      }
+    ],
+    "psr_walkforward": {
+      "n_trades": 5,
+      "point_sharpe": 0.792221,
+      "sr_se_lo": 0.268969,
+      "psr_vs_hurdle": 0.995786,
+      "psr_lo_adjusted": 0.995786,
+      "sr_lo_adjusted": 0.792221,
+      "lo_eta": 1.0,
+      "min_trl": 3,
+      "skew": 2.054548,
+      "kurt": 7.305634,
+      "interpretation": "evidence_of_edge"
+    },
+    "legacy_compounded_pct": 27.0487,
+    "legacy_psr_stitched": {
+      "n_trades": 168,
+      "point_sharpe": 0.099696,
+      "sr_se_lo": 0.073458,
+      "psr_vs_hurdle": 0.911994,
+      "psr_lo_adjusted": 0.911994,
+      "sr_lo_adjusted": 0.099696,
+      "lo_eta": 1.0,
+      "min_trl": 248,
+      "skew": 0.974677,
+      "kurt": 2.494058,
+      "interpretation": "insufficient_evidence",
+      "deprecation": "stitched_per_trade_pl_pct_psr_is_N_inflated"
+    },
+    "legacy_delta_pp": 23.4915
+  },
+  "aggregation_method": "v2_equity_curve",
+  "pre_fix": {
+    "compounded_pct": 50.48,
+    "trades": 168
+  },
+  "locked_reference": {
+    "v1_locked_compounded_pct": 55.73,
+    "note": "Phase 2 re-baseline \u2014 v2 canonical should match v1 to rounding because this runner already used stats['Return [%]']."
+  },
+  "elapsed_sec": 1.22
+}

@@ -1,0 +1,65 @@
+{
+  "strategy": "div_v2_loose",
+  "class": "strategy.signals_divergence_v2:DivergenceV2Loose",
+  "cash": 1000000,
+  "config": {},
+  "windows": {
+    "2022_H1": {
+      "trades": 5,
+      "total_return_pct": 2.3114,
+      "win_rate_pct": 40.0,
+      "max_dd_pct": -3.1237,
+      "sharpe": 0.8554,
+      "equity_final": 1023114.3374
+    },
+    "2023_H1": {
+      "trades": 5,
+      "total_return_pct": -1.8523,
+      "win_rate_pct": 20.0,
+      "max_dd_pct": -5.4165,
+      "sharpe": -0.732,
+      "equity_final": 981476.6693
+    },
+    "2024_H1": {
+      "trades": 4,
+      "total_return_pct": -0.8369,
+      "win_rate_pct": 25.0,
+      "max_dd_pct": -3.5393,
+      "sharpe": -0.3381,
+      "equity_final": 991631.2552
+    },
+    "2024_H2": {
+      "trades": 9,
+      "total_return_pct": 4.1144,
+      "win_rate_pct": 44.4444,
+      "max_dd_pct": -2.3739,
+      "sharpe": 1.0704,
+      "equity_final": 1041144.1339
+    },
+    "2025_H1": {
+      "trades": 3,
+      "total_return_pct": -3.2933,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": -3.2933,
+      "sharpe": -2.5367,
+      "equity_final": 967066.5438
+    }
+  },
+  "compounded_pct": 0.2586,
+  "total_trades": 26,
+  "positive_windows": 2,
+  "psr_aggregated": {
+    "n_trades": 26,
+    "point_sharpe": -0.075035,
+    "sr_se_lo": 0.204696,
+    "psr_vs_hurdle": 0.35963,
+    "min_trl": 1000000000,
+    "skew": 1.142228,
+    "kurt": 3.632413,
+    "interpretation": "insufficient_evidence"
+  },
+  "pre_fix_reference": {
+    "compounded_pct": 0.26,
+    "trades": 26
+  }
+}

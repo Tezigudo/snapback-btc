@@ -1,0 +1,226 @@
+{
+  "arm": "solo_15bps",
+  "allocation_btc": 1.0,
+  "allocation_sol": 1.0,
+  "veto_on": false,
+  "cash_per_book": 1000000.0,
+  "commission": 0.00075,
+  "margin": 0.05,
+  "price_scale": 0.001,
+  "locked_config": {
+    "rsi_period": 14,
+    "rsi_long_threshold": 35.0,
+    "rsi_short_threshold": 70.0,
+    "volume_ma_period": 20,
+    "volume_multiple": 2.0,
+    "mf_trend_ema_period": 200,
+    "require_trend": true,
+    "require_candlestick": false,
+    "require_macd": false,
+    "require_funding_not_extreme": true,
+    "funding_extreme_threshold": 0.0005,
+    "sl_pct": 0.015,
+    "tp_pct": 0.03,
+    "max_hold_bars": 1344,
+    "risk_per_trade_pct": 2.75,
+    "leverage": 20,
+    "allow_shorts": true,
+    "use_mtf_4h_gate": true
+  },
+  "windows": [
+    "2022_H1",
+    "2023_H1",
+    "2024_H1",
+    "2024_H2",
+    "2025_H1",
+    "2026_H1"
+  ],
+  "per_window": {
+    "BTC": {
+      "2022_H1": {
+        "label": "2022_H1",
+        "start": "2022-01-01",
+        "end": "2022-06-30",
+        "trades": 19,
+        "return_pct": 17.95577127917402,
+        "max_dd_pct": -8.597294383517507,
+        "win_rate_pct": 36.84210526315789,
+        "equity_final": 1179557.7127917402,
+        "sharpe": 1.1344101499575858
+      },
+      "2023_H1": {
+        "label": "2023_H1",
+        "start": "2023-01-01",
+        "end": "2023-06-30",
+        "trades": 34,
+        "return_pct": 29.1099952147882,
+        "max_dd_pct": -12.724274352701004,
+        "win_rate_pct": 41.17647058823529,
+        "equity_final": 1291099.952147882,
+        "sharpe": 1.6437505868746458
+      },
+      "2024_H1": {
+        "label": "2024_H1",
+        "start": "2024-01-01",
+        "end": "2024-06-30",
+        "trades": 14,
+        "return_pct": -0.6133563942649402,
+        "max_dd_pct": -9.917711469794366,
+        "win_rate_pct": 28.57142857142857,
+        "equity_final": 993866.4360573506,
+        "sharpe": -0.0728319137484922
+      },
+      "2024_H2": {
+        "label": "2024_H2",
+        "start": "2024-07-01",
+        "end": "2024-12-31",
+        "trades": 34,
+        "return_pct": -1.3630321742793545,
+        "max_dd_pct": -18.398780052203513,
+        "win_rate_pct": 23.52941176470588,
+        "equity_final": 986369.6782572065,
+        "sharpe": -0.14948789599987558
+      },
+      "2025_H1": {
+        "label": "2025_H1",
+        "start": "2025-01-01",
+        "end": "2025-06-30",
+        "trades": 20,
+        "return_pct": 6.7135376829168525,
+        "max_dd_pct": -9.613215875770731,
+        "win_rate_pct": 40.0,
+        "equity_final": 1067135.3768291685,
+        "sharpe": 0.7598660848173199
+      },
+      "2026_H1": {
+        "label": "2026_H1",
+        "start": "2026-01-01",
+        "end": "2026-06-30",
+        "trades": 17,
+        "return_pct": 0.875404119302018,
+        "max_dd_pct": -8.4300410459626,
+        "win_rate_pct": 29.411764705882355,
+        "equity_final": 1008754.0411930202,
+        "sharpe": 0.10267800743667438
+      }
+    },
+    "SOL": {
+      "2022_H1": {
+        "label": "2022_H1",
+        "start": "2022-01-01",
+        "end": "2022-06-30",
+        "trades": 10,
+        "return_pct": 4.440809256835852,
+        "max_dd_pct": -8.101037784605158,
+        "win_rate_pct": 40.0,
+        "equity_final": 1044408.0925683585,
+        "sharpe": 0.4934780460833983
+      },
+      "2023_H1": {
+        "label": "2023_H1",
+        "start": "2023-01-01",
+        "end": "2023-06-30",
+        "trades": 21,
+        "return_pct": 12.199099567843671,
+        "max_dd_pct": -23.232774421782942,
+        "win_rate_pct": 38.095238095238095,
+        "equity_final": 1121990.9956784367,
+        "sharpe": 0.7885654828401518
+      },
+      "2024_H1": {
+        "label": "2024_H1",
+        "start": "2024-01-01",
+        "end": "2024-06-30",
+        "trades": 14,
+        "return_pct": 3.9311437323957565,
+        "max_dd_pct": -13.44346632530976,
+        "win_rate_pct": 35.714285714285715,
+        "equity_final": 1039311.4373239576,
+        "sharpe": 0.39593788376724814
+      },
+      "2024_H2": {
+        "label": "2024_H2",
+        "start": "2024-07-01",
+        "end": "2024-12-31",
+        "trades": 26,
+        "return_pct": -1.0156096681573312,
+        "max_dd_pct": -15.151329630233324,
+        "win_rate_pct": 26.923076923076923,
+        "equity_final": 989843.9033184267,
+        "sharpe": -0.09286484242959085
+      },
+      "2025_H1": {
+        "label": "2025_H1",
+        "start": "2025-01-01",
+        "end": "2025-06-30",
+        "trades": 16,
+        "return_pct": -1.1820594996327185,
+        "max_dd_pct": -13.76519423273922,
+        "win_rate_pct": 25.0,
+        "equity_final": 988179.4050036728,
+        "sharpe": -0.13195459559868714
+      },
+      "2026_H1": {
+        "label": "2026_H1",
+        "start": "2026-01-01",
+        "end": "2026-06-30",
+        "trades": 11,
+        "return_pct": 14.787311878049488,
+        "max_dd_pct": -5.296731034001256,
+        "win_rate_pct": 45.45454545454545,
+        "equity_final": 1147873.118780495,
+        "sharpe": 1.5125115473950803
+      }
+    },
+    "PORT": {}
+  },
+  "summary": {
+    "BTC_solo": {
+      "n_trades_total": 138,
+      "compounded_pct": 60.7132,
+      "windows_positive": "4/6",
+      "per_window_return_pct": [
+        17.9558,
+        29.11,
+        -0.6134,
+        -1.363,
+        6.7135,
+        0.8754
+      ],
+      "psr_vs_hurdle": 0.941932,
+      "psr_interpretation": "insufficient_evidence"
+    },
+    "SOL_solo": {
+      "n_trades_total": 98,
+      "compounded_pct": 36.7419,
+      "windows_positive": "4/6",
+      "per_window_return_pct": [
+        4.4408,
+        12.1991,
+        3.9311,
+        -1.0156,
+        -1.1821,
+        14.7873
+      ],
+      "psr_vs_hurdle": 0.866296,
+      "psr_interpretation": "insufficient_evidence"
+    },
+    "Portfolio": {
+      "n_trades_total": 236,
+      "compounded_pct": null,
+      "windows_positive": "n/a",
+      "per_window_return_pct": [],
+      "psr_vs_hurdle": null,
+      "psr_interpretation": "n/a (solo arm)"
+    }
+  },
+  "cross_arm_lift": {
+    "btc_solo_psr": 0.941932,
+    "sol_solo_psr": 0.866296,
+    "portfolio_psr": null,
+    "portfolio_compounded": null,
+    "portfolio_maxdd_proxy": null,
+    "lift_over_btc_solo": null,
+    "lift_over_sol_solo": null
+  }
+}

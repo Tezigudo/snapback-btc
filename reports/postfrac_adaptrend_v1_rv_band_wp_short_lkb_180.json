@@ -1,0 +1,216 @@
+{
+  "experiment": "adaptrend_v1_rv_band",
+  "rv_tag": "wp_short_lkb_180",
+  "base_strategy": "strategy.signals_adaptive_trend:AdaptiveTrendV1",
+  "rv_strategy": "strategy.signals_adaptive_trend_v1_rv_band:AdaptiveTrendV1_rv_band",
+  "cash": 1000000.0,
+  "commission": 0.00075,
+  "commission_note": "7.5 bps per side = 15 bps round-trip (TODO_LEG gate #1)",
+  "margin": 0.05,
+  "price_scale": 0.001,
+  "warm_prefix_days": 395,
+  "env_contract": {
+    "RV_BAND_LO": 0.25,
+    "RV_BAND_HI": 0.75,
+    "RV_LOOKBACK_DAYS": 180,
+    "RV_TAG": "wp_short_lkb_180",
+    "RV_WINDOW_HOURS_FIXED": 720
+  },
+  "windows": [
+    "2022_H1",
+    "2023_H1",
+    "2024_H1",
+    "2024_H2",
+    "2025_H1"
+  ],
+  "base": {
+    "arm": "base",
+    "config": {
+      "alpha": 2.0
+    },
+    "per_window": [
+      {
+        "label": "2022_H1",
+        "start": "2022-01-01",
+        "end": "2022-06-30",
+        "trades": 51,
+        "return_pct": -2.7029,
+        "max_dd_pct": -7.2506,
+        "win_rate_pct": 35.2941,
+        "equity_final": 972970.5066
+      },
+      {
+        "label": "2023_H1",
+        "start": "2023-01-01",
+        "end": "2023-06-30",
+        "trades": 44,
+        "return_pct": 71.4275,
+        "max_dd_pct": -5.9668,
+        "win_rate_pct": 47.7273,
+        "equity_final": 1714275.0118
+      },
+      {
+        "label": "2024_H1",
+        "start": "2024-01-01",
+        "end": "2024-06-30",
+        "trades": 54,
+        "return_pct": -5.5953,
+        "max_dd_pct": -9.3382,
+        "win_rate_pct": 40.7407,
+        "equity_final": 944047.4127
+      },
+      {
+        "label": "2024_H2",
+        "start": "2024-07-01",
+        "end": "2024-12-31",
+        "trades": 56,
+        "return_pct": 32.7733,
+        "max_dd_pct": -5.7206,
+        "win_rate_pct": 42.8571,
+        "equity_final": 1327733.1659
+      },
+      {
+        "label": "2025_H1",
+        "start": "2025-01-01",
+        "end": "2025-06-30",
+        "trades": 49,
+        "return_pct": 12.2271,
+        "max_dd_pct": -6.1092,
+        "win_rate_pct": 44.898,
+        "equity_final": 1122271.0896
+      }
+    ],
+    "summary": {
+      "n_trades": 254,
+      "compounded_pct": 134.6294,
+      "windows_positive": "3/5",
+      "per_window_return_pct": [
+        -2.7029,
+        71.4275,
+        -5.5953,
+        32.7733,
+        12.2271
+      ]
+    },
+    "psr": {
+      "n_trades": 254,
+      "point_sharpe": 0.090201,
+      "sr_se_lo": 0.057965,
+      "psr_vs_hurdle": 0.939795,
+      "min_trl": 285,
+      "skew": 1.774548,
+      "kurt": 7.632045,
+      "interpretation": "insufficient_evidence"
+    }
+  },
+  "rv": {
+    "arm": "rv_band",
+    "config": {
+      "alpha": 2.0,
+      "rv_window_hours": 720,
+      "rv_rank_lookback_days": 180,
+      "rv_band_lo": 0.25,
+      "rv_band_hi": 0.75
+    },
+    "per_window": [
+      {
+        "label": "2022_H1",
+        "start": "2022-01-01",
+        "end": "2022-06-30",
+        "trades": 20,
+        "return_pct": -7.4351,
+        "max_dd_pct": -6.4786,
+        "win_rate_pct": 20.0,
+        "equity_final": 925648.6451
+      },
+      {
+        "label": "2023_H1",
+        "start": "2023-01-01",
+        "end": "2023-06-30",
+        "trades": 31,
+        "return_pct": 46.7551,
+        "max_dd_pct": -4.5082,
+        "win_rate_pct": 51.6129,
+        "equity_final": 1467551.3859
+      },
+      {
+        "label": "2024_H1",
+        "start": "2024-01-01",
+        "end": "2024-06-30",
+        "trades": 13,
+        "return_pct": 0.2859,
+        "max_dd_pct": -5.039,
+        "win_rate_pct": 30.7692,
+        "equity_final": 1002859.1069
+      },
+      {
+        "label": "2024_H2",
+        "start": "2024-07-01",
+        "end": "2024-12-31",
+        "trades": 31,
+        "return_pct": 31.8475,
+        "max_dd_pct": -3.7684,
+        "win_rate_pct": 41.9355,
+        "equity_final": 1318474.9479
+      },
+      {
+        "label": "2025_H1",
+        "start": "2025-01-01",
+        "end": "2025-06-30",
+        "trades": 25,
+        "return_pct": 17.1574,
+        "max_dd_pct": -4.0879,
+        "win_rate_pct": 48.0,
+        "equity_final": 1171574.3229
+      }
+    ],
+    "summary": {
+      "n_trades": 120,
+      "compounded_pct": 110.4365,
+      "windows_positive": "4/5",
+      "per_window_return_pct": [
+        -7.4351,
+        46.7551,
+        0.2859,
+        31.8475,
+        17.1574
+      ]
+    },
+    "psr": {
+      "n_trades": 120,
+      "point_sharpe": 0.134777,
+      "sr_se_lo": 0.079132,
+      "psr_vs_hurdle": 0.955064,
+      "min_trl": 113,
+      "skew": 2.082136,
+      "kurt": 8.057559,
+      "interpretation": "evidence_of_edge"
+    }
+  },
+  "verdict": {
+    "base_compounded_pct": 134.6294,
+    "rv_compounded_pct": 110.4365,
+    "delta_compounded_pp": -24.1929,
+    "base_psr": 0.939795,
+    "rv_psr": 0.955064,
+    "delta_psr": 0.0153,
+    "base_point_sharpe": 0.090201,
+    "rv_point_sharpe": 0.134777,
+    "base_trades": 254,
+    "rv_trades": 120,
+    "delta_trades": -134,
+    "cleared_+5pp_bar": false,
+    "psr_not_worse": true,
+    "decision": "ITERATE \u2014 PSR holds but compounded fails +5pp bar"
+  },
+  "reference_postfrac_base": {
+    "source": "reports/postfrac_adaptrend_v1.json (set_5_OOS)",
+    "compounded_pct": 45.5222,
+    "n_trades": 255,
+    "psr_vs_hurdle": 0.905331,
+    "point_sharpe": 0.076677,
+    "note": "Reference is at 5bps RT.  Current run uses 15bps RT + warm-prefix harness, so base numbers WILL differ from the reference \u2014 both arms share the new cost basis so the delta is the gate effect under realistic costs."
+  },
+  "notes": "Warm-prefix harness: each window's data slice starts 395d before window_start so the RV-band gate (rv_window_hours=720 + rv_rank_lookback_days=180) is warmed up by the time the OOS window begins.  Trades, win-rate, compounded return, max-DD, and per-window CSVs are computed strictly on trades whose EntryTime >= window_start. Commission = 15 bps round-trip (7.5 bps/side).  Base arm sees identical warm prefix so OOS-portion stats are directly comparable; both arms are apples-to-apples.",
+  "elapsed_sec": 10.8
+}

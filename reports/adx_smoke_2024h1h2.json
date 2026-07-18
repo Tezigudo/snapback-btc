@@ -1,0 +1,26 @@
+{
+  "2024_H1": {
+    "trades": 5,
+    "total_return_pct": -4.1575,
+    "win_rate_pct": 20.0,
+    "max_dd_pct": -4.3316,
+    "sharpe": -2.5714,
+    "equity_final": 9584.2451,
+    "config_applied": {}
+  },
+  "2024_H2": {
+    "trades": 0,
+    "total_return_pct": 0.0,
+    "win_rate_pct": 0.0,
+    "max_dd_pct": -0.0,
+    "sharpe": 0.0,
+    "equity_final": 10000.0,
+    "config_applied": {}
+  },
+  "smoke_verdict": "marginal",
+  "verdict_note": "H2=0 trades is a runner-cash artifact, NOT over-gating. Runner uses $10k cash; with BTC at $60-100k and integer unit sizing, _position_units() returns 0 for all bars in H2 (risk_amount=$100 / sl_dist=$411 = 0.24 BTC → int=0). With $1M cash, strategy fires 817 H1 / 871 H2 trades. The strategy is NOT over-gated; parameters need tuning (35% WR, heavy losses at defaults). Recommend: fix runner cash to $1M for ADX smoke, then re-evaluate against the decision table with actual trade counts.",
+  "diagnostic_at_1M_cash": {
+    "2024_H1": {"trades": 817, "return_pct": -69.16, "win_rate_pct": 35.1},
+    "2024_H2": {"trades": 871, "return_pct": -74.05, "win_rate_pct": 35.1}
+  }
+}

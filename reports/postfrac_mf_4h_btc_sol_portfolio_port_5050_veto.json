@@ -1,0 +1,126 @@
+{
+  "arm": "port_5050_veto",
+  "allocation_btc": 0.5,
+  "allocation_sol": 0.5,
+  "veto_on": true,
+  "cash_per_book": 1000000.0,
+  "commission": 0.00075,
+  "margin": 0.05,
+  "price_scale": 0.001,
+  "locked_config": {
+    "rsi_period": 14,
+    "rsi_long_threshold": 35.0,
+    "rsi_short_threshold": 70.0,
+    "volume_ma_period": 20,
+    "volume_multiple": 2.0,
+    "mf_trend_ema_period": 200,
+    "require_trend": true,
+    "require_candlestick": false,
+    "require_macd": false,
+    "require_funding_not_extreme": true,
+    "funding_extreme_threshold": 0.0005,
+    "sl_pct": 0.015,
+    "tp_pct": 0.03,
+    "max_hold_bars": 1344,
+    "risk_per_trade_pct": 2.75,
+    "leverage": 20,
+    "allow_shorts": true,
+    "use_mtf_4h_gate": true
+  },
+  "windows": [
+    "2024_H1"
+  ],
+  "per_window": {
+    "BTC": {
+      "2024_H1": {
+        "label": "2024_H1",
+        "start": "2024-01-01",
+        "end": "2024-06-30",
+        "trades": 11,
+        "return_pct": 0.43630407620092154,
+        "max_dd_pct": -9.917711469794366,
+        "win_rate_pct": 27.27272727272727,
+        "equity_final": 1004363.0407620092,
+        "sharpe": 0.06214268451931913
+      }
+    },
+    "SOL": {
+      "2024_H1": {
+        "label": "2024_H1",
+        "start": "2024-01-01",
+        "end": "2024-06-30",
+        "trades": 1,
+        "return_pct": -1.1589771440412033,
+        "max_dd_pct": -2.2683395554827235,
+        "win_rate_pct": 0.0,
+        "equity_final": 988410.228559588,
+        "sharpe": -1.4370526320714248
+      }
+    },
+    "PORT": {
+      "2024_H1": {
+        "return_pct": -0.3613,
+        "trades": 12,
+        "win_rate_pct": 25.0,
+        "max_dd_pct": -5.1656,
+        "btc_return_pct": 0.4363,
+        "sol_return_pct": -1.159,
+        "pnl_pct": [
+          -0.4956221568820183,
+          1.4234292144278669,
+          1.4238750000000013,
+          -0.8242389221081194,
+          -0.22042765393503155,
+          -0.8243636611712405,
+          -0.8244375000000007,
+          1.424835756594645,
+          -0.1547561418521631,
+          -0.49859735358753,
+          -0.1540731034825338,
+          -0.31608468893579633
+        ]
+      }
+    }
+  },
+  "summary": {
+    "BTC_solo": {
+      "n_trades_total": 11,
+      "compounded_pct": 0.4363,
+      "windows_positive": "1/1",
+      "per_window_return_pct": [
+        0.4363
+      ],
+      "psr_vs_hurdle": 0.534256,
+      "psr_interpretation": "insufficient_evidence"
+    },
+    "SOL_solo": {
+      "n_trades_total": 1,
+      "compounded_pct": -1.159,
+      "windows_positive": "0/1",
+      "per_window_return_pct": [
+        -1.159
+      ],
+      "psr_vs_hurdle": 0.0,
+      "psr_interpretation": "insufficient_evidence"
+    },
+    "Portfolio": {
+      "n_trades_total": 12,
+      "compounded_pct": -0.3613,
+      "windows_positive": "0/1",
+      "per_window_return_pct": [
+        -0.3613
+      ],
+      "psr_vs_hurdle": 0.495025,
+      "psr_interpretation": "insufficient_evidence"
+    }
+  },
+  "cross_arm_lift": {
+    "btc_solo_psr": 0.534256,
+    "sol_solo_psr": 0.0,
+    "portfolio_psr": 0.495025,
+    "portfolio_compounded": -0.3613,
+    "portfolio_maxdd_proxy": -5.1656,
+    "lift_over_btc_solo": -0.7976,
+    "lift_over_sol_solo": 0.7977
+  }
+}

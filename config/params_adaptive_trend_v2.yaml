@@ -1,0 +1,47 @@
+# AdaptiveTrendV2 — Algorithm 2 (monthly re-optimisation) config.
+#
+# Used by tools/_adaptrend_v2_run.py and tools/adaptrend_v2_sanity.py.
+# NOT wired to live bot (research only).
+#
+# Re-opt mechanics (see strategy/signals_adaptive_trend_v2.py docstring):
+#   At the first 15m bar of each new UTC month, sweep (L, theta) over the
+#   grid below, replay the bare H6 signal on the most recent
+#   fit_window_months of CLOSED H6 bars (timestamp strictly < month start),
+#   rank by per-trade Sharpe, pick the winner.  alpha is held fixed at
+#   the v1 plateau optimum.
+
+strategy: AdaptiveTrendV2
+
+# Re-opt cadence + window
+fit_window_months: 6
+refit_frequency: monthly
+
+# Parameter grid swept each month.  alpha NOT included — extended sweep
+# (ADAPTIVE_TREND_EXTENDED_VERDICT.md) showed compounded return is monotone
+# in alpha up to 2.0 across every (L, theta) cell; re-opting alpha would
+# burn turns without upside.
+fit_param_grid:
+  L: [3, 4, 5, 6]
+  theta: [0.015, 0.02, 0.025]
+
+# Inner fitness function for ranking candidates.
+# Options: "per_trade_sharpe" (mean/std of gross per-trade returns) |
+#          "compounded_return" (product of (1+r) - 1) — not currently used.
+fit_metric: per_trade_sharpe
+
+# If best candidate has fewer than this many trades in the fit window,
+# fall back to the prior month's params (small-sample protection).
+min_trades_for_fit: 20
+
+# Initial / warmup params (used before the first re-opt fires and during
+# small-sample fallbacks).  Matches v1's defaults.
+momentum_lookback_h6: 4
+theta_entry: 0.02
+atr_period_h6: 14
+alpha: 2.0           # FIXED — see fit_param_grid comment above.
+
+# Direction + sizing (mirrors v1)
+allow_shorts: true
+risk_per_trade_pct: 1.0
+leverage: 5
+max_hold_h6_bars: 120

@@ -1,0 +1,43 @@
+{
+  "strategy": "multifactor-v1-4h-gate",
+  "coin": "SOL",
+  "window": "2026H1",
+  "config": {
+    "rsi_period": 14,
+    "rsi_long_threshold": 35.0,
+    "rsi_short_threshold": 70.0,
+    "volume_ma_period": 20,
+    "volume_multiple": 2.0,
+    "mf_trend_ema_period": 200,
+    "require_trend": true,
+    "require_candlestick": false,
+    "require_macd": false,
+    "require_funding_not_extreme": true,
+    "funding_extreme_threshold": 0.0005,
+    "sl_pct": 0.015,
+    "tp_pct": 0.03,
+    "max_hold_bars": 1344,
+    "risk_per_trade_pct": 2.75,
+    "leverage": 20,
+    "allow_shorts": true,
+    "use_mtf_4h_gate": true
+  },
+  "summary": {
+    "window": "2026H1",
+    "window_start": "2026-01-01",
+    "window_end": "2026-06-30",
+    "first_bar": "2026-01-01 00:00:00",
+    "last_bar": "2026-05-27 05:15:00",
+    "n_bars": 14038,
+    "n_trades": 11,
+    "compounded_pct": 14.7869,
+    "win_rate_pct": 45.4545,
+    "max_dd_pct": -5.2967,
+    "equity_final": 1147869.04,
+    "sharpe_ratio_bt": 1.5125,
+    "point_sharpe_trade": 0.3512,
+    "psr_single_window": 0.8815,
+    "psr_flag": "single_window_proxy",
+    "commission": 0.00075
+  }
+}

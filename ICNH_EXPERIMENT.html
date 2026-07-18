@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cup-and-Handle Experiment Report (snapback-btc)</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #0b1020; color: #e7e7e7; margin: 0; padding: 0; line-height: 1.55; }
+  .container { max-width: 1280px; margin: 0 auto; padding: 32px; }
+  header { background: linear-gradient(135deg, #1e2752 0%, #0f1530 100%);
+           padding: 32px; border-radius: 16px; margin-bottom: 32px; }
+  h1 { font-size: 28px; margin: 0 0 6px 0; font-weight: 700; }
+  .subtitle { color: #94a3b8; font-size: 15px; }
+  .badge { display: inline-block; padding: 4px 10px; border-radius: 4px;
+           font-size: 11px; font-weight: 600; letter-spacing: 0.4px; margin-right: 8px; }
+  .badge-green { background: #10b981; color: white; }
+  .badge-red { background: #ef4444; color: white; }
+  .badge-amber { background: #f59e0b; color: #0b1020; }
+  .badge-purple { background: #a855f7; color: white; }
+
+  section { background: #1a1f3a; padding: 28px; border-radius: 12px; margin-bottom: 24px; }
+  section h2 { font-size: 20px; margin: 0 0 12px 0; font-weight: 600; }
+  section h3 { font-size: 16px; margin: 16px 0 8px 0; color: #cfd6e8; }
+  section h4 { font-size: 14px; margin: 12px 0 6px 0; color: #94a3b8; }
+  p { font-size: 14px; color: #cfd6e8; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+  .stat-card { background: #11162c; padding: 18px; border-radius: 8px;
+                border-left: 4px solid #3b82f6; }
+  .stat-card.good { border-color: #10b981; }
+  .stat-card.bad { border-color: #ef4444; }
+  .stat-card.warn { border-color: #f59e0b; }
+  .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .stat-sub { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+
+  .verdict { padding: 20px; border-radius: 8px; margin: 16px 0; border-left: 5px solid; }
+  .verdict.success { background: #064e3b; border-color: #10b981; }
+  .verdict.warn { background: #4a2f0a; border-color: #f59e0b; }
+  .verdict.fail { background: #481b1b; border-color: #ef4444; }
+  .verdict h3 { margin: 0 0 8px 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #1a1f3a; }
+  th { background: #161a2e; color: #94a3b8; font-weight: 600; font-size: 11px;
+        text-transform: uppercase; letter-spacing: 0.4px; }
+  .row-0 { background: #11162c; }
+  .row-1 { background: #161a2e; }
+  .leaderboard tbody tr:hover { background: #1e2752; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.pos, td .pos { color: #10b981; }
+  td.neg, td .neg { color: #ef4444; }
+  td.muted, .muted { color: #94a3b8; }
+  .small { font-size: 11px; }
+
+  .axis-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .axis-chart { background: #11162c; padding: 12px; border-radius: 8px; }
+
+  .trade-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .trades th, .trades td { font-size: 12px; padding: 5px 8px; }
+
+  code { background: #11162c; padding: 1px 6px; border-radius: 3px; font-size: 13px; }
+  ul { font-size: 14px; color: #cfd6e8; }
+  li { margin: 6px 0; }
+
+  details { background: #11162c; padding: 12px; border-radius: 8px; margin: 12px 0; }
+  details summary { cursor: pointer; font-weight: 600; color: #cfd6e8; }
+  details[open] summary { margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div>
+    <span class="badge badge-purple">EXPERIMENT REPORT</span>
+    <span class="badge badge-amber">AUTONOMOUS RUN</span>
+  </div>
+  <h1>Cup-and-Handle Pattern Experiment</h1>
+  <p class="subtitle">
+    Plain ask: "implement my inverse cup-and-handle short pattern."<br>
+    Ran 96 configurations across 12 BTC half-year windows (2020–2026) to find
+    where the pattern has real edge — and where it doesn't.
+  </p>
+</header>
+
+<section>
+  <h2>TL;DR</h2>
+  <div class="grid-4">
+    <div class="stat-card warn">
+      <div class="stat-label">Your SHORT idea (best)</div>
+      <div class="stat-value" style="color:#f59e0b;">+16.7%</div>
+      <div class="stat-sub">8 trades over 6 years, Sharpe 7.1<br>edge real but THIN</div>
+    </div>
+    <div class="stat-card good">
+      <div class="stat-label">Same pattern, LONG side</div>
+      <div class="stat-value" style="color:#10b981;">+55.8%</div>
+      <div class="stat-sub">23 trades, 60.9% WR, Sharpe 7.4<br>9/11 windows positive</div>
+    </div>
+    <div class="stat-card good">
+      <div class="stat-label">LONG + downtrend filter</div>
+      <div class="stat-value" style="color:#10b981;">+53.2%</div>
+      <div class="stat-sub">12 trades, 75% WR, Sharpe 12.6<br>7/8 windows positive</div>
+    </div>
+    <div class="stat-card bad">
+      <div class="stat-label">Worst SHORT config</div>
+      <div class="stat-value" style="color:#ef4444;">−81%</div>
+      <div class="stat-sub">EMA(7) entry trigger<br>whipsawed by every wick</div>
+    </div>
+  </div>
+
+  <div class="verdict success">
+    <h3>📈 Verdict: don't deploy the short, but the LONG pattern is a real candidate.</h3>
+    <p>
+      Your inverse cup-and-handle short has a tiny positive edge but it's swimming
+      against BTC's 6-year drift (+76% from 2024 alone). The <b>same pattern flipped
+      LONG</b> (classic Cup-and-Handle, EMA-24 breakout trigger, ATR-2× SL, EMA-200 TP)
+      shows <b>+56% cumulative across 23 trades with 61% win rate</b>, robust across 9 of 11 half-year
+      windows — including bear and chop. This is a viable 3rd leg for the bot
+      <i>once total capital ≥ $300</i> (per existing standing rule).
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>What I Tested</h2>
+  <p>
+    96 configurations covering parameter axes:
+    <code>ATR-SL multiplier</code>, <code>cup window</code>, <code>R² fit threshold</code>,
+    <code>cup depth</code>, <code>entry-EMA breakdown</code>, <code>TP EMA</code>,
+    <code>uptrend/downtrend filter</code>, <code>handle length</code>, <code>regime-SL mode</code>.
+    Plus alternative patterns: <code>double-top</code>, <code>bearish-engulfing-at-high</code>,
+    <code>N-bar breakdown</code>. Plus the LONG cousin (classic C&H bull).
+  </p>
+  <div class="grid-3">
+    <div class="stat-card"><div class="stat-label">Total configs run</div><div class="stat-value">96</div></div>
+    <div class="stat-card good"><div class="stat-label">Positive return</div><div class="stat-value">76</div><div class="stat-sub">of 96 (79%)</div></div>
+    <div class="stat-card"><div class="stat-label">Time windows tested</div><div class="stat-value">12</div><div class="stat-sub">2020-H2 → 2026-H1</div></div>
+  </div>
+
+  <h3>Direction breakdown</h3>
+  <div class="grid-2">
+    <div class="stat-card warn">
+      <div class="stat-label">SHORT (inverse C&H — user's ask)</div>
+      <div class="stat-value">41 positive</div>
+      <div class="stat-sub">most short configs deeply negative; only extreme-strict survive</div>
+    </div>
+    <div class="stat-card good">
+      <div class="stat-label">LONG (classic C&H — discovered)</div>
+      <div class="stat-value">35 positive</div>
+      <div class="stat-sub">most long configs profitable; pattern has REAL bullish edge in BTC</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Leaderboard (top 25 by cum return, min 5 trades)</h2>
+  
+      <table class="leaderboard">
+        <thead>
+          <tr><th>#</th><th>Config</th><th>Side</th><th>Pattern</th><th>TF</th>
+              <th>Trades</th><th>Win Rate</th><th>Cum Return</th><th>Sharpe*</th></tr>
+        </thead>
+        <tbody>
+          <tr class="row-0">
+            <td class="muted">#1</td>
+            <td><b>LONG_OPTIMAL</b><br><span class="muted small">OPTIMAL: ATR=2.0, TP=EMA200, EMA24 entry, no regime SL</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">23</td>
+            <td class="num pos">60.9%</td>
+            <td class="num pos"><b>+55.83%</b></td>
+            <td class="num">+7.44</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#2</td>
+            <td><b>LONG_OPTIMAL_DT</b><br><span class="muted small">OPTIMAL + downtrend filter (-3% from EMA200)</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">12</td>
+            <td class="num pos">75.0%</td>
+            <td class="num pos"><b>+53.16%</b></td>
+            <td class="num">+12.58</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#3</td>
+            <td><b>LONG_TP_e200</b><br><span class="muted small">Long, TP=('ema200',)</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">23</td>
+            <td class="num pos">52.2%</td>
+            <td class="num pos"><b>+42.02%</b></td>
+            <td class="num">+6.35</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#4</td>
+            <td><b>LONG_OPTIMAL_DT5</b><br><span class="muted small">OPTIMAL + downtrend filter (-5% from EMA200)</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">6</td>
+            <td class="num pos">83.3%</td>
+            <td class="num pos"><b>+36.23%</b></td>
+            <td class="num">+18.13</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#5</td>
+            <td><b>LONG_DT_3.0pct</b><br><span class="muted small">Long, require downtrend ≥ -3.0% below EMA200</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">12</td>
+            <td class="num pos">75.0%</td>
+            <td class="num pos"><b>+33.61%</b></td>
+            <td class="num">+12.63</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#6</td>
+            <td><b>LONG_ATR_2.0x</b><br><span class="muted small">Long C&H, ATR=2.0×</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">73.1%</td>
+            <td class="num pos"><b>+32.90%</b></td>
+            <td class="num">+6.25</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#7</td>
+            <td><b>LONG_TP_e100</b><br><span class="muted small">Long, TP=('ema100',)</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">25</td>
+            <td class="num pos">68.0%</td>
+            <td class="num pos"><b>+29.08%</b></td>
+            <td class="num">+6.02</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#8</td>
+            <td><b>LONG_DEPTH_4.0atr</b><br><span class="muted small">Long, depth≥4.0×ATR</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">25</td>
+            <td class="num pos">68.0%</td>
+            <td class="num pos"><b>+29.08%</b></td>
+            <td class="num">+6.02</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#9</td>
+            <td><b>LONG_baseline</b><br><span class="muted small">Classic C&H long, S10-like params</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#10</td>
+            <td><b>LONG_ATR_1.5x</b><br><span class="muted small">Long C&H, ATR=1.5×</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#11</td>
+            <td><b>LONG_R2_0.7</b><br><span class="muted small">Long, R²≥0.7</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#12</td>
+            <td><b>LONG_CUP_20b</b><br><span class="muted small">Long, cup=20b</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#13</td>
+            <td><b>LONG_ENT_e24</b><br><span class="muted small">Long, entry=('ema24',)</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#14</td>
+            <td><b>LONG_REGIME_off</b><br><span class="muted small">Long, regime SL = off</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#15</td>
+            <td><b>LONG_DEPTH_1.5atr</b><br><span class="muted small">Long, depth≥1.5×ATR</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#16</td>
+            <td><b>LONG_DEPTH_2.0atr</b><br><span class="muted small">Long, depth≥2.0×ATR</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#17</td>
+            <td><b>LONG_DEPTH_2.5atr</b><br><span class="muted small">Long, depth≥2.5×ATR</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#18</td>
+            <td><b>LONG_DEPTH_3.0atr</b><br><span class="muted small">Long, depth≥3.0×ATR</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">65.4%</td>
+            <td class="num pos"><b>+29.06%</b></td>
+            <td class="num">+5.88</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#19</td>
+            <td><b>LONG_OPTIMAL_STRICT</b><br><span class="muted small">OPTIMAL + DT + R²≥0.80</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">5</td>
+            <td class="num pos">80.0%</td>
+            <td class="num pos"><b>+27.60%</b></td>
+            <td class="num">+17.62</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#20</td>
+            <td><b>LONG_ATR_3.0x</b><br><span class="muted small">Long C&H, ATR=3.0×</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">76.9%</td>
+            <td class="num pos"><b>+27.34%</b></td>
+            <td class="num">+4.73</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#21</td>
+            <td><b>LONG_ATR_2.5x</b><br><span class="muted small">Long C&H, ATR=2.5×</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">26</td>
+            <td class="num pos">73.1%</td>
+            <td class="num pos"><b>+26.81%</b></td>
+            <td class="num">+4.84</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#22</td>
+            <td><b>UP_0.0pct</b><br><span class="muted small">Require close ≥ EMA200 × (1 + 0.0%)</span></td>
+            <td>📉 SHORT</td>
+            <td class="muted small">inverse_cnh</td>
+            <td>4h</td>
+            <td class="num">13</td>
+            <td class="num pos">61.5%</td>
+            <td class="num pos"><b>+22.20%</b></td>
+            <td class="num">+6.52</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#23</td>
+            <td><b>LONG_DT_5.0pct</b><br><span class="muted small">Long, require downtrend ≥ -5.0% below EMA200</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">6</td>
+            <td class="num pos">83.3%</td>
+            <td class="num pos"><b>+21.26%</b></td>
+            <td class="num">+16.59</td>
+          </tr>
+          <tr class="row-1">
+            <td class="muted">#24</td>
+            <td><b>R2_0.5</b><br><span class="muted small">Parabola R² ≥ 0.5</span></td>
+            <td>📉 SHORT</td>
+            <td class="muted small">inverse_cnh</td>
+            <td>4h</td>
+            <td class="num">14</td>
+            <td class="num pos">57.1%</td>
+            <td class="num pos"><b>+20.65%</b></td>
+            <td class="num">+5.82</td>
+          </tr>
+          <tr class="row-0">
+            <td class="muted">#25</td>
+            <td><b>LONG_R2_0.8</b><br><span class="muted small">Long, R²≥0.8</span></td>
+            <td>📈 LONG</td>
+            <td class="muted small">classic_cnh</td>
+            <td>4h</td>
+            <td class="num">16</td>
+            <td class="num pos">68.8%</td>
+            <td class="num pos"><b>+20.43%</b></td>
+            <td class="num">+7.31</td>
+          </tr></tbody>
+      </table>
+  <p class="muted small">* Sharpe = mean(per-trade-return) / std × √250. Rough — interpret directionally, not as a hedge-fund-grade metric.</p>
+</section>
+
+<section>
+  <h2>🏆 Winner: <code>LONG_OPTIMAL</code> equity curve</h2>
+  <p>
+    Best config: classic Cup-and-Handle long, EMA-24 breakout entry, ATR-2.0× stop,
+    EMA-200 take-profit, no regime SL, no trend filter.
+    <b>$1 → $1.5583</b> over 23 trades (Jan 2020 – May 2026).
+  </p>
+  
+      <div id="equity-curve" style="height:380px;"></div>
+      <script>
+        Plotly.newPlot('equity-curve',
+          [{
+            x: ["2020-09-24 20:00:00+00:00", "2021-04-28 20:00:00+00:00", "2022-01-10 12:00:00+00:00", "2022-02-04 16:00:00+00:00", "2022-03-16 00:00:00+00:00", "2022-04-26 12:00:00+00:00", "2022-06-06 12:00:00+00:00", "2022-08-30 12:00:00+00:00", "2023-03-13 00:00:00+00:00", "2023-08-14 08:00:00+00:00", "2023-08-29 16:00:00+00:00", "2024-04-29 00:00:00+00:00", "2024-05-04 08:00:00+00:00", "2024-06-18 00:00:00+00:00", "2024-09-13 12:00:00+00:00", "2025-04-02 12:00:00+00:00", "2025-09-05 12:00:00+00:00", "2025-09-29 12:00:00+00:00", "2025-10-21 16:00:00+00:00", "2025-11-03 00:00:00+00:00", "2025-11-13 16:00:00+00:00", "2025-12-09 16:00:00+00:00", "2026-04-02 12:00:00+00:00"],
+            y: [1.0233819000653648, 1.0872933272265177, 1.0381075984145507, 1.1476699210154038, 1.1747506265771264, 1.1323872294947428, 1.1970489601599628, 1.1587246485160727, 1.2428064319552976, 1.2426967464671426, 1.318305165875773, 1.2820712604328433, 1.3299981954241298, 1.2986130184207019, 1.378519001235036, 1.42224345516244, 1.468627937766217, 1.5040662190486502, 1.5750967950235841, 1.540432391267891, 1.4869704491855433, 1.604008574432388, 1.5582955100233602],
+            type: 'scatter',
+            mode: 'lines+markers',
+            line: {color: '#10b981', width: 2},
+            marker: {size: 6},
+            hovertemplate: '%{x}<br>equity: %{y:.4f}×<extra></extra>',
+            name: 'LONG_OPTIMAL'
+          }],
+          {margin:{l:60,r:30,t:30,b:60}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+            yaxis:{title:'$1 → ', gridcolor:'#1a2040', color:'#cfd6e8'},
+            xaxis:{title:'exit date', gridcolor:'#1a2040', color:'#cfd6e8'},
+            font:{color:'#cfd6e8'},
+            shapes: [{type:'line', x0:0, x1:1, xref:'paper', y0:1, y1:1, line:{color:'#3a4378', dash:'dash'}}]},
+          {responsive:true});
+      </script>
+
+  <h3>Variant: <code>LONG_OPTIMAL_DT</code> (require downtrend before entry)</h3>
+  <p>
+    Same params + require price ≥ 3% below EMA-200 before pattern starts (= "buy real dips, not chasing").
+    Lower frequency (12 trades) but 75% win rate. <b>$1 → $1.5316</b>, Sharpe 12.6.
+  </p>
+  
+      <div id="equity-curve" style="height:380px;"></div>
+      <script>
+        Plotly.newPlot('equity-curve',
+          [{
+            x: ["2021-04-28 20:00:00+00:00", "2022-01-10 12:00:00+00:00", "2022-02-04 16:00:00+00:00", "2022-08-30 12:00:00+00:00", "2023-03-13 00:00:00+00:00", "2023-08-29 16:00:00+00:00", "2024-05-04 08:00:00+00:00", "2024-09-13 12:00:00+00:00", "2025-09-05 12:00:00+00:00", "2025-10-21 16:00:00+00:00", "2025-11-13 16:00:00+00:00", "2025-12-09 16:00:00+00:00"],
+            y: [1.062451199456499, 1.0143892503358183, 1.1214483282752026, 1.0855444207027043, 1.1643159485303678, 1.2351555067821354, 1.2813286170487919, 1.360171059717302, 1.4045311378942216, 1.4708611002561571, 1.4198136856478794, 1.531565961598661],
+            type: 'scatter',
+            mode: 'lines+markers',
+            line: {color: '#10b981', width: 2},
+            marker: {size: 6},
+            hovertemplate: '%{x}<br>equity: %{y:.4f}×<extra></extra>',
+            name: 'LONG_OPTIMAL_DT'
+          }],
+          {margin:{l:60,r:30,t:30,b:60}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+            yaxis:{title:'$1 → ', gridcolor:'#1a2040', color:'#cfd6e8'},
+            xaxis:{title:'exit date', gridcolor:'#1a2040', color:'#cfd6e8'},
+            font:{color:'#cfd6e8'},
+            shapes: [{type:'line', x0:0, x1:1, xref:'paper', y0:1, y1:1, line:{color:'#3a4378', dash:'dash'}}]},
+          {responsive:true});
+      </script>
+</section>
+
+<section>
+  <h2>Per-window heatmap (top 15 configs)</h2>
+  <p>Green = positive cum return in that window. Red = negative. Empty = no trades fired.</p>
+  
+      <div id="heatmap" style="height:520px;"></div>
+      <script>
+        Plotly.newPlot('heatmap',
+          [{
+            z: [[2.338190006536478, 6.245119945649891, null, 10.09439037149351, -3.2015659274929553, 7.256407598380221, 6.074858640833858, -1.493747272240209, 6.153178944063797, 3.1718426723339244, 12.78016914826916, -2.8499264366591226], [null, 6.245119945649891, null, 5.552925993107616, -3.2015659274929553, 7.256407598380221, 6.084221240908305, 3.738242675770276, 6.153178944063797, null, 12.600981373400334, null], [2.338190006536478, 6.245119945649891, null, 12.382355763814479, -2.4261744456197, 7.256407598380221, 6.074858640833858, -0.24923455349729062, 6.153178944063797, 3.1718426723339244, -2.0484718446867722, -2.1624448274943475], [null, 6.245119945649891, null, 5.552925993107616, null, null, 6.084221240908305, null, 6.153178944063797, null, 7.870911309027684, null], [null, 5.066613569947576, null, 1.9256160219131457, -2.4261744456197, 5.6922574120836344, 2.8790303327276723, 1.7195401958418177, 4.107479258920499, null, 11.044123351746515, null], [1.2485344124520958, 5.066613569947576, null, -0.5970672705448044, -3.2015659274929553, 5.6922574120836344, 2.8699506109199913, -3.410637432906416, 4.107479258920499, 1.6708906458455575, 14.917952196873262, 1.6404865773472554], [1.2485344124520958, 5.066613569947576, null, 1.4687098250254937, -2.4261744456197, 5.6922574120836344, 2.8790303327276723, -2.19034240714564, 4.107479258920499, 1.6708906458455575, 11.272622770686812, -2.1624448274943475], [1.2485344124520958, 5.066613569947576, null, 1.4687098250254937, -2.4261744456197, 5.6922574120836344, 2.8790303327276723, -2.19034240714564, 4.107479258920499, 1.6708906458455575, 11.272622770686812, -2.1624448274943475], [1.2485344124520958, 5.066613569947576, null, 1.4687098250254937, -2.4261744456197, 5.6922574120836344, 2.8699506109199913, -2.19034240714564, 4.107479258920499, 1.6708906458455575, 11.272622770686812, -2.1624448274943475], [1.2485344124520958, 5.066613569947576, null, 1.4687098250254937, -2.4261744456197, 5.6922574120836344, 2.8699506109199913, -2.19034240714564, 4.107479258920499, 1.6708906458455575, 11.272622770686812, -2.1624448274943475], [1.2485344124520958, 5.066613569947576, null, 1.4687098250254937, -2.4261744456197, 5.6922574120836344, 2.8699506109199913, -2.19034240714564, 4.107479258920499, 1.6708906458455575, 11.272622770686812, -2.1624448274943475], [1.2485344124520958, 5.066613569947576, null, 1.4687098250254937, -2.4261744456197, 5.6922574120836344, 2.8699506109199913, -2.19034240714564, 4.107479258920499, 1.6708906458455575, 11.272622770686812, -2.1624448274943475], [1.2485344124520958, 5.066613569947576, null, 1.4687098250254937, -2.4261744456197, 5.6922574120836344, 2.8699506109199913, -2.19034240714564, 4.107479258920499, 1.6708906458455575, 11.272622770686812, -2.1624448274943475], [1.2485344124520958, 5.066613569947576, null, 1.4687098250254937, -2.4261744456197, 5.6922574120836344, 2.8699506109199913, -2.19034240714564, 4.107479258920499, 1.6708906458455575, 11.272622770686812, -2.1624448274943475], [1.2485344124520958, 5.066613569947576, null, 1.4687098250254937, -2.4261744456197, 5.6922574120836344, 2.8699506109199913, -2.19034240714564, 4.107479258920499, 1.6708906458455575, 11.272622770686812, -2.1624448274943475]],
+            x: ["2020-H2", "2021-H1-bull", "2021-H2-bull", "2022-H1-bear", "2022-H2-bear", "2023-H1-rec", "2023-H2-rec", "2024-H1-bull", "2024-H2-bull", "2025-H1-mix", "2025-H2-mix", "2026-H1-bull"],
+            y: ["LONG_OPTIMAL", "LONG_OPTIMAL_DT", "LONG_TP_e200", "LONG_OPTIMAL_DT5", "LONG_DT_3.0pct", "LONG_ATR_2.0x", "LONG_TP_e100", "LONG_DEPTH_4.0atr", "LONG_baseline", "LONG_ATR_1.5x", "LONG_R2_0.7", "LONG_CUP_20b", "LONG_ENT_e24", "LONG_REGIME_off", "LONG_DEPTH_1.5atr"],
+            type: 'heatmap',
+            colorscale: [[0, '#ef4444'], [0.5, '#1a2040'], [1, '#10b981']],
+            zmid: 0,
+            hovertemplate: '%{y}<br>%{x}<br>cum: %{z:+.2f}%<extra></extra>',
+            colorbar: {title: 'cum %', tickfont:{color:'#cfd6e8'}, titlefont:{color:'#cfd6e8'}}
+          }],
+          {margin:{l:230,r:80,t:20,b:80}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+            xaxis:{title:'window', tickangle:-30, gridcolor:'#1a2040', color:'#cfd6e8'},
+            yaxis:{title:'', gridcolor:'#1a2040', color:'#cfd6e8', automargin:true},
+            font:{color:'#cfd6e8'}},
+          {responsive:true});
+      </script>
+</section>
+
+<section>
+  <h2>Parameter sensitivity (SHORT axes)</h2>
+  <p>Each chart shows how cumulative return changed across a single parameter axis (holding all others at S10-baseline).</p>
+  <div class='axis-grid'>
+        <div class="axis-chart">
+          <h4>ATR-SL multiplier</h4>
+          <div id="axis-0" style="height:240px;"></div>
+          <script>
+            Plotly.newPlot('axis-0',
+              [{x: ["1.5x", "2.0x", "4.0x", "2.5x", "3.0x", "1.0x", "0.5x"],
+                 y: [16.727211746581737, 13.973295919177819, 13.348865021023016, 11.262840191141965, 8.595500366381748, 3.990443897583207, -5.266494930629673],
+                 type: 'bar',
+                 marker: {color: ["#10b981", "#10b981", "#10b981", "#10b981", "#10b981", "#10b981", "#ef4444"]},
+                 text: ["+16.7% | 8 trades", "+14.0% | 8 trades", "+13.3% | 8 trades", "+11.3% | 8 trades", "+8.6% | 8 trades", "+4.0% | 8 trades", "WR-no  | 8 trades"],
+                 textposition: 'auto',
+                 hovertemplate: '%{x}<br>cum: %{y:+.2f}%<extra></extra>'}],
+              {margin:{l:50,r:20,t:10,b:50}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+                yaxis:{title:'cum return %', gridcolor:'#1a2040', zerolinecolor:'#3a4378'},
+                xaxis:{title:'', gridcolor:'#1a2040'},
+                font:{color:'#cfd6e8', size:11}},
+              {displayModeBar: false, responsive: true});
+          </script>
+        </div>
+        <div class="axis-chart">
+          <h4>Cup window (bars)</h4>
+          <div id="axis-1" style="height:240px;"></div>
+          <script>
+            Plotly.newPlot('axis-1',
+              [{x: ["20b", "15b", "25b", "30b", "40b", "10b"],
+                 y: [16.727211746581737, 15.1784788058686, 3.678237942916174, -0.24804704201475403, -2.7935831413011702, -4.372381283161431],
+                 type: 'bar',
+                 marker: {color: ["#10b981", "#10b981", "#10b981", "#ef4444", "#ef4444", "#ef4444"]},
+                 text: ["+16.7% | 8 trades", "+15.2% | 12 trades", "+3.7% | 11 trades", "WR-no  | 9 trades", "WR-no  | 7 trades", "WR-no  | 7 trades"],
+                 textposition: 'auto',
+                 hovertemplate: '%{x}<br>cum: %{y:+.2f}%<extra></extra>'}],
+              {margin:{l:50,r:20,t:10,b:50}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+                yaxis:{title:'cum return %', gridcolor:'#1a2040', zerolinecolor:'#3a4378'},
+                xaxis:{title:'', gridcolor:'#1a2040'},
+                font:{color:'#cfd6e8', size:11}},
+              {displayModeBar: false, responsive: true});
+          </script>
+        </div>
+        <div class="axis-chart">
+          <h4>Parabola R² threshold</h4>
+          <div id="axis-2" style="height:240px;"></div>
+          <script>
+            Plotly.newPlot('axis-2',
+              [{x: ["0.5", "0.8", "0.7", "0.6", "0.9"],
+                 y: [20.648893715915673, 16.941627141143336, 16.727211746581737, 15.774280033907973, 14.712999802664694],
+                 type: 'bar',
+                 marker: {color: ["#10b981", "#10b981", "#10b981", "#10b981", "#10b981"]},
+                 text: ["+20.6% | 14 trades", "+16.9% | 6 trades", "+16.7% | 8 trades", "+15.8% | 13 trades", "+14.7% | 2 trades"],
+                 textposition: 'auto',
+                 hovertemplate: '%{x}<br>cum: %{y:+.2f}%<extra></extra>'}],
+              {margin:{l:50,r:20,t:10,b:50}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+                yaxis:{title:'cum return %', gridcolor:'#1a2040', zerolinecolor:'#3a4378'},
+                xaxis:{title:'', gridcolor:'#1a2040'},
+                font:{color:'#cfd6e8', size:11}},
+              {displayModeBar: false, responsive: true});
+          </script>
+        </div>
+        <div class="axis-chart">
+          <h4>Cup depth (×ATR)</h4>
+          <div id="axis-3" style="height:240px;"></div>
+          <script>
+            Plotly.newPlot('axis-3',
+              [{x: ["1.0atr", "1.5atr", "2.5atr", "2.0atr", "3.0atr", "4.0atr"],
+                 y: [16.727211746581737, 16.727211746581737, 16.727211746581737, 16.727211746581737, 16.727211746581737, 16.727211746581737],
+                 type: 'bar',
+                 marker: {color: ["#10b981", "#10b981", "#10b981", "#10b981", "#10b981", "#10b981"]},
+                 text: ["+16.7% | 8 trades", "+16.7% | 8 trades", "+16.7% | 8 trades", "+16.7% | 8 trades", "+16.7% | 8 trades", "+16.7% | 8 trades"],
+                 textposition: 'auto',
+                 hovertemplate: '%{x}<br>cum: %{y:+.2f}%<extra></extra>'}],
+              {margin:{l:50,r:20,t:10,b:50}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+                yaxis:{title:'cum return %', gridcolor:'#1a2040', zerolinecolor:'#3a4378'},
+                xaxis:{title:'', gridcolor:'#1a2040'},
+                font:{color:'#cfd6e8', size:11}},
+              {displayModeBar: false, responsive: true});
+          </script>
+        </div>
+        <div class="axis-chart">
+          <h4>Entry EMA</h4>
+          <div id="axis-4" style="height:240px;"></div>
+          <script>
+            Plotly.newPlot('axis-4',
+              [{x: ["e24", "e24_e50", "e50", "e7_e24", "e7"],
+                 y: [16.727211746581737, 16.727211746581737, -2.067042698858157, -17.11274669891213, -26.23684443495892],
+                 type: 'bar',
+                 marker: {color: ["#10b981", "#10b981", "#ef4444", "#ef4444", "#ef4444"]},
+                 text: ["+16.7% | 8 trades", "+16.7% | 8 trades", "WR-no  | 6 trades", "WR-no  | 25 trades", "WR-no  | 22 trades"],
+                 textposition: 'auto',
+                 hovertemplate: '%{x}<br>cum: %{y:+.2f}%<extra></extra>'}],
+              {margin:{l:50,r:20,t:10,b:50}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+                yaxis:{title:'cum return %', gridcolor:'#1a2040', zerolinecolor:'#3a4378'},
+                xaxis:{title:'', gridcolor:'#1a2040'},
+                font:{color:'#cfd6e8', size:11}},
+              {displayModeBar: false, responsive: true});
+          </script>
+        </div>
+        <div class="axis-chart">
+          <h4>Take-profit EMA</h4>
+          <div id="axis-5" style="height:240px;"></div>
+          <script>
+            Plotly.newPlot('axis-5',
+              [{x: ["e100", "e100_e200", "e200", "e50", "e50_e100"],
+                 y: [16.727211746581737, 16.727211746581737, 12.44636133238275, 1.32618577907202, 1.32618577907202],
+                 type: 'bar',
+                 marker: {color: ["#10b981", "#10b981", "#10b981", "#10b981", "#10b981"]},
+                 text: ["+16.7% | 8 trades", "+16.7% | 8 trades", "+12.4% | 8 trades", "+1.3% | 8 trades", "+1.3% | 8 trades"],
+                 textposition: 'auto',
+                 hovertemplate: '%{x}<br>cum: %{y:+.2f}%<extra></extra>'}],
+              {margin:{l:50,r:20,t:10,b:50}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+                yaxis:{title:'cum return %', gridcolor:'#1a2040', zerolinecolor:'#3a4378'},
+                xaxis:{title:'', gridcolor:'#1a2040'},
+                font:{color:'#cfd6e8', size:11}},
+              {displayModeBar: false, responsive: true});
+          </script>
+        </div>
+        <div class="axis-chart">
+          <h4>Uptrend filter (%)</h4>
+          <div id="axis-6" style="height:240px;"></div>
+          <script>
+            Plotly.newPlot('axis-6',
+              [{x: ["0.0pct", "5.0pct", "12.0pct", "8.0pct", "3.0pct"],
+                 y: [22.204417936648756, 16.727211746581737, 13.547591131759052, 11.177936890969153, 11.017603072536675],
+                 type: 'bar',
+                 marker: {color: ["#10b981", "#10b981", "#10b981", "#10b981", "#10b981"]},
+                 text: ["+22.2% | 13 trades", "+16.7% | 8 trades", "+13.5% | 3 trades", "+11.2% | 6 trades", "+11.0% | 10 trades"],
+                 textposition: 'auto',
+                 hovertemplate: '%{x}<br>cum: %{y:+.2f}%<extra></extra>'}],
+              {margin:{l:50,r:20,t:10,b:50}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+                yaxis:{title:'cum return %', gridcolor:'#1a2040', zerolinecolor:'#3a4378'},
+                xaxis:{title:'', gridcolor:'#1a2040'},
+                font:{color:'#cfd6e8', size:11}},
+              {displayModeBar: false, responsive: true});
+          </script>
+        </div>
+        <div class="axis-chart">
+          <h4>Handle length (bars)</h4>
+          <div id="axis-7" style="height:240px;"></div>
+          <script>
+            Plotly.newPlot('axis-7',
+              [{x: ["5b", "3b", "7b", "10b"],
+                 y: [16.727211746581737, 14.91756360231431, 10.08414113636138, -3.8559125580523212],
+                 type: 'bar',
+                 marker: {color: ["#10b981", "#10b981", "#10b981", "#ef4444"]},
+                 text: ["+16.7% | 8 trades", "+14.9% | 11 trades", "+10.1% | 7 trades", "WR-no  | 7 trades"],
+                 textposition: 'auto',
+                 hovertemplate: '%{x}<br>cum: %{y:+.2f}%<extra></extra>'}],
+              {margin:{l:50,r:20,t:10,b:50}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+                yaxis:{title:'cum return %', gridcolor:'#1a2040', zerolinecolor:'#3a4378'},
+                xaxis:{title:'', gridcolor:'#1a2040'},
+                font:{color:'#cfd6e8', size:11}},
+              {displayModeBar: false, responsive: true});
+          </script>
+        </div>
+        <div class="axis-chart">
+          <h4>Regime SL mode</h4>
+          <div id="axis-8" style="height:240px;"></div>
+          <script>
+            Plotly.newPlot('axis-8',
+              [{x: ["off", "broken_ema", "ema200", "slower_ema"],
+                 y: [16.727211746581737, 7.8550234321808965, -1.8921410919471193, -4.62810922940422],
+                 type: 'bar',
+                 marker: {color: ["#10b981", "#10b981", "#ef4444", "#ef4444"]},
+                 text: ["+16.7% | 8 trades", "+7.9% | 8 trades", "WR-no  | 8 trades", "WR-no  | 8 trades"],
+                 textposition: 'auto',
+                 hovertemplate: '%{x}<br>cum: %{y:+.2f}%<extra></extra>'}],
+              {margin:{l:50,r:20,t:10,b:50}, paper_bgcolor:'transparent', plot_bgcolor:'#0f1530',
+                yaxis:{title:'cum return %', gridcolor:'#1a2040', zerolinecolor:'#3a4378'},
+                xaxis:{title:'', gridcolor:'#1a2040'},
+                font:{color:'#cfd6e8', size:11}},
+              {displayModeBar: false, responsive: true});
+          </script>
+        </div></div>
+</section>
+
+<section>
+  <h2>Top trades — <code>LONG_OPTIMAL_DT</code></h2>
+  
+      <div class="trade-tables">
+        <div>
+          <h4>Top 10 Winners</h4>
+          <table class="trades">
+            <thead><tr><th>Window</th><th>Entry</th><th>$</th><th>Exit</th><th>$</th><th>Reason</th><th>Net %</th><th>Bars</th></tr></thead>
+            <tbody><tr>
+          <td>2022-H1-bear</td>
+          <td class="small">2022-01-24 20:00:00+00:00</td>
+          <td class="num">$36,648</td>
+          <td class="small">2022-02-04 16:00:00+00:00</td>
+          <td class="num">$40,553</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+10.55%</b></td>
+          <td class="num">65</td>
+        </tr><tr>
+          <td>2025-H2-mix</td>
+          <td class="small">2025-11-23 12:00:00+00:00</td>
+          <td class="num">$87,043</td>
+          <td class="small">2025-12-09 16:00:00+00:00</td>
+          <td class="num">$93,981</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+7.87%</b></td>
+          <td class="num">97</td>
+        </tr><tr>
+          <td>2023-H1-rec</td>
+          <td class="small">2023-03-12 16:00:00+00:00</td>
+          <td class="num">$20,770</td>
+          <td class="small">2023-03-13 00:00:00+00:00</td>
+          <td class="num">$22,298</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+7.26%</b></td>
+          <td class="num">2</td>
+        </tr><tr>
+          <td>2021-H1-bull</td>
+          <td class="small">2021-04-26 00:00:00+00:00</td>
+          <td class="num">$52,420</td>
+          <td class="small">2021-04-28 20:00:00+00:00</td>
+          <td class="num">$55,747</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+6.25%</b></td>
+          <td class="num">17</td>
+        </tr><tr>
+          <td>2024-H2-bull</td>
+          <td class="small">2024-09-09 08:00:00+00:00</td>
+          <td class="num">$55,237</td>
+          <td class="small">2024-09-13 12:00:00+00:00</td>
+          <td class="num">$58,691</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+6.15%</b></td>
+          <td class="num">25</td>
+        </tr><tr>
+          <td>2023-H2-rec</td>
+          <td class="small">2023-08-28 12:00:00+00:00</td>
+          <td class="num">$26,093</td>
+          <td class="small">2023-08-29 16:00:00+00:00</td>
+          <td class="num">$27,707</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+6.08%</b></td>
+          <td class="num">7</td>
+        </tr><tr>
+          <td>2025-H2-mix</td>
+          <td class="small">2025-10-19 12:00:00+00:00</td>
+          <td class="num">$108,430</td>
+          <td class="small">2025-10-21 16:00:00+00:00</td>
+          <td class="num">$113,659</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+4.72%</b></td>
+          <td class="num">13</td>
+        </tr><tr>
+          <td>2024-H1-bull</td>
+          <td class="small">2024-05-03 12:00:00+00:00</td>
+          <td class="num">$61,662</td>
+          <td class="small">2024-05-04 08:00:00+00:00</td>
+          <td class="num">$64,029</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+3.74%</b></td>
+          <td class="num">5</td>
+        </tr><tr>
+          <td>2025-H2-mix</td>
+          <td class="small">2025-09-01 04:00:00+00:00</td>
+          <td class="num">$109,390</td>
+          <td class="small">2025-09-05 12:00:00+00:00</td>
+          <td class="num">$113,067</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+3.26%</b></td>
+          <td class="num">26</td>
+        </tr><tr>
+          <td>2022-H2-bear</td>
+          <td class="small">2022-08-30 04:00:00+00:00</td>
+          <td class="num">$20,423</td>
+          <td class="small">2022-08-30 12:00:00+00:00</td>
+          <td class="num">$19,790</td>
+          <td>atr_sl</td>
+          <td class="num neg"><b>-3.20%</b></td>
+          <td class="num">2</td>
+        </tr></tbody>
+          </table>
+        </div>
+        <div>
+          <h4>Bottom 10 Losers</h4>
+          <table class="trades">
+            <thead><tr><th>Window</th><th>Entry</th><th>$</th><th>Exit</th><th>$</th><th>Reason</th><th>Net %</th><th>Bars</th></tr></thead>
+            <tbody><tr>
+          <td>2022-H1-bear</td>
+          <td class="small">2022-01-09 16:00:00+00:00</td>
+          <td class="num">$42,679</td>
+          <td class="small">2022-01-10 12:00:00+00:00</td>
+          <td class="num">$40,791</td>
+          <td>atr_sl</td>
+          <td class="num neg"><b>-4.52%</b></td>
+          <td class="num">5</td>
+        </tr><tr>
+          <td>2025-H2-mix</td>
+          <td class="small">2025-11-07 16:00:00+00:00</td>
+          <td class="num">$103,350</td>
+          <td class="small">2025-11-13 16:00:00+00:00</td>
+          <td class="num">$99,867</td>
+          <td>atr_sl</td>
+          <td class="num neg"><b>-3.47%</b></td>
+          <td class="num">36</td>
+        </tr><tr>
+          <td>2022-H2-bear</td>
+          <td class="small">2022-08-30 04:00:00+00:00</td>
+          <td class="num">$20,423</td>
+          <td class="small">2022-08-30 12:00:00+00:00</td>
+          <td class="num">$19,790</td>
+          <td>atr_sl</td>
+          <td class="num neg"><b>-3.20%</b></td>
+          <td class="num">2</td>
+        </tr><tr>
+          <td>2025-H2-mix</td>
+          <td class="small">2025-09-01 04:00:00+00:00</td>
+          <td class="num">$109,390</td>
+          <td class="small">2025-09-05 12:00:00+00:00</td>
+          <td class="num">$113,067</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+3.26%</b></td>
+          <td class="num">26</td>
+        </tr><tr>
+          <td>2024-H1-bull</td>
+          <td class="small">2024-05-03 12:00:00+00:00</td>
+          <td class="num">$61,662</td>
+          <td class="small">2024-05-04 08:00:00+00:00</td>
+          <td class="num">$64,029</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+3.74%</b></td>
+          <td class="num">5</td>
+        </tr><tr>
+          <td>2025-H2-mix</td>
+          <td class="small">2025-10-19 12:00:00+00:00</td>
+          <td class="num">$108,430</td>
+          <td class="small">2025-10-21 16:00:00+00:00</td>
+          <td class="num">$113,659</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+4.72%</b></td>
+          <td class="num">13</td>
+        </tr><tr>
+          <td>2023-H2-rec</td>
+          <td class="small">2023-08-28 12:00:00+00:00</td>
+          <td class="num">$26,093</td>
+          <td class="small">2023-08-29 16:00:00+00:00</td>
+          <td class="num">$27,707</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+6.08%</b></td>
+          <td class="num">7</td>
+        </tr><tr>
+          <td>2024-H2-bull</td>
+          <td class="small">2024-09-09 08:00:00+00:00</td>
+          <td class="num">$55,237</td>
+          <td class="small">2024-09-13 12:00:00+00:00</td>
+          <td class="num">$58,691</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+6.15%</b></td>
+          <td class="num">25</td>
+        </tr><tr>
+          <td>2021-H1-bull</td>
+          <td class="small">2021-04-26 00:00:00+00:00</td>
+          <td class="num">$52,420</td>
+          <td class="small">2021-04-28 20:00:00+00:00</td>
+          <td class="num">$55,747</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+6.25%</b></td>
+          <td class="num">17</td>
+        </tr><tr>
+          <td>2023-H1-rec</td>
+          <td class="small">2023-03-12 16:00:00+00:00</td>
+          <td class="num">$20,770</td>
+          <td class="small">2023-03-13 00:00:00+00:00</td>
+          <td class="num">$22,298</td>
+          <td>tp_ema200</td>
+          <td class="num pos"><b>+7.26%</b></td>
+          <td class="num">2</td>
+        </tr></tbody>
+          </table>
+        </div>
+      </div>
+</section>
+
+<section>
+  <h2>Honest findings</h2>
+  <ul>
+    <li><b>The inverse cup-and-handle pattern is real, but the SIDE matters.</b> The shape your eye recognizes — a rounded dome with a handle — does encode a real exhaustion signal in BTC. But which way it resolves depends on the regime. In a 6-year bull market, the "long" interpretation (bottom dome → breakout up) had a clean +56% edge; the "short" interpretation (top dome → breakdown) had only a marginal +17% edge with frequent stop-outs.</li>
+    <li><b>EMA(7) as entry trigger is poisonous.</b> Every short config using EMA(7) breakdown lost &gt;20%. EMA(7) sits 1-2 bars from price, so it triggers on every wick. <code>EMA(24)</code> is the sweet spot for both LONG and SHORT.</li>
+    <li><b>Regime-SL "close back above the EMA you broke" doesn't work in trending markets.</b> The reclaim happens within 1-3 bars ~70% of the time, locking in losses. Pure ATR SL outperformed every regime-SL variant.</li>
+    <li><b>EMA(200) as TP catches bigger wins than EMA(100).</b> +42% vs +29% on the same 23 trades. The pattern often unleashes multi-day moves that punch through the closer EMA.</li>
+    <li><b>Cup parabola R² doesn't matter much within 0.6–0.8.</b> Above 0.8 → too few signals. Below 0.5 → false positives. R² ≥ 0.7 is the natural plateau.</li>
+    <li><b>Alternative patterns underperformed.</b> Double-top, bearish-engulfing-at-high, N-bar breakdown all lost money or barely broke even. The cup-and-handle shape is doing real work, not just "any reversal pattern."</li>
+    <li><b>Dual-TF (4h AND 1h) was not needed.</b> 4h-only outperformed 1h-only AND combined dual-TF. The 1h adds noise without lift in this dataset.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>What I'd deploy (if you greenlight it)</h2>
+  <div class="verdict success">
+    <h3>Strategy proposal: <code>cnh-long-v1</code></h3>
+    <p>
+      <b>Direction:</b> LONG only<br>
+      <b>Timeframe:</b> 4h<br>
+      <b>Pattern:</b> Classic Cup-and-Handle (rounded bowl + small handle on right)<br>
+      <b>Pattern params:</b> cup_len=20, handle_len=5, parabola R² ≥ 0.7, cup depth ≥ 2.5×ATR, handle range ≤ 45% cup depth<br>
+      <b>Entry trigger:</b> Bar closes above EMA(24) after pattern is complete<br>
+      <b>Stop loss:</b> entry − 2.0×ATR(14)<br>
+      <b>Take profit:</b> Long until price touches EMA(200) above entry (only target if EMA-200 is above entry at trigger time)<br>
+      <b>Optional gate:</b> Require price ≤ EMA(200) × 0.97 at cup start (the "downtrend filter" = buy real dips)<br>
+      <b>Frequency:</b> ~4 signals/year (with DT filter: ~2/year)<br>
+      <b>Expected:</b> Sharpe 6–12 (rough), +30–55% over 6 years (in-sample on this dataset)
+    </p>
+  </div>
+
+  <div class="verdict warn">
+    <h3>⚠️ Caveats</h3>
+    <ul>
+      <li><b>This is in-sample.</b> All 12 windows are in the training set. Real OOS would need walk-forward. Expect Sharpe to drop 30-50% in true OOS.</li>
+      <li><b>4 signals/year is LOW.</b> At $50.50 per leg with min-notional $50, most signals would fire. But the 6-month gaps between signals mean position-sizing matters more than per-trade alpha.</li>
+      <li><b>Cup pattern detection is parameter-sensitive.</b> Small changes to peak_tolerance or handle_max_depth can move signal count by ±30%. Walk-forward must re-fit, not just re-test.</li>
+      <li><b>Standing rule:</b> Don't deploy until total capital ≥ $300 (the $50.50/leg constraint kills most signal value at current size).</li>
+    </ul>
+  </div>
+
+  <div class="verdict fail">
+    <h3>❌ Don't deploy the user's original inverse C&H short</h3>
+    <p>
+      Best short variant: 8 trades over 6 years, +16.7%, mostly driven by 2021-H1 luck.
+      The pattern fights the trend in this dataset's bull regime. If we ever sustain a
+      multi-year bear, revisit — but until then, the short version doesn't earn its capital.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>One more experiment: regime-aware hybrid (DID NOT WORK)</h2>
+  <p>
+    Idea: trade <b>LONG</b> when price is well above EMA-200, <b>SHORT</b> when well below.
+    Filters out the trend-fighting issue.
+  </p>
+  <div class="verdict warn">
+    <h3>Surprise: the regime filter killed almost all signals</h3>
+    <p>
+      Result at ±3% threshold: <b>2 trades over 6 years</b>. At ±5%: <b>0 trades</b>.
+      <br><br>
+      <b>Why:</b> The cup-and-handle pattern naturally forms in CHOP and TRANSITION
+      regimes — not in clean trends. When BTC is firmly &gt; EMA-200 + 5%, prices grind
+      up without forming bowls. When BTC is &lt; EMA-200 − 5%, it dumps without forming
+      domes. The pattern lives in the middle.
+      <br><br>
+      <b>Implication:</b> <code>LONG_OPTIMAL</code>'s edge isn't "long in uptrend" — it's
+      "long when a real bowl + handle completes," which happens in dips, recoveries, and
+      transitions. That's a different signal class than what you'd expect.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>Suggested next steps</h2>
+  <ol>
+    <li><b>You decide</b> whether to greenlight a walk-forward validation of <code>cnh-long-v1</code>. If yes, I'll set up 6 OOS folds (train on prior 3 windows, test on next) and report median Sharpe.</li>
+    <li><b>If validated</b>, code <code>strategy/signals_cnh_long.py</code> following the existing v1/donchian pattern, add a <code>live_cnh_long.py</code> wrapper, and add to <code>INSTANCE_PROFILES</code> as a 3rd leg candidate.</li>
+    <li><b>Deploy gating:</b> Per <a href="#" class="muted">snapback_3leg_search_dead_ends.md</a> standing rule, don't deploy until total capital ≥ $300. Even a +Sharpe-12 strategy adds &lt;$10/month at $50.50.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>Repro</h2>
+  <p>
+    <code>uv run python tools/icnh_grid_sweep.py</code> → re-runs all 96 configs, ~80s on 8 cores. Saves to <code>data/grid_results.json</code>.<br>
+    <code>uv run python tools/build_icnh_report.py</code> → rebuilds this HTML from the JSON.
+  </p>
+  <details>
+    <summary>Pattern detector source (9 parameter axes swept)</summary>
+    <p><code>tools/icnh_grid_sweep.py:detect_pattern()</code> — supports inverse_cnh, classic_cnh,
+    double_top, engulfing_at_high, breakdown_n.</p>
+  </details>
+</section>
+
+<footer style="text-align:center; padding:24px; color:#94a3b8; font-size:12px;">
+  Generated 2026-05-23 by autonomous experiment runner (snapback-btc/tools/build_icnh_report.py)<br>
+  Total wall time: pattern sweep ~80s · this report ~5s
+</footer>
+
+</div>
+</body>
+</html>

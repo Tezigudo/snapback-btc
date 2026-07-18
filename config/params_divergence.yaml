@@ -1,0 +1,51 @@
+# divergence-v1 — RSI+OBV divergence strategy, RESEARCH-ONLY (Phase 2).
+# See DIVERGENCE_PLAN.md for design contract, risk analysis, and phase gates.
+# Not wired to bot.py / not in live deploy.
+#
+# These are starting-point params for Phase 3 tuning, not final values.
+# DO NOT touch config/params.yaml (locked for multifactor-v1).
+
+symbol: BTC/USDT:USDT
+
+timeframes:
+  entry: 15m      # divergence-v1 runs on 15m — matches multifactor-v1 cadence
+  trend: 1h       # only used when trend_filter_enabled: true (see strategy block)
+
+strategy:
+  # Swing detection (centred k-bar fractal). k=3 = Bill Williams classic.
+  # Larger k → fewer, more major swings, more confirmation lag.
+  swing_k: 3
+
+  # Pairing window: two swing bars must be separated by [min, max] bars.
+  # Adjacent swings are noise; swings > 15 h apart are stale on 15m.
+  min_swing_separation_bars: 5   # ~75 min on 15m
+  max_swing_separation_bars: 60  # ~15 hours on 15m
+
+  # RSI divergence (Wilder RSI, no pandas-ta).
+  rsi_period: 14
+  rsi_oversold_zone: 30.0        # Fix 3: tightened from 35 → 30 (live-safe, fewer false signals)
+  rsi_overbought_zone: 70.0      # Fix 3: tightened from 65 → 70 (live-safe)
+
+  # OBV divergence — Fix 1: now uses windowed OBV slope (linear regression b1..b2),
+  # not cumulative OBV level comparison. Requires slope > 0 for bullish (accumulation
+  # despite price lower low), slope < 0 for bearish (distribution despite price higher high).
+
+  # Exits.
+  atr_period: 14
+  sl_atr_multiple: 1.5
+  tp_atr_multiple: 4.5           # ~3:1 R:R before slippage / fees
+  max_hold_bars: 96              # 24 hours on 15m; time-stop if thesis doesn't pay
+
+  # Sizing — Fix 3: leverage lowered from 20 → 5 (live-safe default).
+  risk_per_trade_pct: 1.0
+  leverage: 5                    # Fix 3: was 20; stays ≤ repo ceiling in risk.py
+  allow_shorts: true
+
+  # Trend filter — Fix 3: ON by default (was OFF).
+  # Restricts longs to close > EMA(200), shorts to close < EMA(200).
+  trend_filter_enabled: true
+  trend_ema_period: 200
+
+  # Cascade veto (Fix 3 / FUTURE_DIRECTIONS Bug 4): skip entry when ATR/close > threshold.
+  # Protects against liquidation in cascade events where ATR(14) understates realized vol.
+  atr_close_ratio_veto: 0.015

@@ -1,0 +1,102 @@
+{
+  "strategy": "divergence-v2",
+  "cash": 100000,
+  "run_date": "2026-06-02",
+  "windows": {
+    "2022_H1": {
+      "trades": 0,
+      "total_return_pct": 0.0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "sharpe": 0.0,
+      "equity_final": 100000.0
+    },
+    "2023_H1": {
+      "trades": 0,
+      "total_return_pct": 0.0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "sharpe": 0.0,
+      "equity_final": 100000.0
+    },
+    "2024_H1": {
+      "trades": 0,
+      "total_return_pct": 0.0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "sharpe": 0.0,
+      "equity_final": 100000.0
+    },
+    "2024_H2": {
+      "trades": 0,
+      "total_return_pct": 0.0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "sharpe": 0.0,
+      "equity_final": 100000.0
+    },
+    "2025_H1": {
+      "trades": 0,
+      "total_return_pct": 0.0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "sharpe": 0.0,
+      "equity_final": 100000.0
+    }
+  },
+  "summary": {
+    "compounded_return_pct": 0.0,
+    "worst_window_pct": 0.0,
+    "windows_positive": 0,
+    "total_trades": 0
+  },
+  "signal_funnel_per_window_longs": {
+    "note": "Funnel counts are for LONG signals only. Short-side funnel is symmetric and also produces 0 trades.",
+    "columns": ["rsi_long", "and_mfi", "+oversold_rsi<30", "+fix2_optionb", "+trend15m_ema200", "+4h_ema200", "final_trades"],
+    "2022_H1": [150, 87, 11, 0, 0, 0, 0],
+    "2023_H1": [136, 80, 5, 1, 0, 0, 0],
+    "2024_H1": [138, 88, 9, 0, 0, 0, 0],
+    "2024_H2": [144, 95, 7, 0, 0, 0, 0],
+    "2025_H1": [159, 105, 13, 0, 0, 0, 0]
+  },
+  "signal_funnel_analysis": {
+    "rsi_oversold_gate_pct_kill": "~93% of AND(RSI+MFI) signals killed (e.g. 80→5 in 2023_H1)",
+    "fix2_optionb_pct_kill": "~100% of remaining (5→1 in 2023_H1, 0 everywhere else)",
+    "fix2_diagnosis": "Fix-2 option-b requires 2 consecutive closes above the most-recent registered swing-high before b2. With k=3, j=b2+k fires only 3 bars after the swing-low confirmation. In a bullish divergence (price making a lower low), the price at j is typically still below the most-recent prior swing-high (a resistance level from before the downswing). This is structurally near-impossible in 3 bars, confirming the empirical finding engineer-A documented for option-a. Option-b appears even MORE restrictive than option-a in practice.",
+    "4h_gate_status": "Working correctly — no NaN, sensible values (e.g. ~16,955 at 2023-01-01, ~22,826 at the one surviving Fix-2 candidate). The one surviving candidate at j=5265 in 2023_H1 passed the 4H gate (close=23,260 > ema_4h=22,826) but was killed by the 15m EMA200 trend filter (ema_trend=23,847 > close). All gates are correctly implemented and wired."
+  },
+  "psr_eval": {
+    "n_trades": 0,
+    "point_sharpe": 0.0,
+    "sr_se_lo": 0.0,
+    "psr_vs_hurdle": 0.0,
+    "min_trl": 1000000000,
+    "skew": 0.0,
+    "kurt": 3.0,
+    "interpretation": "insufficient_evidence",
+    "note": "0 trades → PSR is uncomputable. Treated as insufficient_evidence per psr_eval.py contract. Note: 0% compounded is +16.58pp vs v1 rebaseline (-16.58%) but this is a degenerate non-result — the strategy refused to trade, same pathology DIVERGENCE_PLAN documented for the v1 AND-gate fleet (0% beats any negative compounded, but inactivity is not edge)."
+  },
+  "v1_postfix_reference": {
+    "summary": {
+      "compounded_return_pct": -2.24,
+      "worst_window_pct": -1.25,
+      "windows_positive": 0,
+      "total_trades": 2
+    }
+  },
+  "v1_rebaseline_reference": {
+    "summary": {
+      "compounded_return_pct": -16.58,
+      "worst_window_pct": -9.11,
+      "windows_positive": 0,
+      "total_trades": 44
+    }
+  },
+  "verdict": "STILL_SHELF",
+  "verdict_justification": {
+    "rule": "STILL_SHELF: compounded didn't improve OR PSR < 0.5 with enough data — research-grounded design didn't fix the structural issue.",
+    "reasoning": "V2 produced 0 trades across all 5 OOS windows (vs 44 for v1-rebaseline, 2 for v1-postfix). The 0% compounded return is arithmetically +16.58pp vs v1-rebaseline but this is the same inactivity-beats-negative degenerate result DIVERGENCE_PLAN Phase 4 explicitly documented and rejected. PSR=0 (n=0, uncomputable) → cannot demonstrate any edge. MinTRL → ∞ → data requirement for statistical decision is unmet. The AND-gate stack (RSI + MFI + RSI-oversold<30 + Fix-2 option-b + 15m EMA200 + 4H EMA200 + ATR-compressed veto) is over-gated for the BTC 15m 6h half-year window: RSI-oversold<30 alone kills ~93% of candidates, Fix-2 option-b kills the remainder (structural 3-bar incompatibility). The 4H EMA200 and MFI indicators are correctly implemented and would be useful in a looser gate stack, but cannot rescue the strategy from zero-trade dormancy. The divergence-family structural issue on BTC 15m is not resolved by the top-3 research-grounded changes at default parameters.",
+    "statistical_honesty": "With n=0 trades, the correct verdict per Bailey-Lopez de Prado framing is 'insufficient_evidence' for the PSR field — but strategically STILL_SHELF is correct because the research changes failed to produce a testable signal count (the DIVERGENCE_PLAN minimum of ~5-25 trades/window was not met in any window). We cannot conclude 'evidence of no edge' (PSR<0.05 requires enough data) but we can conclude the implementation at default parameters is non-operational.",
+    "what_might_still_work": "Loosening the AND-gate: (1) drop Fix-2 option-b entirely or replace with the original recovery-window-high+buffer check; (2) widen RSI oversold zone from 30 to 35-40; (3) use OR(RSI, MFI) instead of AND. These are parameter tuning decisions for the orchestrator, not this implementation task. The 4H EMA200 regime gate and MFI indicator are correctly implemented as reusable building blocks."
+  }
+}

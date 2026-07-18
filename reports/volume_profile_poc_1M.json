@@ -1,0 +1,31 @@
+{
+  "strategy": "volume-profile-poc-v1",
+  "cash": 1000000,
+  "smoke": {
+    "2024_H1": {
+      "period": "2024-01-01 to 2024-06-30",
+      "regime": "chop",
+      "trades": 334,
+      "total_return_pct": -55.8775,
+      "win_rate_pct": 34.1317,
+      "max_dd_pct": -59.7965,
+      "sharpe": -10.5592,
+      "equity_final": 441224.8158
+    },
+    "2024_H2": {
+      "period": "2024-07-01 to 2024-12-31",
+      "regime": "trend",
+      "trades": 295,
+      "total_return_pct": -29.5087,
+      "win_rate_pct": 37.9661,
+      "max_dd_pct": -39.0609,
+      "sharpe": -3.079,
+      "equity_final": 704913.2693
+    },
+    "verdict": "shelf",
+    "verdict_rationale": "H2 trend window is -29.5% (>-15% threshold). H1 chop window is -55.9% (catastrophic). Both windows have Sharpe deeply negative. Smoke fails on both the 'huge negative in trend' rule and the H1 destruction. No OOS sweep warranted."
+  },
+  "windows": null,
+  "summary": null,
+  "psr": null
+}

@@ -1,0 +1,101 @@
+{
+  "strategy_id": "mf_4h_eth",
+  "strategy_class": "strategy.signals_multifactor:DayTradeMultiFactorBTC",
+  "symbol": "ETH",
+  "parquet_15m": "data/historical/ETH_USDT_USDT_15m.parquet",
+  "parquet_4h": "data/historical/ETH_USDT_USDT_4h.parquet",
+  "cash": 1000000,
+  "commission": 0.0005,
+  "margin_inv_leverage": 0.05,
+  "windows": [
+    "2022H1",
+    "2023H1",
+    "2024H1",
+    "2024H2",
+    "2025H1"
+  ],
+  "config": {
+    "rsi_period": 14,
+    "rsi_long_threshold": 35.0,
+    "rsi_short_threshold": 70.0,
+    "volume_ma_period": 20,
+    "volume_multiple": 2.0,
+    "mf_trend_ema_period": 200,
+    "require_trend": true,
+    "require_candlestick": false,
+    "require_macd": false,
+    "require_funding_not_extreme": true,
+    "funding_extreme_threshold": 0.0005,
+    "sl_pct": 0.015,
+    "tp_pct": 0.03,
+    "max_hold_bars": 1344,
+    "risk_per_trade_pct": 2.75,
+    "leverage": 20,
+    "allow_shorts": true,
+    "use_mtf_4h_gate": true,
+    "mtf_4h_parquet_path": "data/historical/ETH_USDT_USDT_4h.parquet"
+  },
+  "per_window": {
+    "2022H1": {
+      "trades": 18,
+      "return_pct": 46.7006,
+      "max_dd_pct": -4.8472,
+      "win_rate_pct": 50.0,
+      "sharpe": 2.1175
+    },
+    "2023H1": {
+      "trades": 36,
+      "return_pct": -9.2024,
+      "max_dd_pct": -17.9916,
+      "win_rate_pct": 25.0,
+      "sharpe": -0.9196
+    },
+    "2024H1": {
+      "trades": 27,
+      "return_pct": -23.2346,
+      "max_dd_pct": -26.0667,
+      "win_rate_pct": 18.5185,
+      "sharpe": -4.0886
+    },
+    "2024H2": {
+      "trades": 29,
+      "return_pct": 15.3751,
+      "max_dd_pct": -8.5724,
+      "win_rate_pct": 37.931,
+      "sharpe": 1.0349
+    },
+    "2025H1": {
+      "trades": 19,
+      "return_pct": -10.2958,
+      "max_dd_pct": -19.4663,
+      "win_rate_pct": 21.0526,
+      "sharpe": -1.056
+    }
+  },
+  "aggregate": {
+    "n_trades": 129,
+    "compounded_pct": 5.827,
+    "windows_positive": "2/5",
+    "per_window_return_pct": [
+      46.7006,
+      -9.2024,
+      -23.2346,
+      15.3751,
+      -10.2958
+    ]
+  },
+  "psr": {
+    "n_trades": 129,
+    "point_sharpe": 0.02918,
+    "sr_se_lo": 0.086863,
+    "psr_vs_hurdle": 0.631046,
+    "min_trl": 3094,
+    "skew": 0.923747,
+    "kurt": 2.290591,
+    "interpretation": "insufficient_evidence"
+  },
+  "pre_fix_reference": {
+    "compounded_pct": 5.83,
+    "trades": 129
+  }
+}

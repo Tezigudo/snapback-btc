@@ -1,0 +1,38 @@
+# adx-dual-regime-v1 — regime-switched RSI MR + Donchian-20 breakout,
+# RESEARCH-ONLY. See ADX_DUAL_REGIME_PLAN.md. Not wired to bot.py / not in live deploy.
+
+symbol: BTC/USDT:USDT
+
+timeframes:
+  entry: 15m        # ADX dual-regime runs on 15m (same as multifactor-v1)
+  trend: 15m        # single-TF — EMA(200) computed on the same entry timeframe
+
+strategy:
+  # ADX regime gate
+  adx_period: 14
+  adx_chop_threshold: 25.0    # ADX ≤ 25 → range/RSI-MR leg; ADX > 25 → trend/Donchian leg
+
+  # Range leg: RSI(2) snap mean-reversion (Larry Connors)
+  range_rsi_period: 2
+  range_rsi_long_threshold: 10.0    # enter long when RSI(2) < 10 (deeply oversold)
+  range_rsi_short_threshold: 90.0   # enter short when RSI(2) > 90 (deeply overbought)
+
+  # Trend leg: Donchian-20 channel breakout
+  donchian_period: 20
+
+  # Trend-EMA filter — applied to range leg only (see ADX_DUAL_REGIME_PLAN.md §B step 2)
+  trend_ema_period: 200
+
+  # Exits — same ATR contract as divergence-v1 (lessons reused)
+  atr_period: 14
+  sl_atr_multiple: 1.5
+  tp_atr_multiple: 3.0        # 2:1 R:R (lower than divergence's 3:1 —
+                               # Donchian breakouts have higher hit rate)
+  max_hold_bars: 96            # 24h at 15m
+
+  # Shorts allowed (both legs are symmetric)
+  allow_shorts: true
+
+sizing:
+  risk_per_trade_pct: 1.0
+  leverage: 5                  # NOT 20 — FUTURE_DIRECTIONS bug #3; risk.py 20x is the hard cap

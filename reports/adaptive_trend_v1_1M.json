@@ -1,0 +1,97 @@
+{
+  "strategy": "adaptive-trend-v1",
+  "cash": 1000000,
+  "paper_ref": "Bui & Nguyen, 'Systematic Trend-Following with Adaptive Portfolio Construction: Enhancing Risk-Adjusted Alpha in Cryptocurrency Markets', arXiv:2602.11708v1, Feb 2026",
+  "core_signal": "MOM_t = (P_t - P_{t-L}) / P_{t-L} on H6 closes (Eq. 2). Long entry if MOM_t > theta_entry; short entry if MOM_t < -theta_entry. Dynamic ATR trailing stop S_t = max(S_{t-1}, P_t - alpha*ATR_t) (Eq. 3, long; mirrored for short). Bare single-asset implementation: skips paper's monthly L/theta re-opt, market-cap filter, Sharpe-selection, and 70/30 allocation (all portfolio-level / multi-asset). Defaults: L=4 H6 bars (~24h lookback), theta_entry=2.0%, alpha=2.5 (Figure 2 plateau centre), ATR(14) on H6.",
+  "translation_choices": {
+    "timeframe": "H6 native, resampled internally from 15m parquet. Right-aligned at 00/06/12/18 UTC to match Binance funding cadence. Entry signals evaluated only at H6 close bars (matches paper Algorithm 1's 'for each 6-hour candle'). Exits (trailing stop) evaluated every 15m bar for responsiveness.",
+    "lookback_lookahead_safety": "compute_h6_signal applies shift(1) on the H6 frame before ffilling to 15m grid — guarantees a 15m bar only ever sees the most recently CLOSED H6 row's MOM/ATR.",
+    "vol_scaling": "single-asset; no portfolio-vol target. risk_per_trade_pct=1.0 of equity, leverage=5 (FUTURE_DIRECTIONS lesson: not 20).",
+    "skipped_paper_components": [
+      "monthly re-optimisation of (theta_entry, L) — portfolio-level adaptive layer",
+      "market-cap filter (single-asset)",
+      "Sharpe-ratio asset selection (single-asset)",
+      "70/30 long-short capital allocation (single-asset)"
+    ]
+  },
+  "funding_modeled": {
+    "source": "data/historical/BTC_USDT_USDT_funding.parquet (real realised Binance Futures funding rates, 8h cadence)",
+    "method": "Post-process via backtest.funding_cost_for_trades(trades_df, data, funding_df) — signed convention (long pays positive funding, short receives positive funding). Applied to the final equity AFTER backtest, not inside next() (backtesting.py can't mutate equity mid-run cleanly).",
+    "approximation_note": "NOT a constant bps approximation — uses the exact realised funding series per window."
+  },
+  "verdict_calibration_note": "The paper's headline Sharpe 2.41 is a 150-ASSET portfolio number; the ablation table shows monthly-opt + market-cap + Sharpe-select + 70/30 alloc contribute the majority of that. The 'Fixed Parameters (no opt.)' row is Sharpe 1.34 on the same universe. Bare single-asset on BTC perp is expected to be substantially lower than 1.34, and FUTURE_DIRECTIONS' n>=50/window gate is NOT achievable on BTC-only H6 (paper averages ~1 trade/asset/month). Verdict is judged on: is the post-funding bare signal POSITIVE on BTC perp.",
+  "smoke": {
+    "_2024_H1_chop": {
+      "trades": 39,
+      "gross_return_pct": 4.7037,
+      "net_return_pct": 4.3796,
+      "funding_cost_usdt": 3241.15,
+      "funding_events": 471,
+      "win_rate_pct": 48.7179,
+      "max_dd_pct": -4.3509,
+      "sharpe": 0.9863
+    },
+    "_2024_H2_trend": {
+      "trades": 43,
+      "gross_return_pct": 6.7424,
+      "net_return_pct": 6.5351,
+      "funding_cost_usdt": 2073.06,
+      "funding_events": 478,
+      "win_rate_pct": 37.2093,
+      "max_dd_pct": -2.9491,
+      "sharpe": 1.3928
+    },
+    "verdict": "PROCEED — trend window: 43 trades (>=5), not all losses, +6.54% net."
+  },
+  "windows": {
+    "2022_H1": {
+      "trades": 40, "gross_return_pct": -1.0037, "net_return_pct": -1.0289,
+      "funding_cost_usdt": 251.88, "funding_events": 482,
+      "win_rate_pct": 37.5, "max_dd_pct": -7.4261, "sharpe": -0.2469
+    },
+    "2023_H1": {
+      "trades": 33, "gross_return_pct": 17.7792, "net_return_pct": 17.5777,
+      "funding_cost_usdt": 2015.7, "funding_events": 452,
+      "win_rate_pct": 51.5152, "max_dd_pct": -5.5822, "sharpe": 2.6852
+    },
+    "2024_H1": {
+      "trades": 39, "gross_return_pct": 4.7037, "net_return_pct": 4.3796,
+      "funding_cost_usdt": 3241.15, "funding_events": 471,
+      "win_rate_pct": 48.7179, "max_dd_pct": -4.3509, "sharpe": 0.9863
+    },
+    "2024_H2": {
+      "trades": 43, "gross_return_pct": 6.7424, "net_return_pct": 6.5351,
+      "funding_cost_usdt": 2073.06, "funding_events": 478,
+      "win_rate_pct": 37.2093, "max_dd_pct": -2.9491, "sharpe": 1.3928
+    },
+    "2025_H1": {
+      "trades": 38, "gross_return_pct": 3.2347, "net_return_pct": 3.2188,
+      "funding_cost_usdt": 159.31, "funding_events": 464,
+      "win_rate_pct": 47.3684, "max_dd_pct": -3.3812, "sharpe": 0.9243
+    }
+  },
+  "summary": {
+    "n_windows": 5,
+    "wins": 4,
+    "losses": 1,
+    "win_rate_windows": 0.80,
+    "compounded_net_return_pct": 33.567,
+    "mean_window_net_pct": 6.136,
+    "total_trades": 193,
+    "total_funding_cost_usdt": 7741.10,
+    "worst_window_dd_pct": -7.4261,
+    "worst_window_label": "2022_H1"
+  },
+  "psr": {
+    "n_trades": 193,
+    "point_sharpe_per_trade": 0.104882,
+    "sr_se_lo": 0.065691,
+    "psr_vs_hurdle_0": 0.94436,
+    "min_trl": 206,
+    "skew": 1.76898,
+    "kurt": 7.686334,
+    "interpretation": "PSR vs Sharpe=0 hurdle is 0.944 (>0.5 gate). MinTRL=206 trades for confident calibration vs our 193 — borderline by ~7%. Right-skewed (1.77) and fat-tailed (kurt 7.69) — consistent with trend-follower long-tail profile."
+  },
+  "verdict": "REVIVE_FOR_OOS_SWEEP",
+  "verdict_rationale": "Bare-signal single-asset BTC perp net of REAL realised funding produces +33.57% compounded across 5 OOS windows, 4/5 wins, PSR=0.944 vs SR=0 hurdle, worst-window DD only -7.4% (better than multifactor-v1's -12.6% worst window). MinTRL is 7% above sample (193 vs 206 needed) — marginal, but right side of every gate. Recommend (a) the paper's monthly L/theta re-opt layer + (b) the 70/30 alloc / Sharpe-selection portfolio layer (would require multi-asset port) — but for BTC-only, the bare signal is unambiguously not negative-EV and warrants the full sweep."
+}

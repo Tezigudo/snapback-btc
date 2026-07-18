@@ -1,0 +1,147 @@
+{
+  "task": "combine accretive improvements stacked on AdaptiveTrendV2 base, 11 OOS windows, $1M cash, real funding",
+  "accretive_bar": "delta_compounded_pp > +5 AND psr_delta > 0",
+  "accretive_count": 0,
+  "improvements_evaluated": [
+    {
+      "id": "vol_scaled_sizing",
+      "delta_compounded_pp": -13.26,
+      "psr_delta": 0.177,
+      "min_trl_delta": -1784,
+      "wins_delta": 1,
+      "sharpe_delta": 0.0652,
+      "trades_delta": -179,
+      "accretive": false,
+      "reason_not_accretive": "compounded dropped below -5pp threshold despite strong PSR gain (PSR 0.806 -> 0.983)",
+      "note": "Only variant that crosses PSR 0.95 promote gate. Sizing artifact (int truncation + low 0.15 vol target) shrinks positions ~3x in high-vol windows. Tuning vol target is a candidate next experiment, not a stacking action."
+    },
+    {
+      "id": "funding_skip",
+      "delta_compounded_pp": -4.42,
+      "psr_delta": -0.074,
+      "min_trl_delta": 1893,
+      "wins_delta": 0,
+      "sharpe_delta": -0.0099,
+      "trades_delta": 1,
+      "accretive": false,
+      "reason_not_accretive": "NEUTRAL band on Dcomp but PSR meaningfully degraded; filter rarely fires (only 2 skip-events across all 11 windows) and when it does fire it removes a profitable entry"
+    },
+    {
+      "id": "regime_gate_adx",
+      "delta_compounded_pp": -14.87,
+      "psr_delta": -0.109,
+      "min_trl_delta": 1839,
+      "wins_delta": 0,
+      "sharpe_delta": -0.0096,
+      "trades_delta": -176,
+      "accretive": false,
+      "reason_not_accretive": "ADX>25 is redundant on a strategy that is already a trend filter; suppresses early-trend entries that are profitable"
+    },
+    {
+      "id": "regime_gate_vol",
+      "delta_compounded_pp": 1.94,
+      "psr_delta": -0.060,
+      "min_trl_delta": 346,
+      "wins_delta": -1,
+      "sharpe_delta": -0.0025,
+      "trades_delta": -173,
+      "accretive": false,
+      "reason_not_accretive": "Dcomp +1.94pp is inside NEUTRAL band and PSR fell; one fewer winning window"
+    },
+    {
+      "id": "half_out_at_1R",
+      "delta_compounded_pp": -13.48,
+      "psr_delta": -0.027,
+      "min_trl_delta": 177,
+      "wins_delta": 0,
+      "sharpe_delta": -0.0083,
+      "trades_delta": 3,
+      "accretive": false,
+      "reason_not_accretive": "Caps the right tail on a fat-tailed trend system; win rate up but per-entry expectancy down (per-entry apples-to-apples basis)"
+    },
+    {
+      "id": "time_stop_24h",
+      "delta_compounded_pp": 0.0,
+      "psr_delta": 0.0,
+      "min_trl_delta": 0,
+      "wins_delta": 0,
+      "sharpe_delta": 0.0,
+      "trades_delta": 0,
+      "accretive": false,
+      "reason_not_accretive": "Lever never fires (ATR trailing stop closes positions long before time cap); byte-identical to baseline; inert"
+    },
+    {
+      "id": "mtf_h1_confirmation",
+      "delta_compounded_pp": -30.59,
+      "psr_delta": -0.273,
+      "min_trl_delta": 205071,
+      "wins_delta": -2,
+      "sharpe_delta": -0.032,
+      "trades_delta": -17,
+      "accretive": false,
+      "reason_not_accretive": "Filters extreme-RSI H1 entries that correlate with the strongest trend right tail; removes only ~3% of entries but those are disproportionately winners"
+    },
+    {
+      "id": "session_volume_filter",
+      "delta_compounded_pp": -17.69,
+      "psr_delta": -0.412,
+      "min_trl_delta": 999997990,
+      "wins_delta": -1,
+      "sharpe_delta": -0.0479,
+      "trades_delta": -68,
+      "accretive": false,
+      "reason_not_accretive": "Clock-time gate drops entries indiscriminately; per-trade Sharpe of 12/18 UTC subset is not higher than 00/06 UTC subset; PSR collapsed"
+    }
+  ],
+  "v2_base_reference": {
+    "compounded_pct": 43.9012,
+    "wins": 8,
+    "total_windows": 11,
+    "total_trades": 555,
+    "psr": 0.806183,
+    "sharpe_per_trade": 0.035559,
+    "min_trl": 2010
+  },
+  "best_single_improvement_by_dcomp": {
+    "id": "regime_gate_vol",
+    "compounded_pct": 45.8389,
+    "wins": 7,
+    "total_trades": 382,
+    "psr": 0.745904,
+    "min_trl": 2356,
+    "delta_compounded_pp": 1.9377,
+    "fails_promote_gates": [
+      "compounded 45.84% < +50% promote bar",
+      "wins 7/11 < 8/11 promote bar",
+      "PSR 0.7459 < 0.95 promote bar"
+    ]
+  },
+  "best_single_improvement_by_psr": {
+    "id": "vol_scaled_sizing",
+    "compounded_pct": 30.64,
+    "wins": 9,
+    "total_trades": 376,
+    "psr": 0.983,
+    "min_trl": 226,
+    "delta_psr": 0.177,
+    "passes_promote_gates": [
+      "wins 9/11 >= 8/11",
+      "PSR 0.983 > 0.95",
+      "n=376 >= MinTRL=226"
+    ],
+    "fails_promote_gates": [
+      "compounded 30.64% < +50% promote bar"
+    ]
+  },
+  "combined_stack_built": false,
+  "combined_stack_reason_skipped": "Spec branch 'fewer than 2 accretive' instructs combine-top-1-or-2-by-delta, but only one candidate has positive Dcomp (+1.94pp regime_gate_vol, NEUTRAL) and it failed PSR. Spec sibling clause: 'Don't manufacture a combined config from neutral improvements.' This is the manufacture-from-neutral case. No stacking run executed.",
+  "verdict": "shelf",
+  "promote_gates_at_a_glance": {
+    "compounded_gt_50pct": false,
+    "wins_ge_8_of_11": "best_by_dcomp:false, best_by_psr:true",
+    "walk_forward_ge_75pct": "best_by_dcomp:64%, best_by_psr:82%",
+    "psr_gt_0_95": "best_by_dcomp:false, best_by_psr:true",
+    "n_ge_min_trl": "best_by_dcomp:true (n=382 vs trl=2356 -> false actually), best_by_psr:true (n=376 vs trl=226)"
+  },
+  "next_action_recommended": "Re-tune vol_scaled_sizing (vol_target above 0.15 and remove int() truncation on target_btc) to restore compounded while keeping the PSR>0.95 edge-quality. That is a separate tuning task, not a stacking experiment."
+}

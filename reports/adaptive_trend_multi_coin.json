@@ -1,0 +1,438 @@
+{
+  "task": "C_multi_coin",
+  "winner_config": {
+    "momentum_lookback_h6": 4,
+    "theta_entry": 0.02,
+    "alpha": 2.0
+  },
+  "coins": {
+    "ETH": {
+      "per_window": [
+        {
+          "label": "2022_H1",
+          "start": "2022-01-01",
+          "end": "2022-06-30",
+          "cash": 1000000,
+          "trades": 57,
+          "gross_return_pct": 2.4403,
+          "net_return_pct": 2.4023,
+          "funding_cost_usdt": 380.23,
+          "funding_events": 476,
+          "win_rate_pct": 45.614,
+          "max_dd_pct": -9.1301,
+          "sharpe": 0.4178,
+          "final_equity_gross": 1024403.01,
+          "final_equity_net": 1024022.78,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        },
+        {
+          "label": "2023_H1",
+          "start": "2023-01-01",
+          "end": "2023-06-30",
+          "cash": 1000000,
+          "trades": 60,
+          "gross_return_pct": -6.5393,
+          "net_return_pct": -6.821,
+          "funding_cost_usdt": 2816.32,
+          "funding_events": 427,
+          "win_rate_pct": 23.3333,
+          "max_dd_pct": -16.2182,
+          "sharpe": -1.2185,
+          "final_equity_gross": 934606.54,
+          "final_equity_net": 931790.23,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        },
+        {
+          "label": "2024_H1",
+          "start": "2024-01-01",
+          "end": "2024-06-30",
+          "cash": 1000000,
+          "trades": 53,
+          "gross_return_pct": 5.6132,
+          "net_return_pct": 5.4821,
+          "funding_cost_usdt": 1311.72,
+          "funding_events": 447,
+          "win_rate_pct": 35.8491,
+          "max_dd_pct": -6.8988,
+          "sharpe": 0.7605,
+          "final_equity_gross": 1056132.38,
+          "final_equity_net": 1054820.67,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        },
+        {
+          "label": "2024_H2",
+          "start": "2024-07-01",
+          "end": "2024-12-31",
+          "cash": 1000000,
+          "trades": 53,
+          "gross_return_pct": 7.2429,
+          "net_return_pct": 6.9852,
+          "funding_cost_usdt": 2576.4,
+          "funding_events": 463,
+          "win_rate_pct": 41.5094,
+          "max_dd_pct": -6.398,
+          "sharpe": 1.1054,
+          "final_equity_gross": 1072428.73,
+          "final_equity_net": 1069852.33,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        },
+        {
+          "label": "2025_H1",
+          "start": "2025-01-01",
+          "end": "2025-06-30",
+          "cash": 1000000,
+          "trades": 61,
+          "gross_return_pct": -0.8618,
+          "net_return_pct": -0.9433,
+          "funding_cost_usdt": 814.5,
+          "funding_events": 471,
+          "win_rate_pct": 31.1475,
+          "max_dd_pct": -8.6888,
+          "sharpe": -0.1281,
+          "final_equity_gross": 991381.68,
+          "final_equity_net": 990567.19,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        }
+      ],
+      "summary": {
+        "compounded_net_pct": 6.6631,
+        "win_windows": 3,
+        "total_windows": 5,
+        "psr": {
+          "n_trades": 5,
+          "point_sharpe": 0.257381,
+          "sr_se_lo": 0.498737,
+          "psr_vs_hurdle": 0.677809,
+          "psr_lo_adjusted": 0.677809,
+          "sr_lo_adjusted": 0.257381,
+          "lo_eta": 1.0,
+          "min_trl": 52,
+          "skew": -0.824199,
+          "kurt": 2.905812,
+          "interpretation": "insufficient_evidence"
+        },
+        "legacy_psr_stitched": {
+          "n_trades": 5,
+          "point_sharpe": 0.257381,
+          "sr_se_lo": 0.498737,
+          "psr_vs_hurdle": 0.677809,
+          "psr_lo_adjusted": 0.677809,
+          "sr_lo_adjusted": 0.257381,
+          "lo_eta": 1.0,
+          "min_trl": 52,
+          "skew": -0.824199,
+          "kurt": 2.905812,
+          "interpretation": "insufficient_evidence"
+        },
+        "canonical": {
+          "aggregation_method": "v2_equity_curve",
+          "aggregation_version": "v2_equity_curve",
+          "n_windows": 5,
+          "n_trades_sum": 284,
+          "compounded_pct": 6.6631,
+          "windows_positive": "3/5",
+          "windows_positive_pct": 60.0,
+          "per_window_return_pct": [
+            2.4023,
+            -6.821,
+            5.4821,
+            6.9852,
+            -0.9433
+          ],
+          "psr_per_window": [
+            {
+              "label": "2022_H1",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            },
+            {
+              "label": "2023_H1",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            },
+            {
+              "label": "2024_H1",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            },
+            {
+              "label": "2024_H2",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            },
+            {
+              "label": "2025_H1",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            }
+          ],
+          "psr_walkforward": {
+            "n_trades": 5,
+            "point_sharpe": 0.257381,
+            "sr_se_lo": 0.498737,
+            "psr_vs_hurdle": 0.677809,
+            "psr_lo_adjusted": 0.677809,
+            "sr_lo_adjusted": 0.257381,
+            "lo_eta": 1.0,
+            "min_trl": 52,
+            "skew": -0.824199,
+            "kurt": 2.905812,
+            "interpretation": "insufficient_evidence"
+          }
+        },
+        "aggregation_method": "v2_equity_curve",
+        "verdict": "transfers",
+        "funding_modeled": true
+      }
+    },
+    "SOL": {
+      "per_window": [
+        {
+          "label": "2022_H1",
+          "start": "2022-01-01",
+          "end": "2022-06-30",
+          "cash": 1000000,
+          "trades": 59,
+          "gross_return_pct": 5.1268,
+          "net_return_pct": 5.0185,
+          "funding_cost_usdt": 1083.16,
+          "funding_events": 481,
+          "win_rate_pct": 44.0678,
+          "max_dd_pct": -7.3077,
+          "sharpe": 0.8151,
+          "final_equity_gross": 1051268.34,
+          "final_equity_net": 1050185.18,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        },
+        {
+          "label": "2023_H1",
+          "start": "2023-01-01",
+          "end": "2023-06-30",
+          "cash": 1000000,
+          "trades": 63,
+          "gross_return_pct": 0.0418,
+          "net_return_pct": -0.088,
+          "funding_cost_usdt": 1297.55,
+          "funding_events": 468,
+          "win_rate_pct": 36.5079,
+          "max_dd_pct": -7.9136,
+          "sharpe": 0.0068,
+          "final_equity_gross": 1000417.54,
+          "final_equity_net": 999119.99,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        },
+        {
+          "label": "2024_H1",
+          "start": "2024-01-01",
+          "end": "2024-06-30",
+          "cash": 1000000,
+          "trades": 60,
+          "gross_return_pct": 0.2083,
+          "net_return_pct": 0.0049,
+          "funding_cost_usdt": 2033.64,
+          "funding_events": 474,
+          "win_rate_pct": 46.6667,
+          "max_dd_pct": -6.5226,
+          "sharpe": 0.0376,
+          "final_equity_gross": 1002082.71,
+          "final_equity_net": 1000049.07,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        },
+        {
+          "label": "2024_H2",
+          "start": "2024-07-01",
+          "end": "2024-12-31",
+          "cash": 1000000,
+          "trades": 55,
+          "gross_return_pct": 8.2065,
+          "net_return_pct": 7.8661,
+          "funding_cost_usdt": 3404.36,
+          "funding_events": 477,
+          "win_rate_pct": 43.6364,
+          "max_dd_pct": -5.5921,
+          "sharpe": 1.2492,
+          "final_equity_gross": 1082065.36,
+          "final_equity_net": 1078661.0,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        },
+        {
+          "label": "2025_H1",
+          "start": "2025-01-01",
+          "end": "2025-06-30",
+          "cash": 1000000,
+          "trades": 66,
+          "gross_return_pct": -4.9027,
+          "net_return_pct": -5.0296,
+          "funding_cost_usdt": 1268.81,
+          "funding_events": 465,
+          "win_rate_pct": 31.8182,
+          "max_dd_pct": -11.6079,
+          "sharpe": -0.92,
+          "final_equity_gross": 950972.77,
+          "final_equity_net": 949703.96,
+          "config_applied": {
+            "momentum_lookback_h6": 4,
+            "theta_entry": 0.02,
+            "alpha": 2.0
+          },
+          "funding_modeled": true
+        }
+      ],
+      "summary": {
+        "compounded_net_pct": 7.4925,
+        "win_windows": 3,
+        "total_windows": 5,
+        "psr": {
+          "n_trades": 5,
+          "point_sharpe": 0.310434,
+          "sr_se_lo": 0.453784,
+          "psr_vs_hurdle": 0.729691,
+          "psr_lo_adjusted": 0.729691,
+          "sr_lo_adjusted": 0.310434,
+          "lo_eta": 1.0,
+          "min_trl": 30,
+          "skew": -0.001802,
+          "kurt": 2.205291,
+          "interpretation": "insufficient_evidence"
+        },
+        "legacy_psr_stitched": {
+          "n_trades": 5,
+          "point_sharpe": 0.310434,
+          "sr_se_lo": 0.453784,
+          "psr_vs_hurdle": 0.729691,
+          "psr_lo_adjusted": 0.729691,
+          "sr_lo_adjusted": 0.310434,
+          "lo_eta": 1.0,
+          "min_trl": 30,
+          "skew": -0.001802,
+          "kurt": 2.205291,
+          "interpretation": "insufficient_evidence"
+        },
+        "canonical": {
+          "aggregation_method": "v2_equity_curve",
+          "aggregation_version": "v2_equity_curve",
+          "n_windows": 5,
+          "n_trades_sum": 303,
+          "compounded_pct": 7.4925,
+          "windows_positive": "3/5",
+          "windows_positive_pct": 60.0,
+          "per_window_return_pct": [
+            5.0185,
+            -0.088,
+            0.0049,
+            7.8661,
+            -5.0296
+          ],
+          "psr_per_window": [
+            {
+              "label": "2022_H1",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            },
+            {
+              "label": "2023_H1",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            },
+            {
+              "label": "2024_H1",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            },
+            {
+              "label": "2024_H2",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            },
+            {
+              "label": "2025_H1",
+              "n_trades": 0,
+              "psr_vs_hurdle": 0.0,
+              "psr_lo_adjusted": 0.0,
+              "interpretation": "insufficient_evidence"
+            }
+          ],
+          "psr_walkforward": {
+            "n_trades": 5,
+            "point_sharpe": 0.310434,
+            "sr_se_lo": 0.453784,
+            "psr_vs_hurdle": 0.729691,
+            "psr_lo_adjusted": 0.729691,
+            "sr_lo_adjusted": 0.310434,
+            "lo_eta": 1.0,
+            "min_trl": 30,
+            "skew": -0.001802,
+            "kurt": 2.205291,
+            "interpretation": "insufficient_evidence"
+          }
+        },
+        "aggregation_method": "v2_equity_curve",
+        "verdict": "transfers",
+        "funding_modeled": true
+      }
+    }
+  }
+}

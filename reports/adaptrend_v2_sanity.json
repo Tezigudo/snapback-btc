@@ -1,0 +1,893 @@
+{
+  "oos_comparison": {
+    "rows": [
+      {
+        "label": "2022_H1",
+        "v1": {
+          "label": "2022_H1",
+          "start": "2022-01-01",
+          "end": "2022-06-30",
+          "cash": 1000000,
+          "trades": 40,
+          "gross_return_pct": -1.0037,
+          "net_return_pct": -1.0289,
+          "funding_cost_usdt": 251.88,
+          "funding_events": 482,
+          "win_rate_pct": 37.5,
+          "max_dd_pct": -7.4261,
+          "sharpe": -0.2469,
+          "final_equity_gross": 989962.91,
+          "final_equity_net": 989711.03,
+          "config_applied": {}
+        },
+        "v2": {
+          "label": "2022_H1",
+          "start": "2022-01-01",
+          "end": "2022-06-30",
+          "cash": 1000000,
+          "trades": 52,
+          "gross_return_pct": -2.1523,
+          "net_return_pct": -2.1451,
+          "funding_cost_usdt": -71.49,
+          "funding_events": 465,
+          "win_rate_pct": 32.6923,
+          "max_dd_pct": -6.7322,
+          "final_equity_gross": 978477.04,
+          "final_equity_net": 978548.53,
+          "config_applied": {},
+          "prefix_months_used": 6,
+          "monthly_choices": [
+            {
+              "month_start": "2021-07-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "warmup_initial"
+            },
+            {
+              "month_start": "2021-08-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2021-09-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2021-10-01 00:00:00",
+              "L": 4,
+              "theta": 0.025,
+              "n_fit_trades": 22,
+              "fit_sharpe": -0.2163383205658471,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2021-11-01 00:00:00",
+              "L": 4,
+              "theta": 0.025,
+              "n_fit_trades": 31,
+              "fit_sharpe": -0.11233412253876397,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2021-12-01 00:00:00",
+              "L": 4,
+              "theta": 0.025,
+              "n_fit_trades": 36,
+              "fit_sharpe": -0.10607894612397255,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2022-01-01 00:00:00",
+              "L": 4,
+              "theta": 0.025,
+              "n_fit_trades": 43,
+              "fit_sharpe": -0.1590726537071332,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2022-02-01 00:00:00",
+              "L": 4,
+              "theta": 0.025,
+              "n_fit_trades": 41,
+              "fit_sharpe": -0.2563465712961413,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2022-03-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 44,
+              "fit_sharpe": -0.30689089660670926,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2022-04-01 00:00:00",
+              "L": 4,
+              "theta": 0.025,
+              "n_fit_trades": 39,
+              "fit_sharpe": -0.1828673671065962,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2022-05-01 00:00:00",
+              "L": 4,
+              "theta": 0.025,
+              "n_fit_trades": 41,
+              "fit_sharpe": -0.31942503984884146,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2022-06-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 41,
+              "fit_sharpe": -0.29774018421601744,
+              "reason": "refit_ok"
+            }
+          ]
+        }
+      },
+      {
+        "label": "2023_H1",
+        "v1": {
+          "label": "2023_H1",
+          "start": "2023-01-01",
+          "end": "2023-06-30",
+          "cash": 1000000,
+          "trades": 33,
+          "gross_return_pct": 17.7792,
+          "net_return_pct": 17.5777,
+          "funding_cost_usdt": 2015.7,
+          "funding_events": 452,
+          "win_rate_pct": 51.5152,
+          "max_dd_pct": -5.5822,
+          "sharpe": 2.6852,
+          "final_equity_gross": 1177792.24,
+          "final_equity_net": 1175776.54,
+          "config_applied": {}
+        },
+        "v2": {
+          "label": "2023_H1",
+          "start": "2023-01-01",
+          "end": "2023-06-30",
+          "cash": 1000000,
+          "trades": 46,
+          "gross_return_pct": 10.6066,
+          "net_return_pct": 10.5,
+          "funding_cost_usdt": 1066.41,
+          "funding_events": 378,
+          "win_rate_pct": 36.9565,
+          "max_dd_pct": -6.3011,
+          "final_equity_gross": 1106066.44,
+          "final_equity_net": 1105000.03,
+          "config_applied": {},
+          "prefix_months_used": 6,
+          "monthly_choices": [
+            {
+              "month_start": "2022-07-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "warmup_initial"
+            },
+            {
+              "month_start": "2022-08-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2022-09-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2022-10-01 00:00:00",
+              "L": 5,
+              "theta": 0.015,
+              "n_fit_trades": 24,
+              "fit_sharpe": -0.2217653295706413,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2022-11-01 00:00:00",
+              "L": 5,
+              "theta": 0.015,
+              "n_fit_trades": 32,
+              "fit_sharpe": -0.2110812035999069,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2022-12-01 00:00:00",
+              "L": 6,
+              "theta": 0.015,
+              "n_fit_trades": 42,
+              "fit_sharpe": -0.20366897271355788,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2023-01-01 00:00:00",
+              "L": 6,
+              "theta": 0.015,
+              "n_fit_trades": 49,
+              "fit_sharpe": -0.22817797172164092,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2023-02-01 00:00:00",
+              "L": 6,
+              "theta": 0.015,
+              "n_fit_trades": 48,
+              "fit_sharpe": -0.247085539181016,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2023-03-01 00:00:00",
+              "L": 5,
+              "theta": 0.025,
+              "n_fit_trades": 39,
+              "fit_sharpe": -0.16961338803016215,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2023-04-01 00:00:00",
+              "L": 5,
+              "theta": 0.025,
+              "n_fit_trades": 39,
+              "fit_sharpe": 0.10436334570169614,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2023-05-01 00:00:00",
+              "L": 5,
+              "theta": 0.025,
+              "n_fit_trades": 40,
+              "fit_sharpe": 0.11726724757354308,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2023-06-01 00:00:00",
+              "L": 5,
+              "theta": 0.025,
+              "n_fit_trades": 38,
+              "fit_sharpe": 0.02728948195532093,
+              "reason": "refit_ok"
+            }
+          ]
+        }
+      },
+      {
+        "label": "2024_H1",
+        "v1": {
+          "label": "2024_H1",
+          "start": "2024-01-01",
+          "end": "2024-06-30",
+          "cash": 1000000,
+          "trades": 39,
+          "gross_return_pct": 4.7037,
+          "net_return_pct": 4.3796,
+          "funding_cost_usdt": 3241.15,
+          "funding_events": 471,
+          "win_rate_pct": 48.7179,
+          "max_dd_pct": -4.3509,
+          "sharpe": 0.9863,
+          "final_equity_gross": 1047037.31,
+          "final_equity_net": 1043796.16,
+          "config_applied": {}
+        },
+        "v2": {
+          "label": "2024_H1",
+          "start": "2024-01-01",
+          "end": "2024-06-30",
+          "cash": 1000000,
+          "trades": 54,
+          "gross_return_pct": 6.0597,
+          "net_return_pct": 5.6379,
+          "funding_cost_usdt": 4218.46,
+          "funding_events": 428,
+          "win_rate_pct": 42.5926,
+          "max_dd_pct": -3.8343,
+          "final_equity_gross": 1060597.39,
+          "final_equity_net": 1056378.93,
+          "config_applied": {},
+          "prefix_months_used": 6,
+          "monthly_choices": [
+            {
+              "month_start": "2023-07-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "warmup_initial"
+            },
+            {
+              "month_start": "2023-08-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2023-09-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2023-10-01 00:00:00",
+              "L": 5,
+              "theta": 0.015,
+              "n_fit_trades": 20,
+              "fit_sharpe": -0.39040859394784777,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2023-11-01 00:00:00",
+              "L": 5,
+              "theta": 0.02,
+              "n_fit_trades": 21,
+              "fit_sharpe": -0.0654846654663369,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2023-12-01 00:00:00",
+              "L": 5,
+              "theta": 0.02,
+              "n_fit_trades": 31,
+              "fit_sharpe": -0.32984887381223105,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-01-01 00:00:00",
+              "L": 4,
+              "theta": 0.025,
+              "n_fit_trades": 33,
+              "fit_sharpe": -0.26594969070151286,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-02-01 00:00:00",
+              "L": 3,
+              "theta": 0.015,
+              "n_fit_trades": 46,
+              "fit_sharpe": -0.25878747179319056,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-03-01 00:00:00",
+              "L": 3,
+              "theta": 0.025,
+              "n_fit_trades": 36,
+              "fit_sharpe": -0.20301312535194582,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-04-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 46,
+              "fit_sharpe": -0.2950632646529395,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-05-01 00:00:00",
+              "L": 3,
+              "theta": 0.015,
+              "n_fit_trades": 53,
+              "fit_sharpe": -0.38233477097671725,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-06-01 00:00:00",
+              "L": 6,
+              "theta": 0.025,
+              "n_fit_trades": 50,
+              "fit_sharpe": -0.3672555666311273,
+              "reason": "refit_ok"
+            }
+          ]
+        }
+      },
+      {
+        "label": "2024_H2",
+        "v1": {
+          "label": "2024_H2",
+          "start": "2024-07-01",
+          "end": "2024-12-31",
+          "cash": 1000000,
+          "trades": 43,
+          "gross_return_pct": 6.7424,
+          "net_return_pct": 6.5351,
+          "funding_cost_usdt": 2073.06,
+          "funding_events": 478,
+          "win_rate_pct": 37.2093,
+          "max_dd_pct": -2.9491,
+          "sharpe": 1.3928,
+          "final_equity_gross": 1067423.94,
+          "final_equity_net": 1065350.88,
+          "config_applied": {}
+        },
+        "v2": {
+          "label": "2024_H2",
+          "start": "2024-07-01",
+          "end": "2024-12-31",
+          "cash": 1000000,
+          "trades": 57,
+          "gross_return_pct": 3.4572,
+          "net_return_pct": 3.1714,
+          "funding_cost_usdt": 2857.92,
+          "funding_events": 430,
+          "win_rate_pct": 43.8596,
+          "max_dd_pct": -4.2628,
+          "final_equity_gross": 1034572.2,
+          "final_equity_net": 1031714.28,
+          "config_applied": {},
+          "prefix_months_used": 6,
+          "monthly_choices": [
+            {
+              "month_start": "2024-01-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "warmup_initial"
+            },
+            {
+              "month_start": "2024-02-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2024-03-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2024-04-01 00:00:00",
+              "L": 6,
+              "theta": 0.015,
+              "n_fit_trades": 24,
+              "fit_sharpe": -0.17842287794870382,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-05-01 00:00:00",
+              "L": 6,
+              "theta": 0.015,
+              "n_fit_trades": 34,
+              "fit_sharpe": -0.22788174131638975,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-06-01 00:00:00",
+              "L": 6,
+              "theta": 0.015,
+              "n_fit_trades": 43,
+              "fit_sharpe": -0.26184389643027894,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-07-01 00:00:00",
+              "L": 6,
+              "theta": 0.025,
+              "n_fit_trades": 47,
+              "fit_sharpe": -0.261823552877942,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-08-01 00:00:00",
+              "L": 6,
+              "theta": 0.025,
+              "n_fit_trades": 48,
+              "fit_sharpe": -0.19447542212384678,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-09-01 00:00:00",
+              "L": 6,
+              "theta": 0.02,
+              "n_fit_trades": 53,
+              "fit_sharpe": -0.3159871204049019,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-10-01 00:00:00",
+              "L": 6,
+              "theta": 0.025,
+              "n_fit_trades": 48,
+              "fit_sharpe": -0.28097816639490963,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-11-01 00:00:00",
+              "L": 6,
+              "theta": 0.02,
+              "n_fit_trades": 51,
+              "fit_sharpe": -0.24864160919839298,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-12-01 00:00:00",
+              "L": 6,
+              "theta": 0.02,
+              "n_fit_trades": 48,
+              "fit_sharpe": -0.13075376653988882,
+              "reason": "refit_ok"
+            }
+          ]
+        }
+      },
+      {
+        "label": "2025_H1",
+        "v1": {
+          "label": "2025_H1",
+          "start": "2025-01-01",
+          "end": "2025-06-30",
+          "cash": 1000000,
+          "trades": 38,
+          "gross_return_pct": 3.2347,
+          "net_return_pct": 3.2188,
+          "funding_cost_usdt": 159.31,
+          "funding_events": 464,
+          "win_rate_pct": 47.3684,
+          "max_dd_pct": -3.3812,
+          "sharpe": 0.9243,
+          "final_equity_gross": 1032347.02,
+          "final_equity_net": 1032187.71,
+          "config_applied": {}
+        },
+        "v2": {
+          "label": "2025_H1",
+          "start": "2025-01-01",
+          "end": "2025-06-30",
+          "cash": 1000000,
+          "trades": 44,
+          "gross_return_pct": 3.661,
+          "net_return_pct": 3.5498,
+          "funding_cost_usdt": 1111.74,
+          "funding_events": 414,
+          "win_rate_pct": 43.1818,
+          "max_dd_pct": -2.3444,
+          "final_equity_gross": 1036610.21,
+          "final_equity_net": 1035498.47,
+          "config_applied": {},
+          "prefix_months_used": 6,
+          "monthly_choices": [
+            {
+              "month_start": "2024-07-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "warmup_initial"
+            },
+            {
+              "month_start": "2024-08-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2024-09-01 00:00:00",
+              "L": 4,
+              "theta": 0.02,
+              "n_fit_trades": 0,
+              "fit_sharpe": NaN,
+              "reason": "fallback_insufficient_trades"
+            },
+            {
+              "month_start": "2024-10-01 00:00:00",
+              "L": 6,
+              "theta": 0.015,
+              "n_fit_trades": 25,
+              "fit_sharpe": -0.27468524274509315,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-11-01 00:00:00",
+              "L": 3,
+              "theta": 0.025,
+              "n_fit_trades": 31,
+              "fit_sharpe": -0.23709247785322737,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2024-12-01 00:00:00",
+              "L": 3,
+              "theta": 0.025,
+              "n_fit_trades": 38,
+              "fit_sharpe": -0.09846188990674673,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2025-01-01 00:00:00",
+              "L": 3,
+              "theta": 0.025,
+              "n_fit_trades": 49,
+              "fit_sharpe": -0.17338115645553062,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2025-02-01 00:00:00",
+              "L": 6,
+              "theta": 0.025,
+              "n_fit_trades": 50,
+              "fit_sharpe": -0.2553109349342965,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2025-03-01 00:00:00",
+              "L": 3,
+              "theta": 0.025,
+              "n_fit_trades": 45,
+              "fit_sharpe": -0.18713187734827819,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2025-04-01 00:00:00",
+              "L": 3,
+              "theta": 0.025,
+              "n_fit_trades": 44,
+              "fit_sharpe": -0.16377550037009186,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2025-05-01 00:00:00",
+              "L": 4,
+              "theta": 0.015,
+              "n_fit_trades": 50,
+              "fit_sharpe": -0.14418367511873573,
+              "reason": "refit_ok"
+            },
+            {
+              "month_start": "2025-06-01 00:00:00",
+              "L": 6,
+              "theta": 0.025,
+              "n_fit_trades": 40,
+              "fit_sharpe": -0.16212390442750704,
+              "reason": "refit_ok"
+            }
+          ]
+        }
+      }
+    ],
+    "v2_psr": {
+      "n_trades": 253,
+      "point_sharpe": 0.050479,
+      "sr_se_lo": 0.060463,
+      "psr_vs_hurdle": 0.797642,
+      "psr_lo_adjusted": 0.797642,
+      "sr_lo_adjusted": 0.050479,
+      "lo_eta": 1.0,
+      "min_trl": 984,
+      "skew": 1.555419,
+      "kurt": 6.385257,
+      "interpretation": "insufficient_evidence"
+    },
+    "legacy_psr_stitched": {
+      "n_trades": 253,
+      "point_sharpe": 0.050479,
+      "sr_se_lo": 0.060463,
+      "psr_vs_hurdle": 0.797642,
+      "psr_lo_adjusted": 0.797642,
+      "sr_lo_adjusted": 0.050479,
+      "lo_eta": 1.0,
+      "min_trl": 984,
+      "skew": 1.555419,
+      "kurt": 6.385257,
+      "interpretation": "insufficient_evidence"
+    },
+    "v2_canonical": {
+      "aggregation_method": "v2_equity_curve_funding_adjusted",
+      "aggregation_version": "v2_equity_curve",
+      "n_windows": 5,
+      "n_trades_sum": 253,
+      "compounded_pct": 22.0319,
+      "windows_positive": "4/5",
+      "windows_positive_pct": 80.0,
+      "per_window_return_pct": [
+        -2.1451,
+        10.5,
+        5.6379,
+        3.1714,
+        3.5498
+      ],
+      "psr_per_window": [
+        {
+          "label": "2022_H1",
+          "n_trades": 52,
+          "point_sharpe": -0.039009,
+          "sr_se_lo": 0.14444,
+          "psr_vs_hurdle": 0.394557,
+          "psr_lo_adjusted": 0.394557,
+          "sr_lo_adjusted": -0.039009,
+          "lo_eta": 1.0,
+          "min_trl": 1000000000,
+          "skew": 2.10294,
+          "kurt": 8.471656,
+          "interpretation": "insufficient_evidence"
+        },
+        {
+          "label": "2023_H1",
+          "n_trades": 46,
+          "point_sharpe": 0.166711,
+          "sr_se_lo": 0.12848,
+          "psr_vs_hurdle": 0.900321,
+          "psr_lo_adjusted": 0.882613,
+          "sr_lo_adjusted": 0.15434,
+          "lo_eta": 0.925793,
+          "min_trl": 75,
+          "skew": 1.601802,
+          "kurt": 4.793669,
+          "interpretation": "insufficient_evidence"
+        },
+        {
+          "label": "2024_H1",
+          "n_trades": 54,
+          "point_sharpe": 0.109092,
+          "sr_se_lo": 0.121333,
+          "psr_vs_hurdle": 0.813467,
+          "psr_lo_adjusted": 0.813467,
+          "sr_lo_adjusted": 0.109092,
+          "lo_eta": 1.0,
+          "min_trl": 182,
+          "skew": 2.079572,
+          "kurt": 8.338596,
+          "interpretation": "insufficient_evidence"
+        },
+        {
+          "label": "2024_H2",
+          "n_trades": 57,
+          "point_sharpe": 0.068327,
+          "sr_se_lo": 0.123838,
+          "psr_vs_hurdle": 0.707771,
+          "psr_lo_adjusted": 0.707771,
+          "sr_lo_adjusted": 0.068327,
+          "lo_eta": 1.0,
+          "min_trl": 508,
+          "skew": 1.962056,
+          "kurt": 8.026232,
+          "interpretation": "insufficient_evidence"
+        },
+        {
+          "label": "2025_H1",
+          "n_trades": 44,
+          "point_sharpe": 0.106066,
+          "sr_se_lo": 0.143457,
+          "psr_vs_hurdle": 0.767583,
+          "psr_lo_adjusted": 0.767583,
+          "sr_lo_adjusted": 0.106066,
+          "lo_eta": 1.0,
+          "min_trl": 219,
+          "skew": 0.962738,
+          "kurt": 3.714009,
+          "interpretation": "insufficient_evidence"
+        }
+      ],
+      "psr_walkforward": {
+        "n_trades": 5,
+        "point_sharpe": 0.906832,
+        "sr_se_lo": 0.568187,
+        "psr_vs_hurdle": 0.923284,
+        "psr_lo_adjusted": 0.923284,
+        "sr_lo_adjusted": 0.906832,
+        "lo_eta": 1.0,
+        "min_trl": 7,
+        "skew": 0.046007,
+        "kurt": 4.190407,
+        "interpretation": "insufficient_evidence"
+      },
+      "legacy_compounded_pct": 39.4198,
+      "legacy_psr_stitched": {
+        "n_trades": 253,
+        "point_sharpe": 0.050479,
+        "sr_se_lo": 0.060463,
+        "psr_vs_hurdle": 0.797642,
+        "psr_lo_adjusted": 0.797642,
+        "sr_lo_adjusted": 0.050479,
+        "lo_eta": 1.0,
+        "min_trl": 984,
+        "skew": 1.555419,
+        "kurt": 6.385257,
+        "interpretation": "insufficient_evidence",
+        "deprecation": "stitched_per_trade_pl_pct_psr_is_N_inflated"
+      },
+      "legacy_delta_pp": -17.3879
+    },
+    "aggregation_method": "v2_equity_curve_funding_adjusted",
+    "canonical_psr_selfcheck": {
+      "canonical_psr": 0.923284,
+      "recomputed_psr": 0.923284,
+      "matches_headline": true
+    },
+    "v1_baseline_psr_brief": 0.944
+  },
+  "v1_reproduction": {
+    "v1_trades": 39,
+    "v2_collapsed_trades": 54,
+    "trade_diff": 15,
+    "trade_pct_diff": 38.4615,
+    "ok": false
+  },
+  "lookahead_test": {
+    "boundaries": [
+      {
+        "boundary": "2024-01-01",
+        "full_choice": [
+          4,
+          0.025
+        ],
+        "trunc_choice": [
+          4,
+          0.025
+        ],
+        "full_sharpe": -0.26616917985728156,
+        "trunc_sharpe": -0.26616917985728156,
+        "match": true
+      },
+      {
+        "boundary": "2024-07-01",
+        "full_choice": [
+          3,
+          0.015
+        ],
+        "trunc_choice": [
+          3,
+          0.015
+        ],
+        "full_sharpe": -0.25705635006195976,
+        "trunc_sharpe": -0.25705635006195976,
+        "match": true
+      },
+      {
+        "boundary": "2025-01-01",
+        "full_choice": [
+          3,
+          0.025
+        ],
+        "trunc_choice": [
+          3,
+          0.025
+        ],
+        "full_sharpe": -0.1417605414092409,
+        "trunc_sharpe": -0.1417605414092409,
+        "match": true
+      }
+    ],
+    "all_ok": true
+  },
+  "summary": {
+    "v1_compounded_pct": 33.5674,
+    "v2_compounded_pct": 22.0319,
+    "v1_wins": 4,
+    "v2_wins": 4,
+    "v1_total_trades": 193,
+    "v2_total_trades": 253
+  }
+}

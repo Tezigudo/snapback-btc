@@ -1,0 +1,209 @@
+{
+  "experiment": "adaptrend_v1_rv_band",
+  "rv_tag": "tight_30_70",
+  "base_strategy": "strategy.signals_adaptive_trend:AdaptiveTrendV1",
+  "rv_strategy": "strategy.signals_adaptive_trend_v1_rv_band:AdaptiveTrendV1_rv_band",
+  "cash": 1000000.0,
+  "commission": 0.0005,
+  "margin": 0.05,
+  "price_scale": 0.001,
+  "env_contract": {
+    "RV_BAND_LO": 0.3,
+    "RV_BAND_HI": 0.7,
+    "RV_LOOKBACK_DAYS": 365,
+    "RV_TAG": "tight_30_70",
+    "RV_WINDOW_HOURS_FIXED": 720
+  },
+  "windows": [
+    "2022_H1",
+    "2023_H1",
+    "2024_H1",
+    "2024_H2",
+    "2025_H1"
+  ],
+  "base": {
+    "arm": "base",
+    "config": {
+      "alpha": 2.0
+    },
+    "per_window": [
+      {
+        "label": "2022_H1",
+        "start": "2022-01-01",
+        "end": "2022-06-30",
+        "trades": 51,
+        "return_pct": 1.21,
+        "max_dd_pct": -7.1114,
+        "win_rate_pct": 35.2941,
+        "equity_final": 1012100.3878
+      },
+      {
+        "label": "2023_H1",
+        "start": "2023-01-01",
+        "end": "2023-06-30",
+        "trades": 44,
+        "return_pct": 21.0601,
+        "max_dd_pct": -5.86,
+        "win_rate_pct": 50.0,
+        "equity_final": 1210600.7142
+      },
+      {
+        "label": "2024_H1",
+        "start": "2024-01-01",
+        "end": "2024-06-30",
+        "trades": 53,
+        "return_pct": 4.0263,
+        "max_dd_pct": -8.9355,
+        "win_rate_pct": 39.6226,
+        "equity_final": 1040262.6146
+      },
+      {
+        "label": "2024_H2",
+        "start": "2024-07-01",
+        "end": "2024-12-31",
+        "trades": 58,
+        "return_pct": 8.064,
+        "max_dd_pct": -5.662,
+        "win_rate_pct": 41.3793,
+        "equity_final": 1080640.0999
+      },
+      {
+        "label": "2025_H1",
+        "start": "2025-01-01",
+        "end": "2025-06-30",
+        "trades": 49,
+        "return_pct": 5.6527,
+        "max_dd_pct": -5.9899,
+        "win_rate_pct": 42.8571,
+        "equity_final": 1056527.3287
+      }
+    ],
+    "summary": {
+      "n_trades": 255,
+      "compounded_pct": 45.5222,
+      "windows_positive": "5/5",
+      "per_window_return_pct": [
+        1.21,
+        21.0601,
+        4.0263,
+        8.064,
+        5.6527
+      ]
+    },
+    "psr": {
+      "n_trades": 255,
+      "point_sharpe": 0.076677,
+      "sr_se_lo": 0.058304,
+      "psr_vs_hurdle": 0.905331,
+      "min_trl": 400,
+      "skew": 1.876436,
+      "kurt": 8.286227,
+      "interpretation": "insufficient_evidence"
+    }
+  },
+  "rv": {
+    "arm": "rv_band",
+    "config": {
+      "alpha": 2.0,
+      "rv_window_hours": 720,
+      "rv_rank_lookback_days": 365,
+      "rv_band_lo": 0.3,
+      "rv_band_hi": 0.7
+    },
+    "per_window": [
+      {
+        "label": "2022_H1",
+        "start": "2022-01-01",
+        "end": "2022-06-30",
+        "trades": 0,
+        "return_pct": 0.0,
+        "max_dd_pct": 0.0,
+        "win_rate_pct": NaN,
+        "equity_final": 1000000.0
+      },
+      {
+        "label": "2023_H1",
+        "start": "2023-01-01",
+        "end": "2023-06-30",
+        "trades": 0,
+        "return_pct": 0.0,
+        "max_dd_pct": 0.0,
+        "win_rate_pct": NaN,
+        "equity_final": 1000000.0
+      },
+      {
+        "label": "2024_H1",
+        "start": "2024-01-01",
+        "end": "2024-06-30",
+        "trades": 0,
+        "return_pct": 0.0,
+        "max_dd_pct": 0.0,
+        "win_rate_pct": NaN,
+        "equity_final": 1000000.0
+      },
+      {
+        "label": "2024_H2",
+        "start": "2024-07-01",
+        "end": "2024-12-31",
+        "trades": 0,
+        "return_pct": 0.0,
+        "max_dd_pct": 0.0,
+        "win_rate_pct": NaN,
+        "equity_final": 1000000.0
+      },
+      {
+        "label": "2025_H1",
+        "start": "2025-01-01",
+        "end": "2025-06-30",
+        "trades": 0,
+        "return_pct": 0.0,
+        "max_dd_pct": 0.0,
+        "win_rate_pct": NaN,
+        "equity_final": 1000000.0
+      }
+    ],
+    "summary": {
+      "n_trades": 0,
+      "compounded_pct": 0.0,
+      "windows_positive": "0/5",
+      "per_window_return_pct": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "psr": {
+      "n_trades": 0,
+      "psr_vs_hurdle": 0.0,
+      "interpretation": "insufficient_evidence"
+    }
+  },
+  "verdict": {
+    "base_compounded_pct": 45.5222,
+    "rv_compounded_pct": 0.0,
+    "delta_compounded_pp": -45.5222,
+    "base_psr": 0.905331,
+    "rv_psr": 0.0,
+    "delta_psr": -0.9053,
+    "base_point_sharpe": 0.076677,
+    "rv_point_sharpe": null,
+    "base_trades": 255,
+    "rv_trades": 0,
+    "delta_trades": -255,
+    "cleared_+5pp_bar": false,
+    "psr_not_worse": false,
+    "decision": "SHELF \u2014 fails both bars"
+  },
+  "reference_postfrac_base": {
+    "source": "reports/postfrac_adaptrend_v1.json (set_5_OOS)",
+    "compounded_pct": 45.5222,
+    "n_trades": 255,
+    "psr_vs_hurdle": 0.905331,
+    "point_sharpe": 0.076677,
+    "note": "Re-running base here as sanity check; numbers should match exactly."
+  },
+  "warmup_note": "Strict cold-start: no historical prefix prepended.  Each window's first ~395 days of gate are NaN-blocked (rv_window_hours=720 + rv_rank_lookback_days*24).  For 6-month OOS this means the gate is effectively never active. Use a warm-prefix harness (TBD) for the real evaluation.",
+  "elapsed_sec": 2.58
+}

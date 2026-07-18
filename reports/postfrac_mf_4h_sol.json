@@ -1,0 +1,65 @@
+{
+  "strategy_id": "mf_4h_sol",
+  "label": "multifactor-v1 + 4H gate (SOL) [free second leg]",
+  "strategy_class": "strategy.signals_multifactor:DayTradeMultiFactorBTC",
+  "cash": 1000000.0,
+  "commission": 0.0005,
+  "margin": 0.05,
+  "windows": ["2022H1", "2023H1", "2024H1", "2024H2", "2025H1"],
+  "locked_config_plus_gate": {
+    "rsi_period": 14,
+    "rsi_long_threshold": 35.0,
+    "rsi_short_threshold": 70.0,
+    "volume_ma_period": 20,
+    "volume_multiple": 2.0,
+    "mf_trend_ema_period": 200,
+    "require_trend": true,
+    "require_candlestick": false,
+    "require_macd": false,
+    "require_funding_not_extreme": true,
+    "funding_extreme_threshold": 0.0005,
+    "sl_pct": 0.015,
+    "tp_pct": 0.03,
+    "max_hold_bars": 1344,
+    "risk_per_trade_pct": 2.75,
+    "leverage": 20,
+    "allow_shorts": true,
+    "use_mtf_4h_gate": true,
+    "mtf_4h_parquet_path": "data/historical/SOL_USDT_USDT_4h.parquet"
+  },
+  "per_window": {
+    "2022H1": {"trades": 11, "return_pct": 2.263,   "max_dd_pct": -10.064,  "win_rate_pct": 36.3636, "sharpe": 0.2511, "equity_final": 1022630.4303},
+    "2023H1": {"trades": 21, "return_pct": 14.3683, "max_dd_pct": -22.5473, "win_rate_pct": 38.0952, "sharpe": 0.9018, "equity_final": 1143683.1907},
+    "2024H1": {"trades": 18, "return_pct": 19.3798, "max_dd_pct":  -9.1456, "win_rate_pct": 44.4444, "sharpe": 1.1531, "equity_final": 1193797.5975},
+    "2024H2": {"trades": 26, "return_pct":  1.3734, "max_dd_pct": -14.8295, "win_rate_pct": 26.9231, "sharpe": 0.1212, "equity_final": 1013733.5823},
+    "2025H1": {"trades": 16, "return_pct":  0.2771, "max_dd_pct": -12.759,  "win_rate_pct": 25.0,    "sharpe": 0.0302, "equity_final": 1002771.1791}
+  },
+  "summary": {
+    "n_trades": 92,
+    "compounded_pct": 41.9322,
+    "windows_positive": "5/5",
+    "per_window_return_pct": [2.263, 14.3683, 19.3798, 1.3734, 0.2771]
+  },
+  "psr": {
+    "n_trades": 92,
+    "point_sharpe": 0.126045,
+    "sr_se_lo": 0.100352,
+    "psr_vs_hurdle": 0.894201,
+    "min_trl": 159,
+    "skew": 0.599433,
+    "kurt": 1.515992,
+    "interpretation": "insufficient_evidence"
+  },
+  "pre_fix_reference": {
+    "compounded_pct": 41.93,
+    "n_trades": 92,
+    "source": "reports/multifactor_v1_4h_multi_coin.json (coins.SOL)"
+  },
+  "deltas_vs_pre_fix": {
+    "compounded_pp": 0.0022,
+    "trades": 0,
+    "psr_delta": 0.0
+  },
+  "verdict": "MAINTAINED",
+  "notes": "Post-fractional-sizing re-validation produced byte-identical results to the pre-fix reference (same 92 trades, same per-window returns, same PSR). At $1M cash on SOL (price $20-$200), int()-truncation in _position_units does not bind — risk_amount / sl_distance is always >> 1 unit. The fractional-sizing fix is therefore a no-op for SOL at this cash level. PSR 0.894 < 0.95 (insufficient_evidence) — same as pre-fix."
+}

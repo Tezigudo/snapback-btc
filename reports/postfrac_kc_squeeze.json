@@ -1,0 +1,113 @@
+{
+  "strategy_id": "kc_squeeze_breakout_v0",
+  "strategy_class": "strategy.signals_kc_squeeze_breakout:KCSqueezeBreakoutBTC",
+  "cash": 1000000.0,
+  "commission": 0.0005,
+  "margin": 0.05,
+  "price_scale": 0.001,
+  "config": {
+    "bb_period": 20,
+    "bb_n_std": 2.0,
+    "kc_ema_period": 20,
+    "kc_atr_period": 20,
+    "kc_mult": 1.5,
+    "squeeze_min_bars": 10,
+    "donchian_period": 20,
+    "volume_ma_period": 20,
+    "volume_multiple": 1.5,
+    "atr_period": 14,
+    "stop_atr_mult": 1.5,
+    "target_atr_mult": 2.5,
+    "risk_per_trade_pct": 2.0,
+    "leverage": 20,
+    "allow_shorts": true,
+    "max_hold_bars": 1344,
+    "enabled": true
+  },
+  "windows": [
+    "2022_H1",
+    "2023_H1",
+    "2024_H1",
+    "2024_H2",
+    "2025_H1"
+  ],
+  "per_window": [
+    {
+      "label": "2022_H1",
+      "start": "2022-01-01",
+      "end": "2022-06-30",
+      "trades": 77,
+      "return_pct": -31.2469,
+      "max_dd_pct": -39.7964,
+      "win_rate_pct": 36.3636,
+      "equity_final": 687531.2607
+    },
+    {
+      "label": "2023_H1",
+      "start": "2023-01-01",
+      "end": "2023-06-30",
+      "trades": 87,
+      "return_pct": -48.2231,
+      "max_dd_pct": -50.7298,
+      "win_rate_pct": 34.4828,
+      "equity_final": 517769.3467
+    },
+    {
+      "label": "2024_H1",
+      "start": "2024-01-01",
+      "end": "2024-06-30",
+      "trades": 73,
+      "return_pct": -7.2768,
+      "max_dd_pct": -14.3848,
+      "win_rate_pct": 46.5753,
+      "equity_final": 927231.5257
+    },
+    {
+      "label": "2024_H2",
+      "start": "2024-07-01",
+      "end": "2024-12-31",
+      "trades": 64,
+      "return_pct": -46.1851,
+      "max_dd_pct": -47.6883,
+      "win_rate_pct": 29.6875,
+      "equity_final": 538149.4612
+    },
+    {
+      "label": "2025_H1",
+      "start": "2025-01-01",
+      "end": "2025-06-30",
+      "trades": 47,
+      "return_pct": -6.0666,
+      "max_dd_pct": -11.22,
+      "win_rate_pct": 46.8085,
+      "equity_final": 939333.7953
+    }
+  ],
+  "summary": {
+    "n_trades": 348,
+    "compounded_pct": -83.3145,
+    "windows_positive": "0/5",
+    "per_window_return_pct": [
+      -31.2469,
+      -48.2231,
+      -7.2768,
+      -46.1851,
+      -6.0666
+    ]
+  },
+  "psr": {
+    "n_trades": 348,
+    "point_sharpe": -0.143886,
+    "sr_se_lo": 0.055531,
+    "psr_vs_hurdle": 0.004836,
+    "min_trl": 1000000000,
+    "skew": 0.426107,
+    "kurt": 3.282386,
+    "interpretation": "insufficient_evidence"
+  },
+  "verdict": {
+    "verdict": "SHELF",
+    "reason": "compounded -83.31% < 0% \u2014 auto-shelf regardless of PSR"
+  },
+  "elapsed_sec": 1.23
+}

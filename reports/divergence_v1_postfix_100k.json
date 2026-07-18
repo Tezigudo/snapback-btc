@@ -1,0 +1,232 @@
+{
+  "strategy": "divergence-v1-postfix",
+  "cash": 100000.0,
+  "variants": {
+    "all_fixes": {
+      "windows": {
+        "2022_H1": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {}
+        },
+        "2023_H1": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {}
+        },
+        "2024_H1": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {}
+        },
+        "2024_H2": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {}
+        },
+        "2025_H1": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {}
+        }
+      },
+      "summary": {
+        "compounded_return_pct": 0.0,
+        "worst_window_pct": 0.0,
+        "windows_positive": 0,
+        "windows_total": 5,
+        "total_trades": 0,
+        "avg_win_rate_pct": 0.0
+      }
+    },
+    "ablation_a": {
+      "windows": {
+        "2022_H1": {
+          "trades": 1,
+          "total_return_pct": 2.4151,
+          "win_rate_pct": 100.0,
+          "max_dd_pct": -0.1189,
+          "sharpe": 1.3659,
+          "equity_final": 102415.1286,
+          "config_applied": {
+            "use_obv_divergence": false,
+            "strengthened_confirmation": false
+          }
+        },
+        "2023_H1": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {
+            "use_obv_divergence": false,
+            "strengthened_confirmation": false
+          }
+        },
+        "2024_H1": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {
+            "use_obv_divergence": false,
+            "strengthened_confirmation": false
+          }
+        },
+        "2024_H2": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {
+            "use_obv_divergence": false,
+            "strengthened_confirmation": false
+          }
+        },
+        "2025_H1": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {
+            "use_obv_divergence": false,
+            "strengthened_confirmation": false
+          }
+        }
+      },
+      "summary": {
+        "compounded_return_pct": 2.42,
+        "worst_window_pct": 0.0,
+        "windows_positive": 1,
+        "windows_total": 5,
+        "total_trades": 1,
+        "avg_win_rate_pct": 100.0
+      }
+    },
+    "ablation_b": {
+      "windows": {
+        "2022_H1": {
+          "trades": 0,
+          "total_return_pct": 0.0,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -0.0,
+          "sharpe": 0.0,
+          "equity_final": 100000.0,
+          "config_applied": {
+            "trend_filter_enabled": false,
+            "leverage": 20,
+            "rsi_oversold_zone": 35.0,
+            "rsi_overbought_zone": 65.0,
+            "atr_close_ratio_veto": 9999.0
+          }
+        },
+        "2023_H1": {
+          "trades": 1,
+          "total_return_pct": 2.5661,
+          "win_rate_pct": 100.0,
+          "max_dd_pct": -1.7429,
+          "sharpe": 1.4336,
+          "equity_final": 102566.1232,
+          "config_applied": {
+            "trend_filter_enabled": false,
+            "leverage": 20,
+            "rsi_oversold_zone": 35.0,
+            "rsi_overbought_zone": 65.0,
+            "atr_close_ratio_veto": 9999.0
+          }
+        },
+        "2024_H1": {
+          "trades": 1,
+          "total_return_pct": -0.9812,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -1.5124,
+          "sharpe": -1.4573,
+          "equity_final": 99018.8082,
+          "config_applied": {
+            "trend_filter_enabled": false,
+            "leverage": 20,
+            "rsi_oversold_zone": 35.0,
+            "rsi_overbought_zone": 65.0,
+            "atr_close_ratio_veto": 9999.0
+          }
+        },
+        "2024_H2": {
+          "trades": 2,
+          "total_return_pct": -1.1969,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -1.3686,
+          "sharpe": -1.7479,
+          "equity_final": 98803.0667,
+          "config_applied": {
+            "trend_filter_enabled": false,
+            "leverage": 20,
+            "rsi_oversold_zone": 35.0,
+            "rsi_overbought_zone": 65.0,
+            "atr_close_ratio_veto": 9999.0
+          }
+        },
+        "2025_H1": {
+          "trades": 3,
+          "total_return_pct": -2.9384,
+          "win_rate_pct": 0.0,
+          "max_dd_pct": -2.9384,
+          "sharpe": -2.4935,
+          "equity_final": 97061.5944,
+          "config_applied": {
+            "trend_filter_enabled": false,
+            "leverage": 20,
+            "rsi_oversold_zone": 35.0,
+            "rsi_overbought_zone": 65.0,
+            "atr_close_ratio_veto": 9999.0
+          }
+        }
+      },
+      "summary": {
+        "compounded_return_pct": -2.6,
+        "worst_window_pct": -2.94,
+        "windows_positive": 1,
+        "windows_total": 5,
+        "total_trades": 7,
+        "avg_win_rate_pct": 25.0
+      }
+    },
+    "pre_fix_reference": {
+      "summary": {
+        "compounded_return_pct": -16.58,
+        "worst_window_pct": -6.53,
+        "windows_positive": 0,
+        "windows_total": 5,
+        "total_trades": 44,
+        "avg_win_rate_pct": 15.1
+      }
+    }
+  }
+}

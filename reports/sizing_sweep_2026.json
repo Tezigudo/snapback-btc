@@ -1,0 +1,113 @@
+{
+  "config": "locked + 4H gate + funding 0.0015",
+  "arms": {
+    "risk_2.75": {
+      "oos_compounded_pct": 81.94,
+      "oos_wins": "4/5",
+      "oos_per_window": [
+        19.75,
+        32.92,
+        6.23,
+        -1.06,
+        8.75
+      ],
+      "oos_worst_peak_dd_pct": -16.72,
+      "wf_pct_positive_sufficient": 60.0,
+      "wf_worst_quarter": {
+        "q": "2024Q3",
+        "trades": 16,
+        "ret": -11.82,
+        "dd": -15.05
+      },
+      "wf_worst_quarter_dd": {
+        "q": "2021Q4",
+        "trades": 13,
+        "ret": -5.55,
+        "dd": -16.85
+      },
+      "kill_margin_pp": 18.65,
+      "breaker_needed_pct": 3.75
+    },
+    "risk_3.0": {
+      "oos_compounded_pct": 89.58,
+      "oos_wins": "4/5",
+      "oos_per_window": [
+        21.56,
+        36.31,
+        6.63,
+        -1.71,
+        9.16
+      ],
+      "oos_worst_peak_dd_pct": -18.13,
+      "wf_pct_positive_sufficient": 60.0,
+      "wf_worst_quarter": {
+        "q": "2024Q3",
+        "trades": 16,
+        "ret": -12.98,
+        "dd": -16.33
+      },
+      "wf_worst_quarter_dd": {
+        "q": "2021Q4",
+        "trades": 13,
+        "ret": -6.0,
+        "dd": -18.25
+      },
+      "kill_margin_pp": 17.25,
+      "breaker_needed_pct": 4.0
+    },
+    "risk_3.5": {
+      "oos_compounded_pct": 109.54,
+      "oos_wins": "4/5",
+      "oos_per_window": [
+        25.57,
+        42.94,
+        7.59,
+        -2.03,
+        10.75
+      ],
+      "oos_worst_peak_dd_pct": -20.86,
+      "wf_pct_positive_sufficient": 60.0,
+      "wf_worst_quarter": {
+        "q": "2024Q3",
+        "trades": 16,
+        "ret": -15.0,
+        "dd": -18.82
+      },
+      "wf_worst_quarter_dd": {
+        "q": "2021Q4",
+        "trades": 13,
+        "ret": -7.08,
+        "dd": -21.02
+      },
+      "kill_margin_pp": 14.48,
+      "breaker_needed_pct": 4.5
+    },
+    "risk_4.0": {
+      "oos_compounded_pct": 128.36,
+      "oos_wins": "4/5",
+      "oos_per_window": [
+        29.08,
+        49.43,
+        8.29,
+        -2.3,
+        11.9
+      ],
+      "oos_worst_peak_dd_pct": -23.62,
+      "wf_pct_positive_sufficient": 60.0,
+      "wf_worst_quarter": {
+        "q": "2024Q3",
+        "trades": 16,
+        "ret": -17.12,
+        "dd": -21.4
+      },
+      "wf_worst_quarter_dd": {
+        "q": "2021Q4",
+        "trades": 13,
+        "ret": -8.28,
+        "dd": -23.75
+      },
+      "kill_margin_pp": 11.75,
+      "breaker_needed_pct": 5.0
+    }
+  }
+}
