@@ -24,8 +24,11 @@ class RiskCeilings:
     # without a separate RISK_REVIEW.
     MAX_LEVERAGE: int = 20
 
-    # If equity drawdown today exceeds this %, flatten + HALT for 24h.
-    MAX_DAILY_LOSS_PCT: float = 2.0
+    # If equity drawdown today exceeds this %, block NEW entries until the
+    # next UTC day (no flatten). 4.5 = one full 3.5%-risk stop-out does not
+    # freeze the leg; a second consecutive one does. Backport of the deployed
+    # value (2.0→3.5→4.5, RISK_REVIEW-approved 2026-07-12, droplet eac6071).
+    MAX_DAILY_LOSS_PCT: float = 4.5
 
     # Single-symbol simplicity for v1.
     MAX_OPEN_POSITIONS: int = 1
