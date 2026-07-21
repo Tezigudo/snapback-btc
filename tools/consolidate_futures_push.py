@@ -248,6 +248,11 @@ def run(income_days: int = 2, dry_run: bool = False) -> dict[str, Any]:
     # True  → apply verbatim (null legitimately clears a cancelled bracket);
     # False → server preserves whatever it already has.
     try:
+        # ccxt (binanceusdm) refuses fetch_open_orders() with no symbol by
+        # default — it raises to flag the stricter (40x) rate-limit weight.
+        # Acknowledge it: this cron runs hourly on a single-symbol account, so
+        # the weight is negligible and one all-symbols call is simplest.
+        ex.options["warnOnFetchOpenOrdersWithoutSymbol"] = False
         brackets = build_bracket_map(ex.fetch_open_orders())
         brackets_known = True
     except Exception as e:  # noqa: BLE001 — any ccxt/network error, keep pushing
