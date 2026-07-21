@@ -85,6 +85,8 @@ def build_bracket_map(orders: list[dict[str, Any]]) -> dict[str, dict[str, float
     close the position. STOP* → SL, TAKE_PROFIT* → TP. Matched to a position by
     symbol only (one position per symbol per account, so side need not match).
     Non-reduce-only working orders (e.g. an unfilled LIMIT entry) are ignored.
+    If a symbol has multiple SL (or TP) trigger orders, the last one seen wins —
+    snapback places a single bracket per side, so this collision isn't expected.
     """
     out: dict[str, dict[str, float | None]] = {}
     for o in orders:
@@ -260,7 +262,8 @@ def run(income_days: int = 2, dry_run: bool = False) -> dict[str, Any]:
         print(json.dumps({"account": account, "positions": positions,
                           "bracketsKnown": brackets_known,
                           "income_count": len(income)}, indent=2))
-        return {"dry_run": True, "positions": len(positions), "income": len(income)}
+        return {"dry_run": True, "positions": len(positions), "income": len(income),
+                "bracketsKnown": brackets_known}
 
     results: dict[str, Any] = {}
     errors: list[str] = []
