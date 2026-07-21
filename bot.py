@@ -56,6 +56,7 @@ from bot_internals import (
     channel_exit_signal,
     evaluate_for_strategy,
     gate_status,
+    has_bracket_leg,
     limit_entry_price,
     order_avg_price,
     resolve_strategy_name,
@@ -678,6 +679,10 @@ class Bot:
             return
         pos = self.client.fetch_position(self.symbol)
         if pos.side == "flat" or pos.qty == 0:
+            # No position → drop any stale bracket record so it can never be
+            # applied to a later, unrelated position (the side + entry-price
+            # guards below are the second line of defence).
+            state.set_meta("active_bracket", "")
             return
         raw = state.get_meta("active_bracket")
         if not raw:
@@ -687,8 +692,8 @@ class Bot:
         except (ValueError, TypeError):
             return
         # Only act on stashed params that clearly belong to THIS position —
-        # matching side + entry price — so a stale record never fabricates a
-        # bracket at the wrong levels.
+        # matching side + entry price (2%) — so a stale record never fabricates
+        # a bracket at the wrong levels for a different/manual position.
         if ab.get("side") != pos.side:
             return
         ep = float(ab.get("entry_price") or 0.0)
@@ -696,7 +701,7 @@ class Bot:
             return
         place_tp = bool(ab.get("place_tp", True))
         try:
-            open_orders = self.client.fetch_open_orders(self.symbol)
+            open_orders = self.client.ex.fetch_open_orders(self.symbol)
         except Exception:
             self.log.exception("reprotect: fetch_open_orders failed")
             return
@@ -705,28 +710,36 @@ class Bot:
         now = time.time()
         if now - self._last_reprotect_ts < 60:
             return
-        self._last_reprotect_ts = now
+        self._last_reprotect_ts = now  # throttle (relaxed to a 15s retry on failure below)
         self.log.warning(
-            "Bracket MISSING while holding %s %.4f @ %.2f — re-placing SL%s.",
-            pos.side, pos.qty, pos.entry_price, "/TP" if place_tp else "")
+            "Bracket MISSING while holding %s %.4f @ %.2f (equity=$%.2f) — re-placing SL%s.",
+            pos.side, pos.qty, pos.entry_price, equity, "/TP" if place_tp else "")
         try:
-            # Clean slate: drop any partial leg (our COID only), then re-place
-            # the full bracket via the same path the entry uses.
+            # Clean slate: cancel our reduce-only orders, then CONFIRM none
+            # survive before placing — cancel_open_orders swallows per-order
+            # failures, so a partial cancel + blind re-place could leave a stale
+            # leg alongside the new pair.
             self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
+            if has_bracket_leg(self.client.ex.fetch_open_orders(self.symbol)):
+                raise RuntimeError(
+                    "a bracket leg survived cancel — skipping re-place to avoid duplicate orders")
             self.client._place_brackets(
                 self.symbol, pos.side, pos.qty, pos.entry_price,
                 float(ab["sl_distance"]), float(ab["tp_distance"]),
                 client_order_id_root=ab.get("signal_id"), place_tp=place_tp)
         except Exception as e:
             self.log.exception("reprotect: re-place failed: %s", e)
+            # An unprotected live position is urgent — retry ~15s (not the 60s
+            # success cooldown, and not every 5s poll).
+            self._last_reprotect_ts = now - 45
             send_alert(
                 "Bracket re-place FAILED",
-                f"{pos.side} {pos.qty:.4f} @ {pos.entry_price:.2f} is UNPROTECTED "
-                f"and automatic re-placement failed: {e}")
+                f"{pos.side} {pos.qty:.4f} @ {pos.entry_price:.2f} — automatic SL/TP "
+                f"re-placement failed (position may be unprotected): {e}")
             return
         state.record_event("WARN", "bracket_reprotect",
                            {"side": pos.side, "qty": pos.qty,
-                            "entry": pos.entry_price,
+                            "entry": pos.entry_price, "equity": equity,
                             "signal_id": ab.get("signal_id")},
                            signal_id=ab.get("signal_id"))
         send_alert(

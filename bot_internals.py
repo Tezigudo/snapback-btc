@@ -376,23 +376,36 @@ def order_avg_price(order: dict | None) -> float | None:
     return None
 
 
+def reduce_only_bracket_leg(order: dict) -> str | None:
+    """Classify a ccxt order as a reduce-only bracket leg: 'sl' (STOP*), 'tp'
+    (TAKE_PROFIT*), or None (not a reduce-only stop/take-profit — e.g. an
+    unfilled limit entry). Handles reduceOnly/closePosition as bool or string."""
+    info = order.get("info") or {}
+    reduce_only = (
+        str(info.get("reduceOnly")).lower() == "true"
+        or str(info.get("closePosition")).lower() == "true"
+    )
+    if not reduce_only:
+        return None
+    otype = str(info.get("type") or info.get("origType") or order.get("type") or "").upper()
+    if "TAKE_PROFIT" in otype:
+        return "tp"
+    if "STOP" in otype:
+        return "sl"
+    return None
+
+
 def bracket_is_intact(open_orders: list[dict], place_tp: bool) -> bool:
     """True when the resting reduce-only bracket is complete for an open
-    position: a stop (STOP*) leg is present, plus a take-profit (TAKE_PROFIT*)
-    leg when the strategy places one (place_tp). Non-reduce-only working orders
-    (e.g. an unfilled limit entry) are ignored. Pure — unit-tested."""
-    has_sl = has_tp = False
-    for o in open_orders or []:
-        info = o.get("info") or {}
-        reduce_only = (
-            str(info.get("reduceOnly")).lower() == "true"
-            or str(info.get("closePosition")).lower() == "true"
-        )
-        if not reduce_only:
-            continue
-        otype = str(info.get("type") or info.get("origType") or o.get("type") or "").upper()
-        if "TAKE_PROFIT" in otype:
-            has_tp = True
-        elif "STOP" in otype:
-            has_sl = True
-    return has_sl and (has_tp or not place_tp)
+    position: a stop (SL) leg is present, plus a take-profit (TP) leg when the
+    strategy places one (place_tp). Pure — unit-tested."""
+    legs = {reduce_only_bracket_leg(o) for o in (open_orders or [])}
+    return "sl" in legs and ("tp" in legs or not place_tp)
+
+
+def has_bracket_leg(open_orders: list[dict]) -> bool:
+    """True if ANY reduce-only bracket leg (SL or TP) is present. Used to verify
+    a cancel actually cleared the bracket before re-placing (cancel_open_orders
+    swallows per-order failures, so a partial cancel could otherwise leave a
+    surviving leg alongside a freshly-placed pair)."""
+    return any(reduce_only_bracket_leg(o) is not None for o in (open_orders or []))

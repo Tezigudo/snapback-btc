@@ -7,7 +7,7 @@ exchange or state.db — same strategy as test_bot_internals.py.
 
 from __future__ import annotations
 
-from bot_internals import bracket_is_intact, order_avg_price
+from bot_internals import bracket_is_intact, has_bracket_leg, order_avg_price
 
 
 def _sl(reduce_only: str | bool = "true") -> dict:
@@ -71,3 +71,14 @@ class TestBracketIsIntact:
         # ccxt can surface a python bool rather than the raw "true"/"false" string
         assert bracket_is_intact([_sl(reduce_only=True)], place_tp=False) is True
         assert bracket_is_intact([_sl(reduce_only=False)], place_tp=False) is False
+
+
+class TestHasBracketLeg:
+    def test_true_when_any_reduce_only_leg_present(self) -> None:
+        assert has_bracket_leg([_sl()]) is True
+        assert has_bracket_leg([_tp()]) is True
+        assert has_bracket_leg([_sl(), _tp()]) is True
+
+    def test_false_when_empty_or_only_entry(self) -> None:
+        assert has_bracket_leg([]) is False
+        assert has_bracket_leg([_limit_entry()]) is False
