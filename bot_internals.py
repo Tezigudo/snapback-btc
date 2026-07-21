@@ -358,3 +358,54 @@ def _format_waiting(missing_long: list, missing_short: list, fired: str | None) 
     long_part = "long ready" if not missing_long else "long waiting on " + ", ".join(missing_long)
     short_part = "short ready" if not missing_short else "short waiting on " + ", ".join(missing_short)
     return f"{long_part} | {short_part}"
+
+
+def order_avg_price(order: dict | None) -> float | None:
+    """Best-effort average fill price from a ccxt order dict (market fills).
+    Returns None if no positive price is present."""
+    if not order:
+        return None
+    info = order.get("info") or {}
+    for v in (order.get("average"), info.get("avgPrice"), order.get("price")):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f > 0:
+            return f
+    return None
+
+
+def reduce_only_bracket_leg(order: dict) -> str | None:
+    """Classify a ccxt order as a reduce-only bracket leg: 'sl' (STOP*), 'tp'
+    (TAKE_PROFIT*), or None (not a reduce-only stop/take-profit — e.g. an
+    unfilled limit entry). Handles reduceOnly/closePosition as bool or string."""
+    info = order.get("info") or {}
+    reduce_only = (
+        str(info.get("reduceOnly")).lower() == "true"
+        or str(info.get("closePosition")).lower() == "true"
+    )
+    if not reduce_only:
+        return None
+    otype = str(info.get("type") or info.get("origType") or order.get("type") or "").upper()
+    if "TAKE_PROFIT" in otype:
+        return "tp"
+    if "STOP" in otype:
+        return "sl"
+    return None
+
+
+def bracket_is_intact(open_orders: list[dict], place_tp: bool) -> bool:
+    """True when the resting reduce-only bracket is complete for an open
+    position: a stop (SL) leg is present, plus a take-profit (TP) leg when the
+    strategy places one (place_tp). Pure — unit-tested."""
+    legs = {reduce_only_bracket_leg(o) for o in (open_orders or [])}
+    return "sl" in legs and ("tp" in legs or not place_tp)
+
+
+def has_bracket_leg(open_orders: list[dict]) -> bool:
+    """True if ANY reduce-only bracket leg (SL or TP) is present. Used to verify
+    a cancel actually cleared the bracket before re-placing (cancel_open_orders
+    swallows per-order failures, so a partial cancel could otherwise leave a
+    surviving leg alongside a freshly-placed pair)."""
+    return any(reduce_only_bracket_leg(o) is not None for o in (open_orders or []))

@@ -16,6 +16,7 @@ Covers:
 """
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -278,7 +279,8 @@ class TestPlaceLiveEntryPlaceTp:
     def test_v1_market_entry_places_tp(self):
         bot, mc = _make_bot(strategy_name="multifactor-v1", order_type="market")
         mc.market_order_with_bracket.return_value = {"entry": {}, "sl": {}, "tp": {}}
-        with patch("bot.trade_events.record_market_entry"):
+        with patch("bot.trade_events.record_market_entry"), \
+             patch("bot.state.set_meta"):
             bot._place_live_entry(self._decision(), qty=0.01,
                                   signal_id="1", equity=10000.0)
         assert mc.market_order_with_bracket.call_args.kwargs["place_tp"] is True
@@ -287,7 +289,8 @@ class TestPlaceLiveEntryPlaceTp:
         bot, mc = _make_bot(strategy_name="donchian-v3", order_type="market",
                             entry_tf="4h")
         mc.market_order_with_bracket.return_value = {"entry": {}, "sl": {}, "tp": None}
-        with patch("bot.trade_events.record_market_entry"):
+        with patch("bot.trade_events.record_market_entry"), \
+             patch("bot.state.set_meta"):
             bot._place_live_entry(self._decision(), qty=0.01,
                                   signal_id="1", equity=10000.0)
         assert mc.market_order_with_bracket.call_args.kwargs["place_tp"] is False
@@ -298,7 +301,8 @@ class TestPlaceLiveEntryPlaceTp:
         mc.limit_order_with_bracket.return_value = {
             "entry": {}, "sl": {}, "tp": None, "filled_as": "limit",
             "fill_price": 64990.0, "filled_qty": 0.01}
-        with patch("bot.trade_events.record_limit_entry"):
+        with patch("bot.trade_events.record_limit_entry"), \
+             patch("bot.state.set_meta"):
             bot._place_live_entry(self._decision(), qty=0.01,
                                   signal_id="1", equity=10000.0)
         assert mc.limit_order_with_bracket.call_args.kwargs["place_tp"] is False
@@ -383,3 +387,99 @@ class TestMaybeChannelExit:
         mc.close_position.assert_not_called()
         rec.assert_not_called()
         alert.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 6. bot._maybe_reprotect (bracket-health-check) wiring
+# ---------------------------------------------------------------------------
+
+_ACTIVE_BRACKET = json.dumps({
+    "signal_id": "1700000000000", "side": "long", "entry_price": 65000.0,
+    "sl_distance": 975.0, "tp_distance": 1950.0, "place_tp": True,
+})
+
+
+def _ro_sl() -> dict:
+    return {"info": {"type": "STOP_MARKET", "reduceOnly": "true", "stopPrice": "64000"}}
+
+
+def _ro_tp() -> dict:
+    return {"info": {"type": "TAKE_PROFIT_MARKET", "reduceOnly": "true", "stopPrice": "67000"}}
+
+
+class TestMaybeReprotect:
+
+    def _bot(self, dry_run: bool = False):
+        bot, mc = _make_bot(strategy_name="multifactor-v1", dry_run=dry_run)
+        mc.reset_mock()
+        mc.fetch_position.return_value = _open("long")  # qty 0.02 @ 65000
+        mc.cancel_open_orders.return_value = 0
+        return bot, mc
+
+    def test_replaces_when_bracket_missing(self):
+        bot, mc = self._bot()
+        mc.ex.fetch_open_orders.return_value = []  # gone (and stays gone post-cancel)
+        with patch("bot.state.get_meta", return_value=_ACTIVE_BRACKET), \
+             patch("bot.state.record_event"), patch("bot.send_alert") as alert:
+            bot._maybe_reprotect(equity=10000.0)
+        # Must go through the raw ccxt client (self.client.ex), NOT self.client —
+        # guards the AttributeError-on-every-poll regression the reviewer caught.
+        assert mc.ex.fetch_open_orders.called
+        mc.cancel_open_orders.assert_called_once_with("BTC/USDT:USDT", coid_prefix="snap-v1-")
+        mc._place_brackets.assert_called_once()
+        args = mc._place_brackets.call_args
+        assert args.args[:4] == ("BTC/USDT:USDT", "long", 0.02, 65000.0)
+        assert args.args[4] == 975.0 and args.args[5] == 1950.0
+        assert args.kwargs["place_tp"] is True
+        alert.assert_called_once()
+
+    def test_noop_when_bracket_intact(self):
+        bot, mc = self._bot()
+        mc.ex.fetch_open_orders.return_value = [_ro_sl(), _ro_tp()]
+        with patch("bot.state.get_meta", return_value=_ACTIVE_BRACKET), \
+             patch("bot.send_alert"):
+            bot._maybe_reprotect(equity=10000.0)
+        mc.cancel_open_orders.assert_not_called()
+        mc._place_brackets.assert_not_called()
+
+    def test_noop_on_side_mismatch(self):
+        bot, mc = self._bot()
+        short_ab = json.dumps({**json.loads(_ACTIVE_BRACKET), "side": "short"})
+        with patch("bot.state.get_meta", return_value=short_ab):
+            bot._maybe_reprotect(equity=10000.0)
+        mc.ex.fetch_open_orders.assert_not_called()
+        mc._place_brackets.assert_not_called()
+
+    def test_noop_on_entry_price_drift(self):
+        bot, mc = self._bot()
+        drifted = json.dumps({**json.loads(_ACTIVE_BRACKET), "entry_price": 50000.0})
+        with patch("bot.state.get_meta", return_value=drifted):
+            bot._maybe_reprotect(equity=10000.0)
+        mc._place_brackets.assert_not_called()
+
+    def test_skips_replace_if_cancel_leaves_a_leg(self):
+        bot, mc = self._bot()
+        # bracket missing at first check; a leg SURVIVES the cancel → must NOT
+        # place a new pair (would duplicate) → FAILED alert instead.
+        mc.ex.fetch_open_orders.side_effect = [[], [_ro_sl()]]
+        with patch("bot.state.get_meta", return_value=_ACTIVE_BRACKET), \
+             patch("bot.state.record_event"), patch("bot.send_alert") as alert:
+            bot._maybe_reprotect(equity=10000.0)
+        mc._place_brackets.assert_not_called()
+        alert.assert_called_once()
+        assert "FAILED" in alert.call_args.args[0]
+
+    def test_clears_stale_meta_when_flat(self):
+        bot, mc = self._bot()
+        mc.fetch_position.return_value = _flat()
+        with patch("bot.state.set_meta") as set_meta:
+            bot._maybe_reprotect(equity=10000.0)
+        set_meta.assert_called_once_with("active_bracket", "")
+        mc._place_brackets.assert_not_called()
+
+    def test_dry_run_noop(self):
+        bot, mc = self._bot(dry_run=True)
+        with patch("bot.state.get_meta", return_value=_ACTIVE_BRACKET):
+            bot._maybe_reprotect(equity=10000.0)
+        mc.fetch_position.assert_not_called()
+        mc._place_brackets.assert_not_called()

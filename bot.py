@@ -52,10 +52,13 @@ import yaml
 from alerts import send_alert
 from bot_internals import (
     SignalDecision,
+    bracket_is_intact,
     channel_exit_signal,
     evaluate_for_strategy,
     gate_status,
+    has_bracket_leg,
     limit_entry_price,
+    order_avg_price,
     resolve_strategy_name,
     strategy_uses_channel_exit,
 )
@@ -246,6 +249,9 @@ class Bot:
         # open→flat transitions. "unknown" until the first loop call so we
         # don't emit a spurious exit alert for a historical entry in state.db.
         self._last_position_side: str = "unknown"
+        # Throttle bracket re-placement (see _maybe_reprotect) so a persistent
+        # placement failure can't spam orders/alerts every 5s poll.
+        self._last_reprotect_ts: float = 0.0
         if self.dry_run:
             self.log.warning("DRY-RUN MODE: no real orders will be placed")
 
@@ -327,20 +333,36 @@ class Bot:
                 self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
                                  "Flattening (root=%s).",
                                  pos.side, pos.qty, pos.entry_price, root or "—")
-                self.client.close_position(self.symbol,
-                                           client_order_id_root=root, close_leg="bf")
+                close_order = self.client.close_position(
+                    self.symbol, client_order_id_root=root, close_leg="bf")
+                # Emit the REAL flatten fill + post-close equity so the dashboard
+                # attributes the actual PnL. Previously this sent the ENTRY price
+                # and no equity, so a boot-flattened WIN showed as $0/loss on the
+                # dashboard (makeTrade fell back to (entry-entry)*qty = 0, which
+                # deriveLegStats then counts as a loss).
+                close_price = order_avg_price(close_order) or pos.entry_price
+                try:
+                    equity_after = float(self.client.fetch_equity_usdt())
+                except Exception:
+                    equity_after = None
+                direction = 1.0 if pos.side == "long" else -1.0
+                pnl_usd = round((close_price - pos.entry_price) * pos.qty * direction, 4)
                 state.record_event("WARN", "boot_flatten",
                                    {"side": pos.side, "qty": pos.qty,
-                                    "entry": pos.entry_price,
-                                    "signal_id": root},
+                                    "entry": pos.entry_price, "exit": close_price,
+                                    "pnl_usd": pnl_usd, "signal_id": root},
                                    signal_id=root)
                 state.enqueue_bot_event(
                     "boot_flatten",
                     signal_id=root,
                     side=pos.side,
                     qty=float(pos.qty),
-                    price_usd=float(pos.entry_price),
-                    payload={"reason": "stale_position_at_boot"},
+                    price_usd=float(close_price),
+                    equity_usd=equity_after,
+                    payload={"reason": "stale_position_at_boot",
+                             "exit_price": float(close_price),
+                             "entry_price": float(pos.entry_price),
+                             "pnl_usd": pnl_usd},
                 )
         else:
             # Position is already flat at boot.  Sweep any orphaned reduce-only
@@ -591,6 +613,17 @@ class Bot:
         # trade, so there is no TP leg. Every other strategy keeps its TP.
         place_tp = not strategy_uses_channel_exit(self.strategy_name)
 
+        # Remember this trade's bracket params so _maybe_reprotect can restore
+        # the SL/TP if they later go missing while the position is still open
+        # (external cancel, or a leverage change → Binance auto-cancels orders).
+        state.set_meta("active_bracket", json.dumps({
+            "signal_id": signal_id, "side": decision.side,
+            "entry_price": float(decision.price),
+            "sl_distance": float(decision.sl_distance),
+            "tp_distance": float(decision.tp_distance),
+            "place_tp": bool(place_tp),
+        }))
+
         if self.order_type == "limit":
             limit_price = limit_entry_price(
                 decision.side, decision.price, self.limit_offset_bps)
@@ -630,6 +663,89 @@ class Bot:
             strategy_name=self.strategy_name,
             orders=orders, dbg=decision.debug,
         )
+
+    def _maybe_reprotect(self, equity: float) -> None:
+        """Restore a missing SL/TP bracket while a position is still open.
+
+        The bot places a reduce-only bracket at entry, but an EXTERNAL event can
+        remove it without the bot knowing — a manual cancel on Binance, or a
+        leverage change (Binance auto-cancels ALL open orders on a leverage
+        change). _detect_bracket_exit only reacts to a bracket FILL (open→flat),
+        never a cancel, so a cancelled bracket would leave the position silently
+        unprotected until the time-stop. This guard notices the gap and, from the
+        params stashed at entry, re-places the bracket (cancel-then-replace so it
+        never leaves duplicates), then alerts."""
+        if self.dry_run:
+            return
+        pos = self.client.fetch_position(self.symbol)
+        if pos.side == "flat" or pos.qty == 0:
+            # No position → drop any stale bracket record so it can never be
+            # applied to a later, unrelated position (the side + entry-price
+            # guards below are the second line of defence).
+            state.set_meta("active_bracket", "")
+            return
+        raw = state.get_meta("active_bracket")
+        if not raw:
+            return
+        try:
+            ab = json.loads(raw)
+        except (ValueError, TypeError):
+            return
+        # Only act on stashed params that clearly belong to THIS position —
+        # matching side + entry price (2%) — so a stale record never fabricates
+        # a bracket at the wrong levels for a different/manual position.
+        if ab.get("side") != pos.side:
+            return
+        ep = float(ab.get("entry_price") or 0.0)
+        if ep <= 0 or pos.entry_price <= 0 or abs(ep - pos.entry_price) / pos.entry_price > 0.02:
+            return
+        place_tp = bool(ab.get("place_tp", True))
+        try:
+            open_orders = self.client.ex.fetch_open_orders(self.symbol)
+        except Exception:
+            self.log.exception("reprotect: fetch_open_orders failed")
+            return
+        if bracket_is_intact(open_orders, place_tp):
+            return
+        now = time.time()
+        if now - self._last_reprotect_ts < 60:
+            return
+        self._last_reprotect_ts = now  # throttle (relaxed to a 15s retry on failure below)
+        self.log.warning(
+            "Bracket MISSING while holding %s %.4f @ %.2f (equity=$%.2f) — re-placing SL%s.",
+            pos.side, pos.qty, pos.entry_price, equity, "/TP" if place_tp else "")
+        try:
+            # Clean slate: cancel our reduce-only orders, then CONFIRM none
+            # survive before placing — cancel_open_orders swallows per-order
+            # failures, so a partial cancel + blind re-place could leave a stale
+            # leg alongside the new pair.
+            self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
+            if has_bracket_leg(self.client.ex.fetch_open_orders(self.symbol)):
+                raise RuntimeError(
+                    "a bracket leg survived cancel — skipping re-place to avoid duplicate orders")
+            self.client._place_brackets(
+                self.symbol, pos.side, pos.qty, pos.entry_price,
+                float(ab["sl_distance"]), float(ab["tp_distance"]),
+                client_order_id_root=ab.get("signal_id"), place_tp=place_tp)
+        except Exception as e:
+            self.log.exception("reprotect: re-place failed: %s", e)
+            # An unprotected live position is urgent — retry ~15s (not the 60s
+            # success cooldown, and not every 5s poll).
+            self._last_reprotect_ts = now - 45
+            send_alert(
+                "Bracket re-place FAILED",
+                f"{pos.side} {pos.qty:.4f} @ {pos.entry_price:.2f} — automatic SL/TP "
+                f"re-placement failed (position may be unprotected): {e}")
+            return
+        state.record_event("WARN", "bracket_reprotect",
+                           {"side": pos.side, "qty": pos.qty,
+                            "entry": pos.entry_price, "equity": equity,
+                            "signal_id": ab.get("signal_id")},
+                           signal_id=ab.get("signal_id"))
+        send_alert(
+            "Bracket re-placed",
+            f"SL/TP for {pos.side} {pos.qty:.4f} @ {pos.entry_price:.2f} went missing "
+            f"(external cancel?) and was automatically restored.")
 
     def _detect_bracket_exit(self, equity: float) -> None:
         """Bracket SL/TP fills close the position on Binance's side without
@@ -879,6 +995,7 @@ class Bot:
                 self._detect_bracket_exit(equity)
                 self._maybe_time_stop(equity)
                 self._maybe_channel_exit(equity)
+                self._maybe_reprotect(equity)
                 self._maybe_enter(equity)
                 self._maybe_push_consolidate(equity)
                 backoff_s = self.poll_s
