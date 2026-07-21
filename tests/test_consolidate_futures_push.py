@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from tools.consolidate_futures_push import (
     build_account_payload,
+    build_bracket_map,
     build_position_payloads,
     build_income_payloads,
 )
@@ -107,3 +108,54 @@ def test_income_payloads_skip_malformed():
     out = build_income_payloads(rows)
     assert len(out) == 1
     assert out[0]["incomeUsd"] == 2.0
+
+
+def test_bracket_map_extracts_reduce_only_sl_and_tp():
+    orders = [
+        {"info": {"symbol": "BTCUSDT", "type": "STOP_MARKET",
+                  "reduceOnly": "true", "stopPrice": "106400"}},
+        {"info": {"symbol": "BTCUSDT", "type": "TAKE_PROFIT_MARKET",
+                  "reduceOnly": "true", "stopPrice": "112000"}},
+        # an unfilled LIMIT entry (not reduce-only) must be ignored
+        {"info": {"symbol": "BTCUSDT", "type": "LIMIT",
+                  "reduceOnly": "false", "price": "108000"}},
+    ]
+    assert build_bracket_map(orders) == {"BTCUSDT": {"slPrice": 106400.0, "tpPrice": 112000.0}}
+
+
+def test_bracket_map_close_position_flag_and_sl_only():
+    # donchian legs place SL only via closePosition=true → tp stays None
+    orders = [{"info": {"symbol": "BTCUSDT", "type": "STOP_MARKET",
+                        "closePosition": "true", "stopPrice": "105000"}}]
+    assert build_bracket_map(orders) == {"BTCUSDT": {"slPrice": 105000.0, "tpPrice": None}}
+
+
+def test_bracket_map_skips_non_reduce_only_and_zero_stop():
+    orders = [
+        {"info": {"symbol": "BTCUSDT", "type": "STOP_MARKET",
+                  "reduceOnly": "false", "stopPrice": "105000"}},
+        {"info": {"symbol": "ETHUSDT", "type": "STOP_MARKET",
+                  "reduceOnly": "true", "stopPrice": "0"}},
+    ]
+    assert build_bracket_map(orders) == {}
+
+
+def test_position_payloads_merge_brackets():
+    positions = [{"info": {
+        "symbol": "BTCUSDT", "positionAmt": "0.01", "entryPrice": "108000",
+        "markPrice": "108500", "unRealizedProfit": "5", "leverage": "10",
+    }}]
+    brackets = {"BTCUSDT": {"slPrice": 106400.0, "tpPrice": None}}
+    out = build_position_payloads(positions, brackets)
+    assert out[0]["slPrice"] == 106400.0
+    assert out[0]["tpPrice"] is None
+
+
+def test_position_payloads_default_brackets_none():
+    positions = [{"info": {
+        "symbol": "BTCUSDT", "positionAmt": "0.01", "entryPrice": "108000",
+        "markPrice": "108500", "unRealizedProfit": "5", "leverage": "10",
+    }}]
+    out = build_position_payloads(positions)
+    assert out[0]["slPrice"] is None
+    assert out[0]["tpPrice"] is None
