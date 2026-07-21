@@ -10,6 +10,7 @@ reconciliation is real instead of comparing a different account.
 READ-ONLY BY CONSTRUCTION. This module only calls GET endpoints:
   - ex.fetch_balance({"type": "future"})   → /fapi/v3/account (balances)
   - ex.fetch_positions()                   → /fapi/v2/positionRisk (open pos)
+  - ex.fetch_open_orders()                 → /fapi/v1/openOrders (resting SL/TP)
   - ex.fapiPrivateGetIncome(...)           → /fapi/v1/income (realized/funding/fees)
 It NEVER places, cancels, or modifies orders. It does not import or touch the
 trading loop. Run by cron, hourly. Fire-and-forget: any failure is logged and
@@ -76,12 +77,54 @@ def build_account_payload(balance_info: dict[str, Any]) -> dict[str, float]:
     }
 
 
-def build_position_payloads(positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_bracket_map(orders: list[dict[str, Any]]) -> dict[str, dict[str, float | None]]:
+    """Map ccxt fetch_open_orders() → {symbol: {"slPrice", "tpPrice"}}.
+
+    Keeps only reduce-only (or closePosition) STOP_MARKET / TAKE_PROFIT_MARKET
+    orders and reads their trigger `stopPrice` — the resting bracket that will
+    close the position. STOP* → SL, TAKE_PROFIT* → TP. Matched to a position by
+    symbol only (one position per symbol per account, so side need not match).
+    Non-reduce-only working orders (e.g. an unfilled LIMIT entry) are ignored.
+    If a symbol has multiple SL (or TP) trigger orders, the last one seen wins —
+    snapback places a single bracket per side, so this collision isn't expected.
+    """
+    out: dict[str, dict[str, float | None]] = {}
+    for o in orders:
+        info = o.get("info") or {}
+        symbol = info.get("symbol") or o.get("symbol") or ""
+        if not symbol:
+            continue
+        reduce_only = (
+            str(info.get("reduceOnly")).lower() == "true"
+            or str(info.get("closePosition")).lower() == "true"
+        )
+        if not reduce_only:
+            continue
+        otype = str(info.get("type") or info.get("origType") or o.get("type") or "").upper()
+        stop = _f(info.get("stopPrice") or o.get("stopPrice") or o.get("triggerPrice"))
+        if stop <= 0:
+            continue
+        entry = out.setdefault(symbol, {"slPrice": None, "tpPrice": None})
+        if "TAKE_PROFIT" in otype:
+            entry["tpPrice"] = stop
+        elif "STOP" in otype:
+            entry["slPrice"] = stop
+    return out
+
+
+def build_position_payloads(
+    positions: list[dict[str, Any]],
+    brackets: dict[str, dict[str, float | None]] | None = None,
+) -> list[dict[str, Any]]:
     """Map ccxt fetch_positions() → ingest shape. Skips flat positions.
 
     Reads raw `info` for signed positionAmt + liq price (ccxt's unified
     `contracts` is unsigned), falling back to unified fields where present.
+    `brackets` (from build_bracket_map) merges each symbol's resting SL/TP;
+    absent when the open-orders fetch was skipped or failed → slPrice/tpPrice
+    are None, which the server stores as NULL.
     """
+    brackets = brackets or {}
     out: list[dict[str, Any]] = []
     for p in positions:
         info = p.get("info") or {}
@@ -89,8 +132,10 @@ def build_position_payloads(positions: list[dict[str, Any]]) -> list[dict[str, A
         if abs(amt) <= 0:
             continue
         liq = _f(info.get("liquidationPrice") or p.get("liquidationPrice"))
+        symbol = info.get("symbol") or p.get("symbol") or ""
+        b = brackets.get(symbol) or {}
         out.append({
-            "symbol": info.get("symbol") or p.get("symbol") or "",
+            "symbol": symbol,
             "positionSide": info.get("positionSide") or "BOTH",
             "positionAmt": amt,
             "entryPrice": _f(info.get("entryPrice") or p.get("entryPrice")),
@@ -98,6 +143,8 @@ def build_position_payloads(positions: list[dict[str, Any]]) -> list[dict[str, A
             "unrealizedPnlUsd": _f(info.get("unRealizedProfit") or p.get("unrealizedPnl")),
             "liquidationPrice": liq if liq > 0 else None,
             "leverage": _f(info.get("leverage") or p.get("leverage") or 0),
+            "slPrice": b.get("slPrice"),
+            "tpPrice": b.get("tpPrice"),
         })
     return out
 
@@ -194,20 +241,35 @@ def run(income_days: int = 2, dry_run: bool = False) -> dict[str, Any]:
     balance = ex.fetch_balance({"type": "future"})
     account = build_account_payload(balance.get("info") or {})
 
-    positions = build_position_payloads(ex.fetch_positions())
+    # Resting bracket orders (SL/TP). Best-effort: if the open-orders read
+    # fails we must NOT let this push overwrite the last-known SL/TP with null
+    # (the orders are still resting on the exchange). So we tell the server
+    # whether we actually know the bracket state this push via `bracketsKnown`:
+    # True  → apply verbatim (null legitimately clears a cancelled bracket);
+    # False → server preserves whatever it already has.
+    try:
+        brackets = build_bracket_map(ex.fetch_open_orders())
+        brackets_known = True
+    except Exception as e:  # noqa: BLE001 — any ccxt/network error, keep pushing
+        log.warning("fetch_open_orders failed (%s) — preserving prior SL/TP this push", e)
+        brackets, brackets_known = {}, False
+    positions = build_position_payloads(ex.fetch_positions(), brackets)
 
     start_ms = int(time.time() * 1000) - income_days * 86_400_000
     income = build_income_payloads(_fetch_income(ex, start_ms))
 
     if dry_run:
         print(json.dumps({"account": account, "positions": positions,
+                          "bracketsKnown": brackets_known,
                           "income_count": len(income)}, indent=2))
-        return {"dry_run": True, "positions": len(positions), "income": len(income)}
+        return {"dry_run": True, "positions": len(positions), "income": len(income),
+                "bracketsKnown": brackets_known}
 
     results: dict[str, Any] = {}
     errors: list[str] = []
     results["account"] = _post(url, token, "/futures/account-snapshot", account)
-    results["positions"] = _post(url, token, "/futures/positions", {"positions": positions})
+    results["positions"] = _post(url, token, "/futures/positions",
+                                 {"positions": positions, "bracketsKnown": brackets_known})
     for key in ("account", "positions"):
         if "error" in results[key]:
             errors.append(f"{key}: {results[key]['error']}")
