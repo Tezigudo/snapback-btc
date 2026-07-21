@@ -358,3 +358,41 @@ def _format_waiting(missing_long: list, missing_short: list, fired: str | None) 
     long_part = "long ready" if not missing_long else "long waiting on " + ", ".join(missing_long)
     short_part = "short ready" if not missing_short else "short waiting on " + ", ".join(missing_short)
     return f"{long_part} | {short_part}"
+
+
+def order_avg_price(order: dict | None) -> float | None:
+    """Best-effort average fill price from a ccxt order dict (market fills).
+    Returns None if no positive price is present."""
+    if not order:
+        return None
+    info = order.get("info") or {}
+    for v in (order.get("average"), info.get("avgPrice"), order.get("price")):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f > 0:
+            return f
+    return None
+
+
+def bracket_is_intact(open_orders: list[dict], place_tp: bool) -> bool:
+    """True when the resting reduce-only bracket is complete for an open
+    position: a stop (STOP*) leg is present, plus a take-profit (TAKE_PROFIT*)
+    leg when the strategy places one (place_tp). Non-reduce-only working orders
+    (e.g. an unfilled limit entry) are ignored. Pure — unit-tested."""
+    has_sl = has_tp = False
+    for o in open_orders or []:
+        info = o.get("info") or {}
+        reduce_only = (
+            str(info.get("reduceOnly")).lower() == "true"
+            or str(info.get("closePosition")).lower() == "true"
+        )
+        if not reduce_only:
+            continue
+        otype = str(info.get("type") or info.get("origType") or o.get("type") or "").upper()
+        if "TAKE_PROFIT" in otype:
+            has_tp = True
+        elif "STOP" in otype:
+            has_sl = True
+    return has_sl and (has_tp or not place_tp)
