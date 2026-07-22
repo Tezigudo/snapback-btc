@@ -667,6 +667,13 @@ class Bot:
     def _maybe_reprotect(self, equity: float) -> None:
         """Restore a missing SL/TP bracket while a position is still open.
 
+        ⚠ DISABLED 2026-07-22 at the call site — the bracket_is_intact check
+        reads fetch_open_orders(), which does NOT return the conditional/algo
+        STOP_MARKET/TAKE_PROFIT_MARKET orders _place_brackets creates, so it
+        false-triggered a re-place loop on every poll. Kept here (with tests)
+        pending a conditional-order-aware detection fix.
+
+
         The bot places a reduce-only bracket at entry, but an EXTERNAL event can
         remove it without the bot knowing — a manual cancel on Binance, or a
         leverage change (Binance auto-cancels ALL open orders on a leverage
@@ -995,7 +1002,14 @@ class Bot:
                 self._detect_bracket_exit(equity)
                 self._maybe_time_stop(equity)
                 self._maybe_channel_exit(equity)
-                self._maybe_reprotect(equity)
+                # DISABLED 2026-07-22: _maybe_reprotect checks fetch_open_orders()
+                # for the bracket, but _place_brackets lands SL/TP on Binance's
+                # conditional/algo-order endpoint, which fetch_open_orders does
+                # NOT return → it saw "bracket missing" every poll on a live
+                # position, re-placed until the -4045 max-stop-order limit, and
+                # spammed failure alerts. Re-enable only once bracket detection
+                # can see conditional orders (fetchOpenOrders alone can't).
+                # self._maybe_reprotect(equity)
                 self._maybe_enter(equity)
                 self._maybe_push_consolidate(equity)
                 backoff_s = self.poll_s
