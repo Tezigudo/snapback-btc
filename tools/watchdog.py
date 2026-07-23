@@ -76,11 +76,11 @@ LEGS: tuple[LegSpec, ...] = (
         heartbeat=REPO_ROOT / "data" / "heartbeat_donchian",
         alert_tag="snapback-btc-donchian",
     ),
-    LegSpec(
-        instance="cnh_short",
-        heartbeat=REPO_ROOT / "data" / "heartbeat_cnh_short",
-        alert_tag="snapback-cnh-short",
-    ),
+    # cnh_short is intentionally SHELVED/offline (paper, down since the 2026-07-01
+    # halt). Monitoring it made the watchdog email "cnh_short DOWN" every ~30 min
+    # forever (harmless when MailerSend was dead; became inbox spam once Brevo
+    # went live 2026-07-22). Re-add this LegSpec only if cnh_short is brought back
+    # to real live trading.
 )
 
 
