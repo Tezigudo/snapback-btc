@@ -1224,7 +1224,14 @@ class Bot:
                 self._detect_bracket_exit(equity)
                 self._maybe_time_stop(equity)
                 self._maybe_channel_exit(equity)
-                self._maybe_reprotect(equity)
+                # DISABLED 2026-07-22: _maybe_reprotect checks fetch_open_orders()
+                # for the bracket, but _place_brackets lands SL/TP on Binance's
+                # conditional/algo-order endpoint, which fetch_open_orders does
+                # NOT return → it saw "bracket missing" every poll on a live
+                # position, re-placed until the -4045 max-stop-order limit, and
+                # spammed failure alerts. Re-enable only once bracket detection
+                # can see conditional orders (fetchOpenOrders alone can't).
+                # self._maybe_reprotect(equity)
                 self._maybe_enter(equity)
                 self._maybe_push_consolidate(equity)
                 backoff_s = self.poll_s
