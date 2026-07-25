@@ -335,11 +335,21 @@ def gate_status(strategy_name: str, decision: SignalDecision, params: dict) -> d
 
         flip_long = dir_prev == -1.0 and dir_now == 1.0
         flip_short = dir_prev == 1.0 and dir_now == -1.0
+        # `shorts_enabled` deliberately does NOT live in gates_short. It is
+        # static config, so as a gate it would read ✓ forever and dilute a list
+        # whose whole job is "what is changing / what am I waiting on". It goes
+        # in thresholds alongside the other config, matching how donchian-v3
+        # surfaces its own on/off switch (`gate_on`) above. gates_short now
+        # contains only the one thing that actually moves.
         gates_long = {"st_flip_up": bool(flip_long)}
-        gates_short = {"st_flip_down": bool(flip_short),
-                       "shorts_enabled": allow_shorts}
+        gates_short = {"st_flip_down": bool(flip_short and allow_shorts)}
         missing_long = [k for k, v in gates_long.items() if not v]
         missing_short = [k for k, v in gates_short.items() if not v]
+
+        def _num(key):
+            v = dbg.get(key)
+            return float(v) if isinstance(v, (int, float)) else None
+
         return {
             "strategy": strategy_name,
             "would_fire": decision.side,
@@ -347,7 +357,18 @@ def gate_status(strategy_name: str, decision: SignalDecision, params: dict) -> d
                 "close": float(close) if close is not None else None,
                 "st_dir": float(dir_now) if dir_now is not None else None,
                 "st_dir_prev": float(dir_prev) if dir_prev is not None else None,
-                "atr": (float(dbg["atr"]) if dbg.get("atr") is not None else None),
+                # The band + distance to it: the level price must cross for the
+                # next flip. Without this the card can only say "direction is
+                # -1"; with it, "needs +4.1%".
+                "st_line": _num("st_line"),
+                "dist_to_flip_pct": _num("dist_to_flip_pct"),
+                "atr": _num("atr"),
+                "atr_pct": _num("atr_pct"),
+                "bars_since_flip": _num("bars_since_flip"),
+                # What a LONG firing on this bar would be bracketed at, so the
+                # reader does not have to do ATR arithmetic.
+                "would_sl_price": _num("would_sl_price"),
+                "would_tp_price": _num("would_tp_price"),
             },
             "thresholds": {
                 "st_period": float(dbg.get("st_period", s.get("st_period", 14))),
@@ -355,7 +376,7 @@ def gate_status(strategy_name: str, decision: SignalDecision, params: dict) -> d
                                                s.get("st_multiplier", 3.5))),
                 "sl_atr": float(dbg.get("sl_atr", s.get("st_sl_atr", 2.0))),
                 "tp_atr": float(dbg.get("tp_atr", s.get("st_tp_atr", 10.0))),
-                "allow_shorts": allow_shorts,
+                "shorts_enabled": allow_shorts,
             },
             "gates_long": gates_long,
             "gates_short": gates_short,
