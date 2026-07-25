@@ -1106,6 +1106,32 @@ def main() -> int:
     # Overlay .env.{instance} (donchian's sub-account API key, cnh_short's
     # ALERT_TAG, etc.) on top of the base .env loaded at exchange.env import.
     instance_env_path = load_env_for_instance(args.instance)
+    # Fail loudly if a NON-v1 leg has no per-instance env file.
+    #
+    # load_env_for_instance returns None when `.env.<instance>` is absent, which
+    # is correct for v1 (the base .env IS its env) but a live-money hazard for
+    # every other leg: without the overlay the leg silently inherits v1's
+    # BINANCE_API_KEY and trades a different symbol inside v1's account, pushes
+    # telemetry under v1's CONSOLIDATE_SOURCE, and emails under v1's ALERT_TAG.
+    # env.py's own docstring names this as the thing the overlay exists to
+    # prevent, but nothing enforced it. Enforced here, before any client is
+    # constructed.
+    #
+    # Not exempted for --dry-run on purpose: a dry run against the wrong account
+    # reads the wrong equity (so sizing and the min-notional check are both
+    # meaningless) and still emits events under the wrong source.
+    if args.instance != "v1" and instance_env_path is None:
+        print(
+            f"FATAL: instance {args.instance!r} has no .env.{args.instance}.\n"
+            f"  Without it this leg would use the BASE .env — i.e. v1's Binance\n"
+            f"  API key and account — and place {args.instance} orders there.\n"
+            f"  Create {REPO_ROOT / f'.env.{args.instance}'} holding that leg's own\n"
+            f"  sub-account BINANCE_API_KEY / BINANCE_API_SECRET, plus\n"
+            f"  CONSOLIDATE_SOURCE=... and ALERT_TAG=... so its dashboard events\n"
+            f"  and alert emails do not collide with v1's.",
+            file=sys.stderr,
+        )
+        return 2
     # Make the instance name discoverable by anything that emits alerts
     # later (alerts.send_alert prepends it to the subject so every leg's
     # mail threads cleanly in Gmail).
