@@ -90,6 +90,9 @@ from strategy.signals_supertrend_variants import (
     attach_supertrend_trail,
     attach_supertrend_voladapt,
 )
+# 2026-07-25: SOL leg candidate — long-only native-4h Supertrend rider, no TP,
+# with a CORRECTLY SHIFTED optional Donchian exit. See SOL_LEG_VERDICT.md.
+from strategy.signals_sol_trend_rider import SolTrendRider, attach_sol_trend_rider
 
 # multifactor-v1/v2/v3 use a single entry TF (15m); no second-TF prep required.
 # Donchian-v3 and rider-v1 are single-TF (entry_tf == channel TF, typically 4h).
@@ -103,6 +106,7 @@ _TF_AGNOSTIC_STRATEGIES = {
     "supertrend",
     "st-adx", "st-ema", "st-dual", "st-donchexit", "st-voladapt",
     "st-adx-donchexit", "st-trail",
+    "sol-trend-rider",
 }
 
 # For snapback, use plain Backtest with large notional cash so 1 BTC fits as
@@ -176,6 +180,10 @@ STRATEGIES: dict[str, type[Strategy]] = {
     # 2026-06-14 round 2: ADX+Donchian-exit combo + chandelier trailing stop.
     "st-adx-donchexit": SupertrendADXDonchExit,
     "st-trail": SupertrendTrail,
+    # 2026-07-25: SOL leg candidate. Long-only 4h Supertrend rider, ATR stop,
+    # NO take-profit, exit on trend flip. Optional shifted-Donchian / trail
+    # exits (both default off). See SOL_LEG_VERDICT.md.
+    "sol-trend-rider": SolTrendRider,
 }
 
 # No strategy in the current codebase needs regime columns.
@@ -192,6 +200,7 @@ _RIDER_STRATEGIES: set[str] = {"rider-v1"}
 _SUPERTREND_STRATEGIES: set[str] = {
     "supertrend", "st-adx", "st-ema", "st-dual", "st-donchexit", "st-voladapt",
     "st-adx-donchexit", "st-trail",
+    "sol-trend-rider",
 }
 _SUPERTREND_ATTACH_FNS: dict[str, tuple] = {
     "supertrend": (attach_supertrend, {}),
@@ -209,6 +218,8 @@ _SUPERTREND_ATTACH_FNS: dict[str, tuple] = {
         "adx_period": "st_adx_period", "donch_period": "st_donch_period",
     }),
     "st-trail": (attach_supertrend_trail, {"adx_period": "st_adx_period"}),
+    "sol-trend-rider": (attach_sol_trend_rider,
+                        {"donch_period": "sol_donch_exit_period"}),
 }
 
 

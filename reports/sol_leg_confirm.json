@@ -1,0 +1,1242 @@
+{
+  "oos_span": [
+    "2022-04-01",
+    "2026-07-25"
+  ],
+  "frozen_continuous": {
+    "rider-v1": {
+      "after_funding_pct": 176.15062547210493,
+      "max_drawdown_pct": -42.26948905063696,
+      "profit_factor": 1.6674753110719782,
+      "win_rate_pct": 13.274336283185843,
+      "trades": 113,
+      "avg_trade_pct": 1.0608023396854627,
+      "sharpe": 0.5591237937526662
+    },
+    "rider-v1-alt": {
+      "after_funding_pct": 204.81153450641676,
+      "max_drawdown_pct": -38.63111441976274,
+      "profit_factor": 1.839939856365765,
+      "win_rate_pct": 14.432989690721648,
+      "trades": 97,
+      "avg_trade_pct": 1.3998781758518541,
+      "sharpe": 0.6125713635762449
+    },
+    "st-donchexit::long": {
+      "after_funding_pct": 250.3812028734455,
+      "max_drawdown_pct": -44.31097885989722,
+      "profit_factor": 1.8885297570436774,
+      "win_rate_pct": 19.81132075471698,
+      "trades": 106,
+      "avg_trade_pct": 0.9104590772171184,
+      "sharpe": 0.5954070235972214
+    },
+    "st-adx-donchexit": {
+      "after_funding_pct": 141.25556779393133,
+      "max_drawdown_pct": -53.698157149870276,
+      "profit_factor": 1.5346881954579987,
+      "win_rate_pct": 19.834710743801654,
+      "trades": 121,
+      "avg_trade_pct": 0.47218481347675034,
+      "sharpe": 0.4933231957498721
+    },
+    "donchian-v3": {
+      "after_funding_pct": 158.44931944469582,
+      "max_drawdown_pct": -50.13692163029483,
+      "profit_factor": 1.096717965716343,
+      "win_rate_pct": 26.653696498054476,
+      "trades": 514,
+      "avg_trade_pct": 0.009170108673450805,
+      "sharpe": 0.3912121342204397
+    }
+  },
+  "buy_and_hold": {
+    "after_funding_pct": -56.42192412191043,
+    "max_drawdown_pct": -93.60648087365523
+  },
+  "plateau_rider_v1": [
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 262.3785712522694,
+      "dd": -30.54208548248366,
+      "pf": 1.6282139744818944,
+      "trades": 128,
+      "wr": 19.53125
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 256.53616060109493,
+      "dd": -32.78915419930281,
+      "pf": 1.483984283749309,
+      "trades": 145,
+      "wr": 19.310344827586206
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 204.81153450641676,
+      "dd": -38.63111441976274,
+      "pf": 1.839939856365765,
+      "trades": 97,
+      "wr": 14.432989690721648
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 187.6260934940411,
+      "dd": -43.63499045546203,
+      "pf": 1.6776470833670127,
+      "trades": 117,
+      "wr": 13.675213675213676
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 178.0751351932165,
+      "dd": -31.317453852112674,
+      "pf": 1.4472028121207554,
+      "trades": 134,
+      "wr": 17.16417910447761
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 176.15062547210493,
+      "dd": -42.26948905063696,
+      "pf": 1.6674753110719782,
+      "trades": 113,
+      "wr": 13.274336283185843
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 169.38552679970832,
+      "dd": -38.792438661841445,
+      "pf": 1.5349057881043335,
+      "trades": 135,
+      "wr": 12.592592592592592
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 164.3527584725052,
+      "dd": -35.035188685851146,
+      "pf": 1.567576073212854,
+      "trades": 109,
+      "wr": 20.18348623853211
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 143.52013579613646,
+      "dd": -28.450529727208263,
+      "pf": 1.4136323914643807,
+      "trades": 124,
+      "wr": 16.93548387096774
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 142.840110166526,
+      "dd": -27.506892933264094,
+      "pf": 1.3795389487406178,
+      "trades": 134,
+      "wr": 20.8955223880597
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 138.78821544660295,
+      "dd": -35.63170803005126,
+      "pf": 1.3542368768936588,
+      "trades": 159,
+      "wr": 20.125786163522015
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 136.67152352991442,
+      "dd": -33.15889990181642,
+      "pf": 1.3404931540956797,
+      "trades": 165,
+      "wr": 15.757575757575756
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 133.76215009417854,
+      "dd": -27.506892933264094,
+      "pf": 1.3700608921420578,
+      "trades": 135,
+      "wr": 20.74074074074074
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 133.0894573424438,
+      "dd": -32.41580713643293,
+      "pf": 1.3068552798813236,
+      "trades": 153,
+      "wr": 16.99346405228758
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 130.64492648002184,
+      "dd": -36.638740204395305,
+      "pf": 1.407442552746381,
+      "trades": 122,
+      "wr": 19.672131147540984
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 130.58596449797864,
+      "dd": -24.239067212107702,
+      "pf": 1.2991230104428155,
+      "trades": 149,
+      "wr": 20.13422818791946
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 126.93511861081018,
+      "dd": -33.41492858392431,
+      "pf": 1.3266164790961046,
+      "trades": 151,
+      "wr": 15.894039735099339
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 126.15932373017587,
+      "dd": -31.20216103736212,
+      "pf": 1.270872044315876,
+      "trades": 172,
+      "wr": 17.441860465116278
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 122.47939893331447,
+      "dd": -30.286961819485757,
+      "pf": 1.291242892561396,
+      "trades": 142,
+      "wr": 18.30985915492958
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 121.19886993381597,
+      "dd": -24.239067212107702,
+      "pf": 1.2873627913353791,
+      "trades": 150,
+      "wr": 20.0
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 114.44305511278623,
+      "dd": -27.377000058062695,
+      "pf": 1.3155800592285498,
+      "trades": 129,
+      "wr": 17.829457364341085
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 109.24207591399902,
+      "dd": -35.63170803005126,
+      "pf": 1.3156184901808006,
+      "trades": 159,
+      "wr": 19.49685534591195
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 104.1143901299201,
+      "dd": -16.220251529746,
+      "pf": 1.3859449378829203,
+      "trades": 118,
+      "wr": 27.966101694915253
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 96.47888014297263,
+      "dd": -36.28141710378559,
+      "pf": 1.2345586960906825,
+      "trades": 180,
+      "wr": 18.88888888888889
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 95.3413662265473,
+      "dd": -17.244269770702058,
+      "pf": 1.360365093171074,
+      "trades": 116,
+      "wr": 27.586206896551722
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 92.10069241923084,
+      "dd": -32.03262692775053,
+      "pf": 1.569953279949813,
+      "trades": 89,
+      "wr": 17.97752808988764
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 88.87266671565015,
+      "dd": -23.930761746625983,
+      "pf": 1.362371187809771,
+      "trades": 115,
+      "wr": 23.47826086956522
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 86.69235304755682,
+      "dd": -22.71837765505961,
+      "pf": 1.299228956651165,
+      "trades": 132,
+      "wr": 25.757575757575758
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 86.60586477712384,
+      "dd": -26.166475693004397,
+      "pf": 1.4453879498432298,
+      "trades": 95,
+      "wr": 27.368421052631582
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 78.71427943135068,
+      "dd": -26.259068034137066,
+      "pf": 1.2747069506566904,
+      "trades": 131,
+      "wr": 22.900763358778626
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 77.33401197389942,
+      "dd": -19.720337243776008,
+      "pf": 1.3260247380398005,
+      "trades": 110,
+      "wr": 26.36363636363636
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 73.57816417804021,
+      "dd": -38.09373272524083,
+      "pf": 1.205969339222875,
+      "trades": 180,
+      "wr": 18.333333333333332
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 71.1759433898435,
+      "dd": -25.16739583083496,
+      "pf": 1.279623715136852,
+      "trades": 123,
+      "wr": 25.203252032520325
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 69.62394022524376,
+      "dd": -33.3968331813595,
+      "pf": 1.422167505663986,
+      "trades": 116,
+      "wr": 17.24137931034483
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 59.96560285983663,
+      "dd": -28.998817719685654,
+      "pf": 1.294817324516908,
+      "trades": 108,
+      "wr": 25.0
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 59.86516825161343,
+      "dd": -24.190011275167166,
+      "pf": 1.2184115685938277,
+      "trades": 130,
+      "wr": 25.384615384615383
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 56.438461323844116,
+      "dd": -29.511408891057155,
+      "pf": 1.3911817003035747,
+      "trades": 113,
+      "wr": 15.04424778761062
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 53.6619624867152,
+      "dd": -28.462981090306304,
+      "pf": 1.2461606464034443,
+      "trades": 118,
+      "wr": 20.33898305084746
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 52.92659924658374,
+      "dd": -38.3056271210728,
+      "pf": 1.400522904062833,
+      "trades": 104,
+      "wr": 16.346153846153847
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 46.57840677315186,
+      "dd": -26.144829303994655,
+      "pf": 1.205810023380259,
+      "trades": 143,
+      "wr": 24.475524475524477
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 45.07579418905927,
+      "dd": -37.453118756047175,
+      "pf": 1.3712938523403337,
+      "trades": 102,
+      "wr": 15.686274509803921
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 44.60435503512101,
+      "dd": -26.509865884694193,
+      "pf": 1.175059366585984,
+      "trades": 133,
+      "wr": 22.55639097744361
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 38.939479338408866,
+      "dd": -28.67926834215154,
+      "pf": 1.1902122084429234,
+      "trades": 141,
+      "wr": 24.113475177304963
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 37.129772420340366,
+      "dd": -26.678095643933574,
+      "pf": 1.2868522403381701,
+      "trades": 111,
+      "wr": 14.414414414414415
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 36.71729760121541,
+      "dd": -24.550865432690994,
+      "pf": 1.236938241223315,
+      "trades": 112,
+      "wr": 15.178571428571427
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 36.261748352254685,
+      "dd": -25.17661530940535,
+      "pf": 1.2525869430771917,
+      "trades": 117,
+      "wr": 15.384615384615385
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 34,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 36.03126222189799,
+      "dd": -22.262933642854865,
+      "pf": 1.206769863431822,
+      "trades": 106,
+      "wr": 19.81132075471698
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 35.119129368205314,
+      "dd": -32.5661804139174,
+      "pf": 1.1528429552031993,
+      "trades": 151,
+      "wr": 22.516556291390728
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 34.48314460569644,
+      "dd": -33.57626473688767,
+      "pf": 1.1784981114372388,
+      "trades": 143,
+      "wr": 19.58041958041958
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 29.667085863950724,
+      "dd": -30.804986080248742,
+      "pf": 1.3237928067121667,
+      "trades": 99,
+      "wr": 16.161616161616163
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 29.210139580243165,
+      "dd": -33.683784275258496,
+      "pf": 1.3385504354576032,
+      "trades": 104,
+      "wr": 16.346153846153847
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 29.022505984916357,
+      "dd": -35.81219291122431,
+      "pf": 1.1389545757795876,
+      "trades": 160,
+      "wr": 23.125
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 28.44274130762525,
+      "dd": -29.952776954472426,
+      "pf": 1.1581480926654462,
+      "trades": 126,
+      "wr": 19.047619047619047
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 26.33915889057443,
+      "dd": -27.46843640786506,
+      "pf": 1.178820002839363,
+      "trades": 117,
+      "wr": 17.094017094017094
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 24.48353009208244,
+      "dd": -19.478036795556886,
+      "pf": 1.2563101241037826,
+      "trades": 93,
+      "wr": 19.35483870967742
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 24.22182151527852,
+      "dd": -21.583881079547584,
+      "pf": 1.2636602989731671,
+      "trades": 99,
+      "wr": 19.19191919191919
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 23.85578956564669,
+      "dd": -29.744997248973082,
+      "pf": 1.192438645344475,
+      "trades": 124,
+      "wr": 16.93548387096774
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 22.842069462132166,
+      "dd": -17.10742925341219,
+      "pf": 1.1964707499598928,
+      "trades": 96,
+      "wr": 21.875
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 18.61145295731468,
+      "dd": -29.191282641874583,
+      "pf": 1.1463870050685354,
+      "trades": 117,
+      "wr": 17.094017094017094
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 17.113269582979118,
+      "dd": -30.861701001901775,
+      "pf": 1.1640620295323132,
+      "trades": 124,
+      "wr": 16.93548387096774
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 13.471950137810884,
+      "dd": -19.287914334667512,
+      "pf": 1.1251463026827824,
+      "trades": 100,
+      "wr": 23.0
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 13.120108161135601,
+      "dd": -34.40835101380192,
+      "pf": 1.360970367022978,
+      "trades": 82,
+      "wr": 14.634146341463413
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 20,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 12.172680010172066,
+      "dd": -36.772840896924606,
+      "pf": 1.0833469297503142,
+      "trades": 157,
+      "wr": 22.929936305732486
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 8.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 11.686934935082128,
+      "dd": -21.20590503687626,
+      "pf": 1.1529168296710652,
+      "trades": 103,
+      "wr": 20.388349514563107
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 9.531897480592,
+      "dd": -22.983547591852414,
+      "pf": 1.17963477449604,
+      "trades": 86,
+      "wr": 22.093023255813954
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": 8.8423700381435,
+      "dd": -20.289447181609287,
+      "pf": 1.1078463445048359,
+      "trades": 101,
+      "wr": 22.772277227722775
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": 6.048855698960898,
+      "dd": -44.77924136099285,
+      "pf": 1.4050640659654843,
+      "trades": 103,
+      "wr": 9.70873786407767
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": -0.4236687201611966,
+      "dd": -28.296913795473444,
+      "pf": 1.1327626605052588,
+      "trades": 93,
+      "wr": 20.43010752688172
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 5.0
+      },
+      "ret": -1.3312790154368037,
+      "dd": -24.856326629289605,
+      "pf": 1.0748294721023035,
+      "trades": 109,
+      "wr": 21.100917431192663
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 200,
+        "rider_sl_atr": 1.0,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": -2.1841178036533293,
+      "dd": -49.66642811259013,
+      "pf": 1.3348741333550829,
+      "trades": 95,
+      "wr": 9.473684210526317
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 12.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": -4.799202363816512,
+      "dd": -39.23132559029601,
+      "pf": 1.2797424986250392,
+      "trades": 90,
+      "wr": 13.333333333333334
+    },
+    {
+      "combo": {
+        "rider_donchian_n": 55,
+        "rider_ema_period": 100,
+        "rider_sl_atr": 1.5,
+        "rider_tp_atr": 6.0,
+        "rider_trail_atr": 0.0
+      },
+      "ret": -6.344589070363704,
+      "dd": -25.175765360922586,
+      "pf": 1.0424888839638944,
+      "trades": 109,
+      "wr": 21.100917431192663
+    }
+  ],
+  "cost_stress": {
+    "rider-v1": {
+      "5": {
+        "ret": 176.15062547210493,
+        "pf": 1.6674753110719782,
+        "dd": -42.26948905063696
+      },
+      "10": {
+        "ret": 151.48812588743277,
+        "pf": 1.6068226391264213,
+        "dd": -43.73751303425376
+      },
+      "15": {
+        "ret": 128.98447214830213,
+        "pf": 1.5500260605642244,
+        "dd": -45.1701434777984
+      },
+      "20": {
+        "ret": 108.42952723026129,
+        "pf": 1.496729168735584,
+        "dd": -46.56654736644372
+      }
+    },
+    "rider-v1-alt": {
+      "5": {
+        "ret": 204.81153450641676,
+        "pf": 1.839939856365765,
+        "dd": -38.63111441976274
+      },
+      "10": {
+        "ret": 180.99710110926912,
+        "pf": 1.7716077960548091,
+        "dd": -39.901431986494984
+      },
+      "15": {
+        "ret": 158.9870793486585,
+        "pf": 1.7077101930398113,
+        "dd": -41.147521584447986
+      },
+      "20": {
+        "ret": 138.65657623702973,
+        "pf": 1.6478289478941184,
+        "dd": -42.36806491236802
+      }
+    },
+    "st-donchexit::long": {
+      "5": {
+        "ret": 250.3812028734455,
+        "pf": 1.8885297570436774,
+        "dd": -44.31097885989722
+      },
+      "10": {
+        "ret": 220.48533308970835,
+        "pf": 1.8114276777440204,
+        "dd": -45.740302895486586
+      },
+      "15": {
+        "ret": 193.08417361784706,
+        "pf": 1.7396295722710626,
+        "dd": -47.13453080281921
+      },
+      "20": {
+        "ret": 167.97305948662085,
+        "pf": 1.672606336473316,
+        "dd": -48.49422300235491
+      }
+    },
+    "donchian-v3": {
+      "5": {
+        "ret": 158.44931944469582,
+        "pf": 1.096717965716343,
+        "dd": -50.13692163029483
+      },
+      "10": {
+        "ret": 65.27844096969298,
+        "pf": 1.0423306288553082,
+        "dd": -53.27151020396676
+      },
+      "15": {
+        "ret": 4.482710612336471,
+        "pf": 0.9918525169023528,
+        "dd": -58.40285650270981
+      },
+      "20": {
+        "ret": -35.06431336346149,
+        "pf": 0.9449073580625358,
+        "dd": -65.53809227002765
+      }
+    }
+  },
+  "btc_control": {
+    "rider-v1": {
+      "after_funding_pct": 5.473355811349179,
+      "max_drawdown_pct": -58.30576193774771,
+      "profit_factor": 1.3871652345313914,
+      "trades": 114
+    },
+    "rider-v1-alt": {
+      "after_funding_pct": 40.28540366279305,
+      "max_drawdown_pct": -51.881669334582604,
+      "profit_factor": 1.4591102210176183,
+      "trades": 102
+    },
+    "st-donchexit::long": {
+      "after_funding_pct": -9.662222917887709,
+      "max_drawdown_pct": -53.972821180692456,
+      "profit_factor": 1.0281067381715714,
+      "trades": 110
+    },
+    "donchian-v3": {
+      "after_funding_pct": 142.63506083699772,
+      "max_drawdown_pct": -68.76506165158285,
+      "profit_factor": 1.0973460151321413,
+      "trades": 506
+    }
+  },
+  "risk_ladder": {
+    "1.0": {
+      "ret": 81.32403157625967,
+      "dd": -23.42955348738176,
+      "trades": 113
+    },
+    "2.0": {
+      "ret": 176.15062547210493,
+      "dd": -42.26948905063696,
+      "trades": 113
+    },
+    "2.75": {
+      "ret": 242.36160465540215,
+      "dd": -53.70266235773702,
+      "trades": 113
+    },
+    "3.5": {
+      "ret": 293.26748291998354,
+      "dd": -63.12665988467252,
+      "trades": 113
+    },
+    "5.0": {
+      "ret": 296.07553453719754,
+      "dd": -76.79873740609307,
+      "trades": 113
+    }
+  },
+  "annual": {
+    "2022-04\u21922023-04": {
+      "ret": -30.177710303031645,
+      "dd": -31.317453852112674,
+      "trades": 29,
+      "bh": -78.42876289522343
+    },
+    "2023-04\u21922024-04": {
+      "ret": 295.1413286274501,
+      "dd": -20.674180726588144,
+      "trades": 28,
+      "bh": 803.8144889672919
+    },
+    "2024-04\u21922025-04": {
+      "ret": 17.576188011194294,
+      "dd": -21.03809224677705,
+      "trades": 25,
+      "bh": -42.93212619426112
+    },
+    "2025-04\u21922026-04": {
+      "ret": -1.6930103185554102,
+      "dd": -31.513919289851867,
+      "trades": 22,
+      "bh": -34.528634931007794
+    },
+    "2026-04\u21922026-07 (partial)": {
+      "ret": -10.283302839001463,
+      "dd": -25.181616989232836,
+      "trades": 5,
+      "bh": -11.767217196015956
+    }
+  }
+}
