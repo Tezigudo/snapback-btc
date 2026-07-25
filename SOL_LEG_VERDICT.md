@@ -1,14 +1,122 @@
-# SOL Leg — Return-Ranked Strategy Search — Verdict
+# SOL Leg — Strategy Search — Verdict
 
 **Date:** 2026-07-25
 **Asset:** SOL/USDT:USDT perpetual, native 4h
-**Objective (per God's explicit instruction):** rank on **return**, not win rate
-**Harnesses:** `tools/sol_leg_return_search.py`, `tools/sol_leg_confirm.py`
+**Harnesses:** `tools/sol_leg_return_search.py`, `tools/sol_leg_confirm.py`,
+`tools/sol_leg_blend_confirm.py`
 **New strategy module:** `strategy/signals_sol_trend_rider.py`
+
+**Round 2 objective:** rank on return, not win rate (God's instruction).
+**Round 3 objective:** *blend* win rate and return — God's follow-up after seeing
+round 2's 14% win rate ("this is a heart attack"). Return is still what gets
+maximised; it is now maximised only among configs clearing a win-rate floor.
 
 ---
 
-## DECISION: **PROMOTE `rider-v1` to paper-trade as the SOL leg**
+# ROUND 3 DECISION (current): **`supertrend` long+short**
+
+**Supersedes the round-2 `rider-v1` decision below.** Round 3 dominates round 2
+on *every* axis God cares about, at the same drawdown budget.
+
+Config: `st_period=14`, `st_multiplier=3.5`, `st_sl_atr=2.0`, `st_tp_atr=10.0`,
+`allow_shorts=True`, **risk ~4.0%/trade**, leverage cap 3x. Native 4h.
+(Modal parameter set chosen by the walk-forward under `blend40`.)
+
+| Metric | Round 3 `supertrend` | Round 2 `rider-v1` |
+|---|---|---|
+| Win rate | **37.0%** | 14.4% |
+| **Max consecutive losses** | **6** | **17** |
+| **Max days underwater** | **187** | **457** |
+| Return (matched -30% DD) | **+662.8%** | +142.2% |
+| CAGR | **+60.1%** | +22.7% |
+| Profit factor | 1.63 | 1.84 |
+| Walk-forward folds positive | **9 / 9** | 6 / 9 |
+| Trades/yr | 27.5 | 22.5 |
+
+Both sized to the same -30% max drawdown, so the return column is a fair
+comparison rather than a risk-appetite artifact. **9/9 walk-forward folds
+positive** (+11 +13 +11 +0 +6 +1 +13 +6 +7 at risk 2%) with parameters
+re-selected every fold — no losing 6-month window in 4.3 years. Plateau: 170 of
+180 grid points positive (94%), and the chosen point ranks 11th of 180, i.e. it
+sits mid-plateau rather than on the peak.
+
+**The load-bearing caveat: this is a bear-biased vehicle.** Short trades
+contributed +571% vs longs' +108%, and the per-year split shows why:
+
+| Year | SOL | Leg total | from longs | from shorts | short WR |
+|---|---|---|---|---|---|
+| 22/23 | -78% | +63.3% | +7.2% | +53.6% | 50% |
+| 23/24 | **+804%** | **-5.0%** | +18.5% | -20.7% | 14% |
+| 24/25 | -43% | +195.5% | +47.0% | +149.2% | 75% |
+| 25/26 | -35% | +12.3% | -15.3% | +29.1% | 39% |
+
+SOL fell 56% net over the test span, and the short side is where the money came
+from. In SOL's one huge bull year the leg was flat-to-negative. **Do not
+underwrite CAGR 60% — underwrite "makes money when SOL falls, roughly flat when
+it rips."** Against a long-biased BTC book that is a genuine diversifier, but it
+is a regime bet, not a symmetric edge. The +195% in 24/25 rests on a 75% short
+win rate that appears in exactly one of four years.
+
+### Regime-balanced alternative: `st-dual` fast
+
+`st_period=7`, `st_multiplier=2.0`, `st_slow_period=30`, `st_sl_atr=1.0`,
+`st_tp_atr=6.0`, shorts on, risk ~2.9%. WF `blend30`, 7/9 folds.
+
++202.0% / CAGR +29.2% / WR 27.5% / PF 1.30 at the same -30% DD. **Positive in
+all four full years (+43.6, +9.1, +55.0, +60.0) with both directions
+contributing** — longs carried 25/26 and 23/24, shorts carried 22/23. Best
+ex-best-year in the field (+133.6%), so it is the least regime-dependent
+candidate. Costs: lower win rate (27.5%), 9-trade losing streak, 388 days
+underwater, and it is the most fee-sensitive finalist (+83.6% at 20bps vs +202%
+at 5bps, 32 trades/yr).
+
+**Pick `supertrend` for comfort + return; pick `st-dual` fast if you would
+rather not bet on SOL continuing to fall.**
+
+### Full matched-drawdown table (all sized to maxDD ≈ -30%)
+
+| Candidate | Provenance | risk% | ret% | CAGR% | WR% | PF | n |
+|---|---|---|---|---|---|---|---|
+| supertrend L+S | WF blend40 9/9 | 4.02 | **+662.8** | +60.1 | 37.0 | 1.63 | 119 |
+| rider-v1 midWR | ⚠ SCAN, in-sample | 3.88 | +248.6 | +33.5 | 35.2 | 1.52 | 105 |
+| st-dual fast | WF blend30 7/9 | 2.94 | +202.0 | +29.2 | 27.5 | 1.30 | 138 |
+| rider-v1 round-2 | WF ret round-2 | 1.48 | +142.2 | +22.7 | 14.4 | 1.84 | 97 |
+| rider-v1 tightTP | WF blend40 5/9 | 2.65 | +85.5 | +15.4 | 40.8 | 1.31 | 142 |
+| st-dual slow | WF blend50 7/9 | 3.80 | +69.2 | +12.9 | 40.3 | 1.40 | 77 |
+| sol-trend-rider | WF blend40 7/9 | 1.63 | +55.7 | +10.8 | 27.8 | 1.57 | 79 |
+| rider-v1 wideSL | WF blend30 6/9 | 1.61 | +46.0 | +9.2 | 21.4 | 1.44 | 84 |
+| SOL buy-and-hold 1x | benchmark | — | -56.4 | -17.5 | — | — | — |
+
+`rider-v1 midWR` is flagged: I found it by sweeping the reported span, so its
+numbers are in-sample. It is a hypothesis, not a validated candidate. Every
+other row's parameters came from walk-forward selection on train windows only.
+
+### Two findings worth keeping
+
+1. **The win-rate floor improved out-of-sample return.** It is a regulariser,
+   not a tax: `rider-v1` went from +132.2% (pure return) to **+192.3%** under
+   `blend30`. Constraining away lottery-ticket geometry made selection more
+   robust. Round 2's premise — that win rate had to be sacrificed for return —
+   was wrong.
+2. **Widening the stop is why.** Round 2's grids were all narrow-SL / wide-TP,
+   which forces win rate down *and* drawdown up. A 2×ATR stop cuts max drawdown
+   roughly in half, and a smaller drawdown buys size inside the same kill-switch
+   budget. Higher win rate and higher return were never in conflict; the round-2
+   grid just could not reach that region. The walk-forward independently
+   converged on `sl_atr=2.0` for three separate strategy families.
+
+Cost stress (matched-DD size): supertrend +476% at 20bps; st-dual fast +83.6% at
+20bps. BTC control: supertrend -9.9% on BTC (+672pp gap), st-dual fast -26.1%
+(+228pp gap) — both SOL-specific.
+
+Round-3 artifacts: `reports/sol_leg_blend_confirm.json`, objectives
+`blend30/40/50` in `reports/sol_leg_return_search_oos.csv`.
+
+---
+
+# ROUND 2 (superseded — kept for the record)
+
+## Round-2 decision: `rider-v1` on pure-return ranking
 
 Config: `rider_donchian_n=34`, `rider_ema_period=200`, `rider_sl_atr=1.0`,
 `rider_tp_atr=12.0`, `rider_trail_atr=0.0`, **risk 1.5%/trade**, leverage cap 3x.

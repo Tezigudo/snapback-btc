@@ -247,17 +247,66 @@ CANDIDATES: dict[str, dict] = {
     },
 }
 
-_LONG_ONLY_BASE: dict[str, str] = {
+# --- Round 3 (2026-07-25) — blended win-rate + return objective ---------------
+# God's feedback on round 2: a 14% win rate is unwatchable regardless of the
+# maths. Round 2's grids could not reach mid-win-rate geometry — every candidate
+# had a narrow SL and a wide TP, which is what forces win rate down.
+#
+# These `::wr` candidates widen the stop (up to 3×ATR) and pull the target in
+# (down to 2×ATR) so the search can actually find 30-50% win-rate configs. That
+# matters for more than comfort: a wider stop cuts max drawdown sharply, and a
+# smaller drawdown lets the leg be sized UP inside the same -35.5% kill-switch
+# budget — so mid-win-rate configs can dominate on return too, at matched risk
+# of ruin. Validated properly here rather than by scanning the test window.
+CANDIDATES.update({
+    "rider-v1::wr": {
+        "rider_donchian_n": [20, 34],
+        "rider_ema_period": [100, 200],
+        "rider_sl_atr": [1.0, 1.5, 2.0, 3.0],
+        "rider_tp_atr": [2.0, 3.0, 4.0, 6.0, 8.0, 12.0],
+        "rider_trail_atr": [0.0],
+    },
+    "supertrend::long::wr": {
+        "_st_long_only": [True],
+        "st_period": [7, 10, 14],
+        "st_multiplier": [2.5, 3.0, 3.5],
+        "st_sl_atr": [1.0, 1.5, 2.0, 3.0],
+        "st_tp_atr": [2.0, 3.0, 4.0, 6.0],
+    },
+    "st-adx::long::wr": {
+        "_st_long_only": [True],
+        "st_period": [10, 14],
+        "st_multiplier": [2.5, 3.0],
+        "st_adx_min": [15, 20],
+        "st_sl_atr": [1.0, 2.0, 3.0],
+        "st_tp_atr": [2.0, 3.0, 4.0, 6.0],
+    },
+    "st-dual::wr": {
+        "st_period": [7, 10],
+        "st_multiplier": [2.0, 2.5, 3.0],
+        "st_slow_period": [20, 30],
+        "st_sl_atr": [1.0, 2.0, 3.0],
+        "st_tp_atr": [2.0, 3.0, 4.0, 6.0],
+    },
+})
+
+# Candidate key -> the STRATEGIES key it actually runs. Suffixes (`::long`,
+# `::wr`) only select a grid; they are not separate strategy classes.
+_BASE_STRATEGY: dict[str, str] = {
     "supertrend::long": "supertrend",
     "st-adx::long": "st-adx",
     "st-donchexit::long": "st-donchexit",
     "st-adx-donchexit::long": "st-adx-donchexit",
     "st-trail::long": "st-trail",
+    "rider-v1::wr": "rider-v1",
+    "supertrend::long::wr": "supertrend",
+    "st-adx::long::wr": "st-adx",
+    "st-dual::wr": "st-dual",
 }
 
 
 def _resolve(candidate: str) -> str:
-    return _LONG_ONLY_BASE.get(candidate, candidate)
+    return _BASE_STRATEGY.get(candidate, candidate)
 
 
 def _grid_combos(grid: dict) -> list[dict]:
@@ -338,14 +387,24 @@ def _run_one(task: tuple) -> dict:
     return out
 
 
-def _select(train_runs: list[dict], dd_floor: float | None) -> dict | None:
-    """Pick the max-return train combo subject to trade floor (+ optional DD floor)."""
+def _select(train_runs: list[dict], dd_floor: float | None,
+            wr_floor: float | None = None) -> dict | None:
+    """Pick the max-return train combo subject to trade floor (+ optional DD and
+    win-rate floors).
+
+    The win-rate floor is what makes this a *blended* objective: return is still
+    the thing being maximised (God's instruction), but only among configs that
+    clear a win-rate God is willing to sit through. It is a constraint rather
+    than a weighted score so the reported number stays an honest return, not a
+    composite with no units.
+    """
     eligible = [
         r for r in train_runs
         if "error" not in r
         and r.get("after_funding_pct") is not None
         and (r["trades"] or 0) >= MIN_TRAIN_TRADES
         and (dd_floor is None or (r["max_drawdown_pct"] or 0.0) >= dd_floor)
+        and (wr_floor is None or (r.get("win_rate_pct") or 0.0) >= wr_floor)
     ]
     if eligible:
         return max(eligible, key=lambda r: r["after_funding_pct"])
@@ -439,13 +498,21 @@ def run_analyze() -> int:
     for r in train_results:
         by_key.setdefault((r["candidate"], r["tag"]), []).append(r)
 
-    objectives = {"ret": None, "ret_dd": TRAIN_DD_FLOOR}
+    # (dd_floor, wr_floor). `ret` is round-2's pure-return objective; the
+    # `blend*` objectives are round-3's win-rate-constrained return.
+    objectives: dict[str, tuple[float | None, float | None]] = {
+        "ret": (None, None),
+        "ret_dd": (TRAIN_DD_FLOOR, None),
+        "blend30": (None, 30.0),
+        "blend40": (None, 40.0),
+        "blend50": (None, 50.0),
+    }
     oos_tasks, oos_meta = [], []
     for candidate in CANDIDATES:
         for fold_idx, (_, _, tes, tee, partial) in enumerate(folds):
             runs = by_key.get((candidate, f"train:{fold_idx}"), [])
-            for obj_name, dd_floor in objectives.items():
-                chosen = _select(runs, dd_floor)
+            for obj_name, (dd_floor, wr_floor) in objectives.items():
+                chosen = _select(runs, dd_floor, wr_floor)
                 if chosen is None:
                     continue
                 oos_tasks.append(
@@ -462,6 +529,7 @@ def run_analyze() -> int:
                     "train_return_pct": chosen.get("after_funding_pct"),
                     "train_trades": chosen.get("trades"),
                     "train_maxdd_pct": chosen.get("max_drawdown_pct"),
+                    "train_win_rate_pct": chosen.get("win_rate_pct"),
                 })
 
     print(f"Phase 2: {len(oos_tasks)} OOS runs...")
