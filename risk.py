@@ -49,8 +49,18 @@ class RiskCeilings:
     # Minimum seconds between trades, prevents rapid-fire on bad signals.
     MIN_TIME_BETWEEN_TRADES_S: int = 60
 
-    # Hard symbol allowlist. v1 = BTC only.
-    ALLOWED_SYMBOLS: tuple[str, ...] = ("BTC/USDT:USDT",)
+    # Hard symbol allowlist.
+    # BTC: v1 (multifactor) + donchian-v3 legs.
+    # SOL: added 2026-07-25 (RISK_REVIEW, user-approved) for the sol_supertrend
+    #      leg — round-3 win-rate-blended walk-forward winner, 9/9 OOS folds
+    #      positive, ~uncorrelated with both BTC legs (-0.02 vs multifactor-v1,
+    #      +0.06 vs donchian-v3). Evidence in SOL_LEG_VERDICT.md; live↔backtest
+    #      parity in tools/supertrend_parity.py (119/119 entries, 0 spurious).
+    #      NOTE: this also un-blocks config/params_cnh_hybrid_short_sol.yaml,
+    #      which measured CAGR 1.3% with 1,360 days underwater — that unit must
+    #      NOT be enabled. The allowlist is no longer what prevents it.
+    #      MAX_NOTIONAL_USD=500 stays the per-order backstop for both symbols.
+    ALLOWED_SYMBOLS: tuple[str, ...] = ("BTC/USDT:USDT", "SOL/USDT:USDT")
 
 
 CEILINGS = RiskCeilings()
