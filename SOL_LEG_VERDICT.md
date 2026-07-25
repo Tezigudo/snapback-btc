@@ -13,6 +13,120 @@ maximised; it is now maximised only among configs clearing a win-rate floor.
 
 ---
 
+# ROUND 6: deploying the SOL leg in the cnh_short slot — capital + blockers
+
+## Minimum capital: **$200 USDT**, usable band **$200-500**
+
+At risk 3.5%/trade the position notional is `equity × 0.035 ÷ (stop ÷ price)`.
+SOL's 2×ATR(14) stop has been 4.82% of price (median, last 2y; p10 3.59%,
+p90 6.70%), so notional ≈ 0.6-1.0× equity. Replaying the last 2 years'
+79 signals:
+
+| Starting equity | signals SKIPPED (min-notional) | signals TRUNCATED (`MAX_NOTIONAL_USD`) |
+|---|---|---|
+| $50 | **91%** | 0% |
+| $100 | 9% | 0% |
+| $150 | 3% | 0% |
+| **$200** | **0%** | **0%** |
+| $300 | 0% | 0% |
+| $500 | 0% | 9% |
+| $800 | 0% | **76%** |
+| $1,200 | 0% | **96%** |
+
+* **Below $200** the bot skips signals (`passes_minimums` → warn + return, it
+  does not crash and does not scale up — correct behaviour, but you silently
+  miss trades, and the skips cluster in high-volatility periods, which for a
+  trend follower are the ones you want).
+* **Above ~$500** `risk.py MAX_NOTIONAL_USD = 500` truncates entries. At $800
+  three quarters of signals get clipped, so the leg stops tracking the backtest.
+  Scaling past ~$500 needs a Tier-3 `MAX_NOTIONAL_USD` review.
+* Qty granularity is a non-issue: SOL step is 0.01 SOL ≈ $0.74.
+
+**Recommended: fund with $200-300 USDT and run risk 3.5%.**
+
+### Use risk 3.5%, not the 4.0% from round 3
+
+`MAX_DAILY_LOSS_PCT = 4.5`. At risk 4.0% a single full stop (-4.0% plus
+slippage) lands within a whisker of the breaker and would freeze the leg for the
+rest of the UTC day on most stop-outs — exactly the failure the risk.py comment
+warns about. Risk 3.5% keeps the same 1.0pp cushion v1 has. Cost is small:
+
+| risk | return | max DD | kill-switch cushion |
+|---|---|---|---|
+| 2.00% | +206.1% | -16.1% | 19.4pp |
+| 2.75% | +340.1% | -21.5% | 14.0pp |
+| **3.50%** | **+515.0%** | **-26.6%** | **8.9pp** |
+| 4.00% | +657.1% | -29.9% | 5.6pp |
+
+## Blockers before this can run — three, one of them yours to approve
+
+1. **`risk.py ALLOWED_SYMBOLS = ("BTC/USDT:USDT",)` hard-blocks SOL.**
+   `check_symbol()` runs at startup and rejects even `--dry-run`. Adding
+   `"SOL/USDT:USDT"` is a Tier-3 edit (`RISK_REVIEW=1` + your explicit OK).
+   **I have not made this edit** — repo rule is propose, never touch risk.py.
+2. **No live evaluator exists for this strategy.** The bot needs a
+   `strategy/live_supertrend.py` (analogue of `live_donchian_v3.py`) plus a
+   branch in `bot.py`'s strategy dispatch, then a live↔backtest parity run like
+   `tools/multifactor_validate.py`. This is the real build cost — the backtest
+   class is not reachable from the live loop.
+3. **`exchange/constraints.py` is BTC-specific.** It hard-codes
+   `min_notional_usdt=50.0`, `min_qty_btc=0.001`, `price_step=0.1`, and
+   `merge_with_live()` keeps the **tighter** of hard-coded vs live. So SOL
+   inherits BTC's **$50** min-notional (SOL's real exchange minimum is **$5**)
+   and a $0.10 price tick (SOL's real tick is $0.01 — 13bps of slippage on a
+   limit entry at $74). Fixing this per-symbol is what would drop the minimum
+   capital from $200 to ~$25.
+
+## Slot reuse
+
+`--instance cnh_short` already loads `.env.cnh_short` over the base `.env`
+(`exchange/env.py:44-47`, `override=True`), which must carry that sub-account's
+`BINANCE_API_KEY` / `BINANCE_API_SECRET` plus `CONSOLIDATE_SOURCE` and
+`ALERT_TAG`. Adding a `sol_supertrend` profile to `INSTANCE_PROFILES` and a new
+service unit is trivial. **But per the 2026-07-25 notes, `.env.cnh_short` did
+not exist on the droplet and the unit was disabled — i.e. that leg was never
+keyed.** If so there is no key to inherit and a sub-account key has to be
+created. I cannot verify droplet state from here.
+
+## Why donchian-v3 has not fired since 2026-07-02
+
+Harness `tools/diagnose_donchian_no_fills.py` — replays the **live** evaluator
+bar-by-bar with the deployed config.
+
+**Not a bug. The 80-bar channel simply has not been pierced.** 140 closed 4h
+bars since going live:
+
+| Outcome | bars | share |
+|---|---|---|
+| `no_breakout` | 130 | **92.9%** |
+| `long_blocked_by_slope` | 10 | 7.1% |
+| signal | **0** | 0% |
+
+The subtle part: the two conditions have never been open *simultaneously*. When
+BTC did break out (10 bars), the EMA120 slope was below +0.03. Now the slope
+gate is open (+0.0371 %/bar) but price is back inside the channel.
+
+State at the last closed bar (2026-07-25 04:00 UTC):
+
+| | |
+|---|---|
+| BTC close | $64,098 |
+| 80-bar upper channel | **$66,648** — long needs a 4h close above this (+3.98% away) |
+| 80-bar lower channel | **$62,258** — short needs a close below this (-2.87% away) |
+| EMA120 slope | **+0.0371 %/bar** (long gate open; needs ≥ +0.03) |
+
+So: **a long fires on the first 4h close above ~$66,650 while slope holds ≥
++0.03.** BTC has been boxed in a $62.3k-66.6k range.
+
+Twelve-month base rate confirms this is normal, not broken: `no_breakout` on
+90.7% of bars; 84 long breakout bars of which 34 passed the gate, 120 short
+breakout bars of which 93 passed. Backtest cadence is 31 orders/yr with a
+**median 9.8-day and maximum 51-day gap between entries** — a 23-day dry spell
+sits comfortably inside that. The gate is doing real work though: it rejected 50
+of 84 long breakouts (60%) over 12 months.
+
+---
+
 # ROUND 5: four-leg comparison + the donchian drawdown, resolved
 
 Harness `tools/leg_comparison.py`. Every leg over 2022-04-01 → 2026-07-25
