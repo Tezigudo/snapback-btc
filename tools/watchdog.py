@@ -76,6 +76,15 @@ LEGS: tuple[LegSpec, ...] = (
         heartbeat=REPO_ROOT / "data" / "heartbeat_donchian",
         alert_tag="snapback-btc-donchian",
     ),
+    # SOL supertrend leg — deployed 2026-07-25. Its systemd unit
+    # (snapback-sol-supertrend) is enabled and running, so unlike cnh_short below
+    # it will NOT generate permanent-DOWN spam. Added the same day it started so
+    # the leg is not silently unmonitored.
+    LegSpec(
+        instance="sol_supertrend",
+        heartbeat=REPO_ROOT / "data" / "heartbeat_sol_supertrend",
+        alert_tag="snapback-sol-st",
+    ),
     # cnh_short is intentionally SHELVED/offline (paper, down since the 2026-07-01
     # halt). Monitoring it made the watchdog email "cnh_short DOWN" every ~30 min
     # forever (harmless when MailerSend was dead; became inbox spam once Brevo
