@@ -163,14 +163,15 @@ def main() -> int:
     print(f"    ret {mf['after_funding_pct']:+.1f}%  DD {mf['max_drawdown_pct']:+.1f}%  "
           f"WR {mf['win_rate_pct']:.1f}%  n={mf['trades']}")
 
-    # donchian-v3 MUST be run from config/params_donchian.yaml, not params.yaml.
-    # params.yaml carries multifactor-v1's values, which for donchian means a
-    # 20-bar entry channel with the regime gate OFF (slope threshold 0) — that
-    # churns ~506 trades and is not remotely the deployed leg (80-bar channel,
-    # gate at 0.03, risk 2.75%, leverage 20 per bot.py:105).
-    print("  running BTC donchian-v3 (4h, deployed config/params_donchian.yaml)...",
+    # donchian-v3 needs config/params_donchian.yaml AND a manual patch for the
+    # two keys StrategyParams.from_yaml silently drops (donchian_period_entry,
+    # slope_trend_threshold_pct). Loading it the naive way measures a 20-bar
+    # ungated breakout — 454 trades, maxDD -63.6% — instead of the deployed
+    # 80-bar gated one (135 trades, -32.9%). See leg_comparison for the proof.
+    print("  running BTC donchian-v3 (4h, deployed params, correctly loaded)...",
           flush=True)
-    dparams = StrategyParams.from_yaml(str(REPO / "config" / "params_donchian.yaml"))
+    from tools.leg_comparison import deployed_donchian_params  # noqa: PLC0415
+    dparams = deployed_donchian_params()
     dv3 = run_backtest("donchian-v3", "BTC/USDT:USDT", "4h", OOS_START, OOS_END,
                        leverage=dparams.leverage, quiet=True, return_equity=True,
                        params_override=dparams)

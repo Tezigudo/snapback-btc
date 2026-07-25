@@ -68,44 +68,44 @@
       {
         "fold": 8,
         "test": "2026-04-01\u21922026-07-25",
-        "top4": -7.090075474575864,
-        "top6": -6.038761658310953,
-        "all": -3.8393821836734454,
-        "sol": 6.764496600703951
+        "top4": -7.1949505056868475,
+        "top6": -6.109466915383699,
+        "all": -3.8715513571083493,
+        "sol": 6.591128960203951
       }
     ],
     "summary": {
       "top4": {
-        "chained": 43.353503948445926,
+        "chained": 43.191689123353186,
         "pos": 8,
         "n": 9,
         "median": 3.6092914630596162,
-        "worst": -7.090075474575864,
-        "ex_best": 15.317519096901734
+        "worst": -7.1949505056868475,
+        "ex_best": 15.187350781033393
       },
       "top6": {
-        "chained": 52.4041352617669,
+        "chained": 52.2894520822685,
         "pos": 8,
         "n": 9,
         "median": 4.4026957970007,
-        "worst": -6.038761658310953,
-        "ex_best": 30.387763978104697
+        "worst": -6.109466915383699,
+        "ex_best": 30.28964798331877
       },
       "all": {
-        "chained": 37.9211826628931,
+        "chained": 37.87504308365388,
         "pos": 7,
         "n": 9,
         "median": 2.0375391200728954,
-        "worst": -3.8393821836734454,
-        "ex_best": 20.49112168483842
+        "worst": -3.8715513571083493,
+        "ex_best": 20.4508130857584
       },
       "sol": {
-        "chained": 141.699227226102,
+        "chained": 141.3067482085539,
         "pos": 7,
         "n": 9,
-        "median": 6.764496600703951,
+        "median": 6.591128960203951,
         "worst": -4.124527607805206,
-        "ex_best": 84.56503840170456
+        "ex_best": 84.26533572670235
       }
     },
     "picks": [
@@ -279,44 +279,44 @@
       {
         "fold": 8,
         "test": "2026-04-01\u21922026-07-25",
-        "top4": 0.4155395639114712,
-        "top6": -1.145424096450398,
-        "all": 0.8440102012245987,
-        "sol": -2.0364928906318913
+        "top4": 0.24428381008922972,
+        "top6": -1.0751171225307665,
+        "all": 0.8593844377217996,
+        "sol": -2.3414893126318836
       }
     ],
     "summary": {
       "top4": {
-        "chained": 54.57824974993435,
+        "chained": 54.31462108448662,
         "pos": 7,
         "n": 9,
         "median": 5.934739802473232,
         "worst": -9.552242468186734,
-        "ex_best": 31.223956304028743
+        "ex_best": 31.000157700207275
       },
       "top6": {
-        "chained": 71.79741228456531,
+        "chained": 71.91959738398586,
         "pos": 7,
         "n": 9,
         "median": 5.371775814980206,
-        "worst": -1.145424096450398,
-        "ex_best": 48.6243981951536
+        "worst": -1.0751171225307665,
+        "ex_best": 48.730102271997985
       },
       "all": {
-        "chained": 30.829428116362088,
+        "chained": 30.849373798457048,
         "pos": 7,
         "n": 9,
         "median": 3.9964269134678654,
         "worst": -4.949867838887911,
-        "ex_best": 15.314142226490702
+        "ex_best": 15.331722515994507
       },
       "sol": {
-        "chained": 141.64993971242086,
+        "chained": 140.89759458755188,
         "pos": 5,
         "n": 9,
         "median": 10.933272523784844,
-        "worst": -2.1997893412153413,
-        "ex_best": 68.88011219214442
+        "worst": -2.3414893126318836,
+        "ex_best": 68.354326300179
       }
     },
     "picks": [
@@ -426,24 +426,24 @@
       "SOL supertrend": 1.0,
       "SOL st-dual": 0.196,
       "BTC multifactor-v1": -0.02,
-      "BTC donchian-v3": 0.102
+      "BTC donchian-v3": 0.065
     },
     "SOL st-dual": {
       "SOL supertrend": 0.196,
       "SOL st-dual": 1.0,
       "BTC multifactor-v1": -0.115,
-      "BTC donchian-v3": 0.082
+      "BTC donchian-v3": -0.063
     },
     "BTC multifactor-v1": {
       "SOL supertrend": -0.02,
       "SOL st-dual": -0.115,
       "BTC multifactor-v1": 1.0,
-      "BTC donchian-v3": 0.396
+      "BTC donchian-v3": 0.432
     },
     "BTC donchian-v3": {
-      "SOL supertrend": 0.102,
-      "SOL st-dual": 0.082,
-      "BTC multifactor-v1": 0.396,
+      "SOL supertrend": 0.065,
+      "SOL st-dual": -0.063,
+      "BTC multifactor-v1": 0.432,
       "BTC donchian-v3": 1.0
     }
   },
@@ -455,42 +455,42 @@
       "trades": 218
     },
     "donchian-v3": {
-      "after_funding_pct": 101.26509894826006,
-      "max_drawdown_pct": -63.597724674927235,
-      "win_rate_pct": 29.074889867841406,
-      "trades": 454
+      "after_funding_pct": 233.4773993618934,
+      "max_drawdown_pct": -32.94446839443399,
+      "win_rate_pct": 31.851851851851855,
+      "trades": 135
     }
   },
   "book_effect": {
     "BTC book only (mf-v1 + donch-v3)": {
       "label": "BTC book only (mf-v1 + donch-v3)",
-      "ret_pct": 168.5149997988701,
-      "cagr_pct": 25.689290806502708,
-      "max_dd_pct": -37.68362996407456,
-      "max_days_underwater": 439,
-      "pos_months_pct": 49.01960784313725,
+      "ret_pct": 206.99911333073948,
+      "cagr_pct": 29.647224112660943,
+      "max_dd_pct": -22.33150267646311,
+      "max_days_underwater": 253,
+      "pos_months_pct": 45.09803921568628,
       "n_months": 51,
-      "monthly_vol_pct": 11.345413518542639
+      "monthly_vol_pct": 9.76109875318197
     },
     "+ SOL supertrend": {
       "label": "+ SOL supertrend",
-      "ret_pct": 195.7142068029684,
-      "cagr_pct": 28.528130928766537,
-      "max_dd_pct": -25.134890660918597,
-      "max_days_underwater": 204,
-      "pos_months_pct": 54.90196078431373,
+      "ret_pct": 218.99022505437853,
+      "cagr_pct": 30.802225458406006,
+      "max_dd_pct": -13.478648957390993,
+      "max_days_underwater": 166,
+      "pos_months_pct": 62.745098039215684,
       "n_months": 51,
-      "monthly_vol_pct": 7.915741943145608
+      "monthly_vol_pct": 6.813172632928994
     },
     "+ SOL st-dual": {
       "label": "+ SOL st-dual",
-      "ret_pct": 170.3332780140967,
-      "cagr_pct": 25.885798376335867,
-      "max_dd_pct": -21.950203503661548,
-      "max_days_underwater": 169,
-      "pos_months_pct": 50.98039215686274,
+      "ret_pct": 191.15124464170327,
+      "cagr_pct": 28.066303108195136,
+      "max_dd_pct": -13.377217091058856,
+      "max_days_underwater": 166,
+      "pos_months_pct": 60.78431372549019,
       "n_months": 51,
-      "monthly_vol_pct": 7.819572585869232
+      "monthly_vol_pct": 6.494508860381316
     }
   }
 }

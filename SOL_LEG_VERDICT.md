@@ -13,7 +13,107 @@ maximised; it is now maximised only among configs clearing a win-rate floor.
 
 ---
 
+# ROUND 5: four-leg comparison + the donchian drawdown, resolved
+
+Harness `tools/leg_comparison.py`. Every leg over 2022-04-01 → 2026-07-25
+(4.32 yr), **each at its own deployed/recommended sizing** — so `ret%`/`maxDD%`
+compare legs as they would actually run, not strategy quality at equal risk.
+WR, PF and the cadence columns are sizing-independent and directly comparable.
+
+| Leg | ret% | CAGR% | maxDD% | WR% | PF | n | **n/yr** | **med gap** | **max gap** | lose streak | days UW | +months |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **SOL supertrend** *(candidate)* | **+673.4** | **60.6** | -29.9 | **37.0** | **1.63** | 119 | 27.5 | **12.2 d** | 43 d | **6** | **187** | **51.0%** |
+| donchian-v3 (BTC 4h) | +251.7 | 33.8 | -32.9 | 31.9 | 1.45 | 135 | 31.2 | 9.8 d | 51 d | 8 | 872 | 37.3% |
+| multifactor-v1 (BTC 15m) | +126.4 | 20.8 | **-24.8** | 30.7 | 1.38 | 218 | 50.5 | 4.4 d | 52 d | 12 | 191 | 47.1% |
+| cnh-hybrid-short (BTC 4h) | +38.1 | 7.8 | **-8.7** | **70.0** | **2.02** | 50 | 11.6 | 22.3 d | 130 d | **2** | 410 | 57.1% |
+| cnh-hybrid-short (SOL 4h) | +5.5 | 1.3 | -41.4 | 61.4 | 1.11 | 57 | 13.2 | 15.3 d | 116 d | 3 | 1360 | 65.2% |
+
+Sizing: v1 = `params.yaml` risk 3.5% lev 20 · donchian-v3 = `params_donchian.yaml`
+risk 2.75% lev 20 · SOL supertrend = risk 4.0% lev 3 · cnh = its own harness,
+which compounds a fixed fractional `net_pct` per trade instead of risk-sizing
+off a stop (so its DD is a realised-equity floor, not a true peak-to-trough —
+intra-trade excursions are invisible to that simulator).
+
+## Summary
+
+* **Order cadence is the answer to "how often does it fire":** v1 is the busy
+  one (50/yr, an order every ~4 days), donchian-v3 and the SOL candidate are
+  both ~30/yr (every ~10-12 days), cnh-hybrid-short is a sniper (12/yr, median
+  22 days apart, and up to **130 days** with nothing to do).
+* **cnh-hybrid-short on BTC is the comfort king and the return dog:** 70% win
+  rate, PF 2.02, worst losing streak **2**, max DD only **-8.7%** — but CAGR
+  7.8%. It is short-only, so it just does not fire much. If drama is the
+  problem, this is the shape you like; it will not compound.
+* **cnh-hybrid-short on SOL is the worst leg here** — 61% win rate but CAGR
+  1.3% and **1,360 days underwater** (nearly 4 years below high-water). High win
+  rate with no edge. Consistent with the 2026-07-25 finding that the SOL
+  premium had gone; this says don't fund it.
+* **donchian-v3 grinds:** best BTC return (CAGR 33.8%) but **872 days
+  underwater**, the longest of the BTC legs, and only 37.3% positive months.
+* **The SOL candidate leads on return, win rate, PF, losing streak and time
+  underwater simultaneously** — but see the round-3 bear-bias caveat, which the
+  single-window numbers here do not show.
+
+## The -63.6% donchian drawdown: my error, not your leg
+
+I flagged this last round. It was a bug in **my harness**, not your config.
+
+`StrategyParams.from_yaml()` has no donchian fields in its constructor block, so
+loading `config/params_donchian.yaml` through it **silently drops two keys**:
+
+| Key | YAML says | from_yaml gives |
+|---|---|---|
+| `donchian_period_entry` | **80** | 20 (dataclass default) |
+| `slope_trend_threshold_pct` | **0.03** | **0.0 → regime gate OFF** |
+
+That converts the deployed 80-bar gated breakout into a 20-bar ungated one.
+Isolating each key:
+
+| Config | ret% | maxDD% | n | n/yr | med gap |
+|---|---|---|---|---|---|
+| as I ran it in round 4 (from_yaml) | +101.3 | **-63.6** | 454 | 105.1 | 3.2 d |
+| + entry 80 only | +178.6 | -49.0 | 219 | 50.7 | 6.2 d |
+| + gate 0.03 only | +129.1 | -40.4 | 187 | 43.3 | 6.6 d |
+| **DEPLOYED: entry 80 + gate 0.03** | **+233.5** | **-32.9** | **135** | **31.2** | 9.8 d |
+
+**Your live leg is fine.** `strategy/live_donchian_v3.py:119,125` reads the YAML
+dict directly (`s.get("donchian_period_entry", ...)`,
+`s.get("slope_trend_threshold_pct", ...)`), so the bot runs 80 / 0.03 as
+intended. The correct backtest is **-32.9% max DD — inside the -35.5% kill
+switch**, with ~2.6pp of cushion, and 31.2 orders/yr matches the repo's
+"~26 signals/yr" expectation. The 105/yr churn was the tell that I had it wrong.
+
+**Real bug still open:** `from_yaml` cannot load any donchian config correctly.
+Any harness that calls it on `params_donchian*.yaml` measures the wrong system.
+`tools/leg_comparison.py::deployed_donchian_params()` is the workaround; the
+proper fix is adding the donchian fields to `from_yaml`, which would move
+published donchian baselines, so I have not made it.
+
+## Correction to round 4's book numbers
+
+Round 4's book table used the mis-loaded donchian, so it overstated both the
+existing book's drawdown and the benefit of adding SOL. Corrected:
+
+| Book | ret% | CAGR% | maxDD% | +months | days UW | monthly vol |
+|---|---|---|---|---|---|---|
+| BTC only (v1 + donchian-v3) | +207.0 | 29.6 | -22.3 | 45.1% | 253 | 9.8% |
+| **+ SOL supertrend** | +219.0 | **30.8** | **-13.5** | **62.7%** | **166** | **6.8%** |
+| + SOL st-dual | +191.2 | 28.1 | -13.4 | 60.8% | 166 | 6.5% |
+
+The return benefit is far smaller than I said (CAGR 29.6% → 30.8%, not
+25.7% → 39.5%). **The risk benefit is the real case:** max drawdown -22.3% →
+-13.5%, monthly vol 9.8% → 6.8%, positive months 45% → 63%, time underwater
+253 → 166 days. Correlation is unchanged and still the reason: SOL vs v1
+**-0.02**, SOL vs donchian **+0.06**, while v1 vs donchian is **0.43**.
+
+Artifacts: `reports/leg_comparison.json`, `reports/sol_leg_basket_wf.json`.
+
+---
+
 # ROUND 4: the roller coaster is a single-leg illusion
+
+> **Superseded in part by round 5.** The correlation finding stands; the book
+> table below used a mis-loaded donchian-v3 and is corrected in round 5.
 
 God's round-3 read: still a roller coaster — is there more on SOL, other coins,
 or another BTC leg? Harnesses `tools/sol_leg_basket.py`,
