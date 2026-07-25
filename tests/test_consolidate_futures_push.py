@@ -159,3 +159,98 @@ def test_position_payloads_default_brackets_none():
     out = build_position_payloads(positions)
     assert out[0]["slPrice"] is None
     assert out[0]["tpPrice"] is None
+
+
+# ── multi-account aggregation (2026-07-25) ───────────────────────────────────
+# The relay reads every leg's sub-account and combines them. Two properties are
+# load-bearing and both fail silently if broken, so they get explicit tests:
+#   1. accounts are deduped by API-key fingerprint — a leg whose .env.<instance>
+#      omits BINANCE_API_KEY would otherwise re-read the PREVIOUS leg's account
+#      and DOUBLE-COUNT it into a summed balance;
+#   2. a symbol open on two accounts keeps the first and drops the second,
+#      because the server keys futures_positions by symbol alone.
+
+import tools.consolidate_futures_push as cfp  # noqa: E402
+
+
+def _mk(wallet, positions=(), income=(), brackets_known=True):
+    return {
+        "account": {"walletBalanceUsd": wallet, "marginBalanceUsd": wallet,
+                    "unrealizedPnlUsd": 0.0, "availableBalanceUsd": wallet},
+        "positions": [dict(symbol=s, positionAmt=1.0) for s in positions],
+        "income": [{"tranId": i} for i in income],
+        "brackets_known": brackets_known,
+    }
+
+
+def _patch(monkeypatch, per_instance, keys):
+    """per_instance: {inst: payload}; keys: {inst: api-key fingerprint source}."""
+    monkeypatch.setattr(cfp, "ACCOUNT_INSTANCES", tuple(per_instance))
+    state = {"inst": None}
+
+    def fake_load(inst):
+        state["inst"] = inst
+        return None if keys.get(inst) is None else object()
+
+    def fake_fp():
+        k = keys.get(state["inst"] or "v1")
+        return f"fp-{k}" if k else ""
+
+    def fake_collect(_days):
+        return per_instance[state["inst"] or "v1"]
+
+    import exchange.env as envmod
+    monkeypatch.setattr(envmod, "load_env_for_instance", fake_load)
+    monkeypatch.setattr(cfp, "_key_fingerprint", fake_fp)
+    monkeypatch.setattr(cfp, "_collect_one_account", fake_collect)
+    # v1 never calls load_env_for_instance, so seed the state for it
+    state["inst"] = next(iter(per_instance))
+
+
+def test_balances_are_summed_across_accounts(monkeypatch):
+    _patch(monkeypatch,
+           {"v1": _mk(100.0), "donchian": _mk(50.0), "sol_supertrend": _mk(60.0)},
+           {"v1": "A", "donchian": "B", "sol_supertrend": "C"})
+    out = cfp.collect_all_accounts(income_days=2)
+    assert out["account"]["walletBalanceUsd"] == 210.0
+
+
+def test_duplicate_api_key_is_skipped_not_double_counted(monkeypatch):
+    # donchian resolves to the SAME key as v1 (its env file forgot the key).
+    _patch(monkeypatch,
+           {"v1": _mk(100.0), "donchian": _mk(100.0)},
+           {"v1": "A", "donchian": "A"})
+    out = cfp.collect_all_accounts(income_days=2)
+    assert out["account"]["walletBalanceUsd"] == 100.0, "double-counted one account"
+    assert any(a.get("skipped", "").startswith("duplicate_of") for a in out["accounts"])
+
+
+def test_leg_without_env_file_is_skipped(monkeypatch):
+    _patch(monkeypatch,
+           {"v1": _mk(100.0), "sol_supertrend": _mk(60.0)},
+           {"v1": "A", "sol_supertrend": None})
+    out = cfp.collect_all_accounts(income_days=2)
+    assert out["account"]["walletBalanceUsd"] == 100.0
+    assert any(a.get("skipped") == "no_env_file" for a in out["accounts"])
+
+
+def test_symbol_collision_keeps_first_account_only(monkeypatch):
+    # v1 and donchian both hold BTCUSDT; SOL leg adds a non-colliding symbol.
+    _patch(monkeypatch,
+           {"v1": _mk(100.0, positions=["BTCUSDT"]),
+            "donchian": _mk(50.0, positions=["BTCUSDT"]),
+            "sol_supertrend": _mk(60.0, positions=["SOLUSDT"])},
+           {"v1": "A", "donchian": "B", "sol_supertrend": "C"})
+    out = cfp.collect_all_accounts(income_days=2)
+    syms = [p["symbol"] for p in out["positions"]]
+    assert syms == ["BTCUSDT", "SOLUSDT"], f"expected collision dropped, got {syms}"
+    # balances still sum — the collision only affects the positions table
+    assert out["account"]["walletBalanceUsd"] == 210.0
+
+
+def test_income_concatenated_across_accounts(monkeypatch):
+    _patch(monkeypatch,
+           {"v1": _mk(100.0, income=[1, 2]), "sol_supertrend": _mk(60.0, income=[3])},
+           {"v1": "A", "sol_supertrend": "C"})
+    out = cfp.collect_all_accounts(income_days=2)
+    assert [r["tranId"] for r in out["income"]] == [1, 2, 3]

@@ -218,6 +218,153 @@ def _fetch_income(ex: Any, start_ms: int) -> list[dict[str, Any]]:
     return rows
 
 
+# ── multi-account support (2026-07-25) ───────────────────────────────────────
+# Until now this relay read ONE account (whatever base .env pointed at = v1's),
+# so the donchian and sol_supertrend sub-accounts were invisible to the
+# dashboard — their wallet balance never counted toward the futures total and
+# their resting SL/TP brackets never appeared.
+#
+# Each leg keeps its own sub-account key in `.env.<instance>`, so we iterate the
+# instances, build one client per account, and combine:
+#
+#   balances  → SUMMED. "Total futures equity" is the sum across sub-accounts.
+#   income    → CONCATENATED. Safe: the server dedupes on Binance `tranId`,
+#               which is unique per ledger row across accounts.
+#   positions → CONCATENATED, but see the collision guard below.
+#
+# COLLISION HAZARD, deliberately surfaced rather than hidden: the server keys
+# positions by SYMBOL alone (`ON CONFLICT (symbol)` in
+# futures-analytics.ts::ingestFuturesPositions). v1 and donchian BOTH trade
+# BTCUSDT in separate sub-accounts, so if both are in a BTC position at once,
+# two rows claim the same key and one would silently overwrite the other —
+# wrong entry price, wrong liq price, wrong bracket. We keep the FIRST account
+# to report a symbol and log an ERROR naming both, so the loss is visible in the
+# cron log instead of being a quietly wrong dashboard. SOL never collides with
+# BTC, which is why adding the SOL leg is safe today.
+#
+# The proper fix is an `account` dimension on futures_positions (PK becomes
+# (account, symbol)) plus the ingest schema and UI — an API + migration + web
+# change, not a relay change. Until then this is accurate for every
+# non-overlapping symbol and loud about the one case it cannot represent.
+ACCOUNT_INSTANCES: tuple[str, ...] = ("v1", "donchian", "sol_supertrend")
+
+
+def _key_fingerprint() -> str:
+    """Short hash of the ACTIVE BINANCE_API_KEY, to identify the account.
+
+    Load-bearing: `.env.<instance>` overlays os.environ, so if an instance's file
+    is missing or omits BINANCE_API_KEY, the previous instance's key silently
+    stays active and we would read the SAME account twice — double-counting it in
+    a SUMMED balance. Fingerprinting lets us skip duplicates instead.
+    """
+    import hashlib
+    k = (os.environ.get("BINANCE_API_KEY") or "").strip()
+    return hashlib.sha256(k.encode()).hexdigest()[:12] if k else ""
+
+
+def _collect_one_account(income_days: int) -> dict[str, Any]:
+    """Read one futures account (whatever env is currently active). Read-only."""
+    from exchange.binance_client import BinanceClient
+
+    client = BinanceClient.from_env()
+    ex = client.ex
+
+    balance = ex.fetch_balance({"type": "future"})
+    account = build_account_payload(balance.get("info") or {})
+
+    # Resting bracket orders (SL/TP). Best-effort: if the open-orders read
+    # fails we must NOT let this push overwrite the last-known SL/TP with null
+    # (the orders are still resting on the exchange). See `bracketsKnown`.
+    try:
+        # ccxt (binanceusdm) refuses fetch_open_orders() with no symbol by
+        # default — it raises to flag the stricter (40x) rate-limit weight.
+        # Acknowledge it: hourly cron, few symbols, negligible weight.
+        ex.options["warnOnFetchOpenOrdersWithoutSymbol"] = False
+        brackets = build_bracket_map(ex.fetch_open_orders())
+        brackets_known = True
+    except Exception as e:  # noqa: BLE001 — any ccxt/network error, keep pushing
+        log.warning("fetch_open_orders failed (%s) — preserving prior SL/TP this push", e)
+        brackets, brackets_known = {}, False
+    positions = build_position_payloads(ex.fetch_positions(), brackets)
+
+    start_ms = int(time.time() * 1000) - income_days * 86_400_000
+    income = build_income_payloads(_fetch_income(ex, start_ms))
+    return {"account": account, "positions": positions,
+            "income": income, "brackets_known": brackets_known}
+
+
+def collect_all_accounts(income_days: int) -> dict[str, Any]:
+    """Iterate ACCOUNT_INSTANCES and combine their futures state.
+
+    Returns the same shape run() used to build from a single account, plus
+    `accounts` (per-instance detail) for logging.
+    """
+    from exchange.env import load_env_for_instance
+
+    totals = {"walletBalanceUsd": 0.0, "marginBalanceUsd": 0.0,
+              "unrealizedPnlUsd": 0.0, "availableBalanceUsd": 0.0}
+    positions: list[dict[str, Any]] = []
+    income: list[dict[str, Any]] = []
+    brackets_known = True
+    seen_keys: dict[str, str] = {}          # fingerprint -> instance that claimed it
+    symbol_owner: dict[str, str] = {}       # symbol -> instance that reported it first
+    detail: list[dict[str, Any]] = []
+
+    for inst in ACCOUNT_INSTANCES:
+        try:
+            if inst != "v1":
+                # v1's account IS the base .env; the others need their overlay.
+                if load_env_for_instance(inst) is None:
+                    log.info("relay: no .env.%s — skipping (leg not keyed)", inst)
+                    detail.append({"instance": inst, "skipped": "no_env_file"})
+                    continue
+            fp = _key_fingerprint()
+            if not fp:
+                log.warning("relay: %s has no BINANCE_API_KEY active — skipping", inst)
+                detail.append({"instance": inst, "skipped": "no_api_key"})
+                continue
+            if fp in seen_keys:
+                log.warning("relay: %s resolves to the SAME account as %s "
+                            "(key fp=%s) — skipping to avoid double-counting",
+                            inst, seen_keys[fp], fp)
+                detail.append({"instance": inst, "skipped": f"duplicate_of_{seen_keys[fp]}"})
+                continue
+            seen_keys[fp] = inst
+
+            got = _collect_one_account(income_days)
+        except Exception as e:  # noqa: BLE001 — one bad account must not lose the rest
+            log.error("relay: reading %s failed (%s) — continuing with other accounts",
+                      inst, e)
+            detail.append({"instance": inst, "error": str(e)})
+            brackets_known = False
+            continue
+
+        for k in totals:
+            totals[k] += float(got["account"].get(k) or 0.0)
+        for p in got["positions"]:
+            sym = p.get("symbol") or ""
+            if sym in symbol_owner:
+                log.error(
+                    "relay: SYMBOL COLLISION — %s is open on both %s and %s. The "
+                    "server keys futures_positions by symbol alone, so only %s's "
+                    "row is kept and %s's position (entry/liq/SL/TP) is NOT shown. "
+                    "Needs the account dimension on futures_positions to fix.",
+                    sym, symbol_owner[sym], inst, symbol_owner[sym], inst)
+                continue
+            symbol_owner[sym] = inst
+            positions.append(p)
+        income.extend(got["income"])
+        brackets_known = brackets_known and bool(got["brackets_known"])
+        detail.append({
+            "instance": inst, "key_fp": fp,
+            "wallet": got["account"].get("walletBalanceUsd"),
+            "positions": len(got["positions"]), "income": len(got["income"]),
+        })
+
+    return {"account": totals, "positions": positions, "income": income,
+            "brackets_known": brackets_known, "accounts": detail}
+
+
 def run(income_days: int = 2, dry_run: bool = False) -> dict[str, Any]:
     # Trigger the bot's .env auto-load BEFORE reading config. exchange.env calls
     # load_dotenv(REPO_ROOT/.env) at import time (override=False), so this makes
@@ -231,44 +378,29 @@ def run(income_days: int = 2, dry_run: bool = False) -> dict[str, Any]:
         log.info("consolidate not configured (CONSOLIDATE_API_URL/TOKEN unset) — skipping")
         return {"skipped": "not_configured"}
 
-    # Deferred so a missing trading dep / bad key can't break import-time (and so
-    # the pure mappers stay importable by tests without constructing a client).
-    from exchange.binance_client import BinanceClient
+    # Read EVERY leg's sub-account (see ACCOUNT_INSTANCES) and combine. Balances
+    # are summed, income concatenated (tranId-deduped server-side), positions
+    # concatenated with a symbol-collision guard.
+    combined = collect_all_accounts(income_days)
+    account = combined["account"]
+    positions = combined["positions"]
+    income = combined["income"]
+    brackets_known = combined["brackets_known"]
 
-    client = BinanceClient.from_env()
-    ex = client.ex
-
-    balance = ex.fetch_balance({"type": "future"})
-    account = build_account_payload(balance.get("info") or {})
-
-    # Resting bracket orders (SL/TP). Best-effort: if the open-orders read
-    # fails we must NOT let this push overwrite the last-known SL/TP with null
-    # (the orders are still resting on the exchange). So we tell the server
-    # whether we actually know the bracket state this push via `bracketsKnown`:
-    # True  → apply verbatim (null legitimately clears a cancelled bracket);
-    # False → server preserves whatever it already has.
-    try:
-        # ccxt (binanceusdm) refuses fetch_open_orders() with no symbol by
-        # default — it raises to flag the stricter (40x) rate-limit weight.
-        # Acknowledge it: this cron runs hourly on a single-symbol account, so
-        # the weight is negligible and one all-symbols call is simplest.
-        ex.options["warnOnFetchOpenOrdersWithoutSymbol"] = False
-        brackets = build_bracket_map(ex.fetch_open_orders())
-        brackets_known = True
-    except Exception as e:  # noqa: BLE001 — any ccxt/network error, keep pushing
-        log.warning("fetch_open_orders failed (%s) — preserving prior SL/TP this push", e)
-        brackets, brackets_known = {}, False
-    positions = build_position_payloads(ex.fetch_positions(), brackets)
-
-    start_ms = int(time.time() * 1000) - income_days * 86_400_000
-    income = build_income_payloads(_fetch_income(ex, start_ms))
+    log.info("relay: %d account(s) read — %s", len(combined["accounts"]),
+             "; ".join(
+                 f"{a['instance']}="
+                 + (a.get("skipped") or a.get("error")
+                    or f"${a.get('wallet', 0):.2f}/{a.get('positions', 0)}pos")
+                 for a in combined["accounts"]))
 
     if dry_run:
         print(json.dumps({"account": account, "positions": positions,
                           "bracketsKnown": brackets_known,
-                          "income_count": len(income)}, indent=2))
+                          "income_count": len(income),
+                          "accounts": combined["accounts"]}, indent=2))
         return {"dry_run": True, "positions": len(positions), "income": len(income),
-                "bracketsKnown": brackets_known}
+                "bracketsKnown": brackets_known, "accounts": combined["accounts"]}
 
     results: dict[str, Any] = {}
     errors: list[str] = []
