@@ -102,8 +102,12 @@ deploy:
   # 3.5% is -26.6%, leaving 8.9pp of cushion.
   kill_switch_equity_fraction: 0.645
   daily_status_email_hour_utc: 0
-  # Below ~$200 the leg starts skipping signals on min-notional: at $150 → 3%
-  # of signals skipped, $100 → 9%, $50 → 91%. Above ~$500 the risk.py
-  # MAX_NOTIONAL_USD=500 cap truncates entries instead (76% clipped at $800).
-  # Usable band is $200-500. See SOL_LEG_VERDICT.md round 6.
-  min_capital_warn_usdt: 200.0
+  # Was 200.0 while exchange/constraints.py applied BTC's $50 min-notional to
+  # SOL. Since the per-symbol split (2026-07-25) SOL uses its real $5 minimum,
+  # and 0% of the last 2 years' signals are skipped at any equity >= $25.
+  # $50 is the practical floor: qty rounds to 0.01 SOL steps, so at $25 the
+  # 0.12-SOL median position carries ~8% sizing granularity vs ~2% at $100.
+  # round_qty_down always floors, so the error is always toward LESS risk.
+  # Above ~$500 the risk.py MAX_NOTIONAL_USD=500 cap truncates entries instead
+  # (9% of signals clipped at $500, 76% at $800). See SOL_LEG_VERDICT.md round 9.
+  min_capital_warn_usdt: 50.0

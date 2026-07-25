@@ -2,6 +2,14 @@
 .env
 .env.local
 .env.*.local
+# Per-leg secrets. Each multi-leg instance keeps its own sub-account
+# BINANCE_API_KEY/SECRET in `.env.<instance>` (.env.donchian, .env.cnh_short,
+# .env.sol_supertrend, ...). Those were NOT matched by the three patterns above,
+# so a `git add -A` would have committed a live API key. Ignore the whole family
+# and re-admit only the non-secret templates.
+.env.*
+!.env.example
+!.env.*.example
 
 # mainnet gate — must be created manually, never committed
 confirm_mainnet.lock

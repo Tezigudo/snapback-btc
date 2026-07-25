@@ -26,6 +26,7 @@ from bot import INSTANCE_PROFILES, compute_qty, load_params
 from exchange.binance_client import BinanceClient
 from exchange.constraints import (
     DEFAULT_CONSTRAINTS,
+    fallbacks_for_symbol,
     merge_with_live,
     passes_minimums,
     round_qty_down,
@@ -162,9 +163,9 @@ def main() -> int:
 
     try:
         m = client.ex.market(symbol)
-        constraints = merge_with_live(DEFAULT_CONSTRAINTS, m)
+        constraints = merge_with_live(fallbacks_for_symbol(symbol), m)
         ok(f"market loaded for {symbol}")
-        ok(f"min_qty={constraints.min_qty_btc} BTC, "
+        ok(f"min_qty={constraints.min_qty_base} BTC, "
            f"min_notional=${constraints.min_notional_usdt}, "
            f"qty_step={constraints.qty_step}, price_step={constraints.price_step}")
     except Exception as e:

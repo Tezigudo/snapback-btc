@@ -69,6 +69,7 @@ from exchange.binance_client import BinanceClient
 from exchange.constraints import (
     DEFAULT_CONSTRAINTS,
     ExchangeConstraints,
+    fallbacks_for_symbol,
     merge_with_live,
     passes_minimums,
     round_qty_down,
@@ -137,10 +138,10 @@ INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
     # NEW LEG (2026-07-25): SOL supertrend — replaces the never-funded
     # cnh_short slot per God's decision. Winner of the round-3 win-rate-blended
     # walk-forward (9/9 OOS folds positive); see SOL_LEG_VERDICT.md.
-    # BLOCKED until risk.py ALLOWED_SYMBOLS includes "SOL/USDT:USDT" —
-    # check_symbol() runs at startup so this gate blocks even --dry-run.
-    # Tier-3 edit (RISK_REVIEW=1 + explicit user OK). Reuses the cnh_short
-    # sub-account credentials via .env.sol_supertrend.
+    # risk.py ALLOWED_SYMBOLS now includes SOL/USDT:USDT (RISK_REVIEW 2026-07-25).
+    # Needs .env.sol_supertrend with its OWN sub-account key — there is no
+    # cnh_short key to inherit (that leg was never keyed), and booting without
+    # the file is refused outright, see _main()'s per-instance env guard.
     "sol_supertrend": {
         "config":    REPO_ROOT / "config" / "params_sol_supertrend.yaml",
         "state_db":  REPO_ROOT / "data" / "state_sol_supertrend.db",
@@ -308,9 +309,16 @@ class Bot:
         # of hard-coded fallbacks vs live values wins.
         try:
             live_market = self.client.ex.market(self.symbol)
-            self.constraints = merge_with_live(DEFAULT_CONSTRAINTS, live_market)
-            self.log.info("Exchange constraints: min_qty=%s BTC, min_notional=$%s",
-                          self.constraints.min_qty_btc, self.constraints.min_notional_usdt)
+            # Per-symbol fallbacks: BTC's $50 min-notional / $0.10 tick are not
+            # a sane default for SOL. merge_with_live still takes the TIGHTER of
+            # fallback vs live, so this cannot loosen anything.
+            self.constraints = merge_with_live(
+                fallbacks_for_symbol(self.symbol), live_market)
+            self.log.info("Exchange constraints for %s: min_qty=%s, min_notional=$%s, "
+                          "price_step=%s, qty_step=%s",
+                          self.symbol, self.constraints.min_qty_base,
+                          self.constraints.min_notional_usdt,
+                          self.constraints.price_step, self.constraints.qty_step)
         except Exception as e:
             self.log.warning("Could not fetch live market constraints, using defaults: %s", e)
 
