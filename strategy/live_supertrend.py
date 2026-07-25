@@ -65,12 +65,40 @@ def _cfg(params: dict) -> dict:
     }
 
 
-def _st_frame(bars: pd.DataFrame, c: dict) -> tuple[pd.Series, pd.Series]:
-    """Return (STDir, ATR) computed the same way attach_supertrend does."""
+def _st_frame(bars: pd.DataFrame, c: dict) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Return (STDir, ATR, STLine) computed the same way attach_supertrend does.
+
+    STLine is the trailing band itself. It is not needed for the entry decision
+    (the flip is read off STDir) but it IS the number a human needs: it is the
+    price level that has to be crossed for the next flip, so the dashboard can
+    say "needs +4.1%" instead of only "direction is -1".
+    """
     st = supertrend(bars["High"], bars["Low"], bars["Close"],
                     period=c["period"], multiplier=c["multiplier"])
-    return st["direction"], atr(bars["High"], bars["Low"], bars["Close"],
-                                c["atr_period"])
+    return (st["direction"],
+            atr(bars["High"], bars["Low"], bars["Close"], c["atr_period"]),
+            st["supertrend"])
+
+
+def _bars_since_flip(direction: pd.Series, max_lookback: int = 500) -> int | None:
+    """How many CLOSED bars the current STDir has held.
+
+    Answers "is this quiet spell normal or is something stuck?" — the leg
+    averages ~12 days between flips, so 3 bars vs 60 bars is the difference
+    between "just turned" and "a long trend". None when the series is too short
+    or all-NaN.
+    """
+    if len(direction) < 2:
+        return None
+    cur = direction.iloc[-1]
+    if not np.isfinite(cur):
+        return None
+    n = 0
+    for v in reversed(direction.iloc[-max_lookback:].to_list()):
+        if not np.isfinite(v) or v != cur:
+            break
+        n += 1
+    return n
 
 
 def _warmup_bars(c: dict) -> int:
@@ -97,16 +125,29 @@ def evaluate_signal_supertrend(
         return None, float("nan"), float("nan"), {
             "reason": "warmup", "have": len(bars_4h), "need": need}
 
-    direction, atr_s = _st_frame(bars_4h, c)
+    direction, atr_s, st_line_s = _st_frame(bars_4h, c)
     dir_now = float(direction.iloc[-1]) if np.isfinite(direction.iloc[-1]) else float("nan")
     dir_prev = float(direction.iloc[-2]) if np.isfinite(direction.iloc[-2]) else float("nan")
     atr_v = float(atr_s.iloc[-1])
     cur_close = float(bars_4h["Close"].iloc[-1])
+    st_line = float(st_line_s.iloc[-1]) if np.isfinite(st_line_s.iloc[-1]) else float("nan")
 
     debug = {
         "cur_close": cur_close, "atr": atr_v,
         "st_dir": dir_now if np.isfinite(dir_now) else None,
         "st_dir_prev": dir_prev if np.isfinite(dir_prev) else None,
+        # The band, and how far price must travel to cross it. This is what
+        # turns "direction is -1" into an actionable "needs +4.1% for the flip".
+        "st_line": st_line if np.isfinite(st_line) else None,
+        "dist_to_flip_pct": (
+            (st_line / cur_close - 1.0) * 100.0
+            if np.isfinite(st_line) and cur_close > 0 else None
+        ),
+        # ATR in dollars is meaningless without scale; as a % of price it reads
+        # directly as "how wide the stop will be".
+        "atr_pct": (atr_v / cur_close * 100.0
+                    if np.isfinite(atr_v) and cur_close > 0 else None),
+        "bars_since_flip": _bars_since_flip(direction),
         "st_period": c["period"], "st_multiplier": c["multiplier"],
         "sl_atr": c["sl_atr"], "tp_atr": c["tp_atr"],
         "allow_shorts": c["allow_shorts"],
@@ -122,6 +163,12 @@ def evaluate_signal_supertrend(
     tp_dist = c["tp_atr"] * atr_v
     debug["sl_dist"] = sl_dist
     debug["tp_dist"] = tp_dist
+    # Absolute bracket prices a LONG firing on THIS bar would get. Present even
+    # when no signal fires, so the dashboard can answer "what would the trade
+    # look like if it triggered now?" without the reader doing ATR arithmetic.
+    # (Short side mirrors: close + sl_dist / close - tp_dist.)
+    debug["would_sl_price"] = cur_close - sl_dist
+    debug["would_tp_price"] = cur_close + tp_dist
 
     flipped_long = dir_prev == -1.0 and dir_now == 1.0
     flipped_short = dir_prev == 1.0 and dir_now == -1.0
