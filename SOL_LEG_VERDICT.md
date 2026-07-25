@@ -13,7 +13,111 @@ maximised; it is now maximised only among configs clearing a win-rate floor.
 
 ---
 
-# ROUND 3 DECISION (current): **`supertrend` long+short**
+# ROUND 4: the roller coaster is a single-leg illusion
+
+God's round-3 read: still a roller coaster — is there more on SOL, other coins,
+or another BTC leg? Harnesses `tools/sol_leg_basket.py`,
+`tools/sol_leg_basket_wf.py`. 13 coins, native 4h, same span, no coin selection
+in the headline basket.
+
+## The answer: it is uncorrelated with your BTC book, so it *removes* drama
+
+Monthly-return correlation of the SOL leg against the two legs actually running:
+
+| | SOL supertrend | SOL st-dual | BTC mf-v1 | BTC donch-v3 |
+|---|---|---|---|---|
+| SOL supertrend | 1.00 | 0.20 | **-0.02** | **0.10** |
+| SOL st-dual | 0.20 | 1.00 | **-0.11** | **0.08** |
+| BTC mf-v1 | -0.02 | -0.11 | 1.00 | *0.40* |
+| BTC donch-v3 | 0.10 | 0.08 | *0.40* | 1.00 |
+
+The SOL leg is ~uncorrelated with both BTC legs. Your two BTC legs correlate
+**0.40 with each other** — so a third BTC leg would stack risk, while this one
+offsets it. Effect on the book (equal weight, each leg at its own risk):
+
+| Book | ret% | CAGR% | **maxDD%** | pos months | **days underwater** | monthly vol |
+|---|---|---|---|---|---|---|
+| BTC only (mf-v1 + donch-v3) | +168.5 | 25.7 | **-37.7** | 49.0% | **439** | 11.3% |
+| **+ SOL supertrend** | **+321.3** | **39.5** | **-26.4** | 58.8% | **193** | **8.9%** |
+| + SOL + ADA | +278.6 | 36.1 | -26.3 | **62.7%** | 194 | 8.7% |
+| + SOL + ADA + AVAX | +257.1 | 34.3 | -26.8 | 58.8% | 204 | 8.4% |
+
+Adding one SOL leg raises book CAGR 25.7% → 39.5% **and** cuts max drawdown
+-37.7% → -26.4%, monthly vol 11.3% → 8.9%, and time underwater 439 → 193 days.
+The lumpiness that looks alarming leg-by-leg is what smooths the portfolio,
+because it lands in different months than the BTC P&L.
+
+## More on SOL? No — SOL is the outlier, not a sample
+
+Per coin at risk 2% (`supertrend` geometry). SOL is the best of 13 by a wide
+margin, and a third of the field loses money:
+
+| | SOL | ADA | AVAX | DOT | ATOM | LINK | NEAR | BNB | ETH | XRP | BCH | LTC |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ret% | **+210** | +144 | +138 | +54 | +52 | +40 | +22 | +21 | -4 | -6 | -27 | -41 |
+| WR% | 37.0 | 39.0 | 38.5 | 33.3 | 29.5 | 27.7 | 28.1 | 26.0 | 31.7 | 27.9 | 24.8 | 25.7 |
+
+That the geometry loses on 4 of 12 coins is a real caveat on round 3's
+robustness claim: this is not a universal trend edge, it is one that works on
+high-beta L1s. Mean monthly correlation between coin legs is only 0.22, so
+diversification does work statistically — but the spread in leg *quality*
+dominates it.
+
+## Other coins? Only ADA and AVAX, and they buy smoothness, not return
+
+Walk-forwarding the **coin choice** (rank coins by TRAIN return each fold,
+equal-weight exactly those in TEST) — so this is not hindsight:
+
+| Variant | chained% | +folds | median% | worst% | ex-best% |
+|---|---|---|---|---|---|
+| SOL alone | **+141.7** | 7/9 | +6.8 | -4.1 | **+84.6** |
+| top-6 by train | +52.4 | **8/9** | +4.4 | -6.0 | +30.4 |
+| top-4 by train | +43.4 | **8/9** | +3.6 | -7.1 | +15.3 |
+| all 12, no selection | +37.9 | 7/9 | +2.0 | -3.8 | +20.5 |
+
+Coin selection is a real lever (top-6 +52.4% beats all-12 +37.9%, and the same
+holds for `st-dual`: +71.8% vs +30.8%), **but no basket beats SOL alone.**
+ADA and AVAX were train-picked in 7-9 of 9 folds, so they are persistently good
+rather than cherry-picked. What they buy is a calmer ride, at a return cost —
+alt sleeves each sized to -30% DD:
+
+| Sleeve | ret% | CAGR% | pos months | days UW | **monthly vol** |
+|---|---|---|---|---|---|
+| SOL | +676.9 | **60.7** | 51.0% | 187 | **12.4%** |
+| SOL+ADA | +529.3 | 53.1 | 56.9% | **159** | 8.7% |
+| **SOL+ADA+AVAX** | +441.5 | 47.8 | **58.8%** | 174 | **7.3%** |
+| SOL+ADA+AVAX+ATOM+LINK | +335.9 | 40.6 | 56.9% | 159 | 7.5% |
+
+**SOL+ADA+AVAX cuts monthly volatility 41% (12.4% → 7.3%) for 13pp of CAGR.**
+If the ride is the problem, that is the trade to make.
+
+## Another BTC leg? No
+
+BTC under these geometries, sized to the same -30% DD: `supertrend` **+4.9%**
+(CAGR 1.1%) and `st-dual` **-7.5%** over 4.32 years. BTC's trend edge is already
+taken by multifactor-v1 (+119.3%, DD -24.8%, WR 30.7% over this span). Adding
+BTC exposure means 0.40 correlation with what you already hold.
+
+## Recommendation
+
+**Run ONE alt sleeve alongside the BTC book — `supertrend` on SOL, or on
+SOL+ADA+AVAX if the ride matters more than the return.** Do not build the
+13-coin basket (dilutes into 4 losers) and do not add a BTC leg.
+
+## Flag on your existing book (not part of this task)
+
+At deployed params (`config/params_donchian.yaml`: 80/10 channel, gate 0.03,
+risk 2.75%, lev 20), **donchian-v3 backtests to -63.6% max drawdown** over
+2022-04 → 2026-07 (+101.3%, WR 29.1%, 454 trades), and the two-leg BTC book to
+-37.7%. Both exceed the -35.5% kill-switch fraction. My run does not model the
+live bot's per-leg HALT, principal anchoring, or limit-order fills, so this is
+not a live-equivalent figure — but it is worth a look independently of the SOL
+work. Round-4 artifacts: `reports/sol_leg_basket.json`,
+`reports/sol_leg_basket_wf.json`.
+
+---
+
+# ROUND 3 DECISION: **`supertrend` long+short**
 
 **Supersedes the round-2 `rider-v1` decision below.** Round 3 dominates round 2
 on *every* axis God cares about, at the same drawdown budget.
