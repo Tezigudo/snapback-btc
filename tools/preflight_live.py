@@ -20,6 +20,14 @@ from __future__ import annotations
 import argparse
 import sys
 
+# Put the repo root FIRST on sys.path. Without it, `python tools/preflight_live.py`
+# resolves `bot` / `exchange` / `risk` through the venv's editable-install .pth
+# entry, which can point at a DIFFERENT checkout — so the pre-flight would
+# validate that checkout's risk ceilings and constraints instead of this one's.
+# Every other tool in tools/ already does this; preflight was the odd one out.
+import pathlib as _pathlib  # noqa: E402
+sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent))
+
 from alerts import is_configured as alerts_configured
 from alerts import send_alert
 from bot import INSTANCE_PROFILES, compute_qty, load_params
