@@ -53,7 +53,7 @@ from alerts import send_alert
 from bot_internals import (
     SignalDecision,
     bracket_is_intact,
-    channel_exit_signal,
+    channel_exit_signal,  # noqa: F401  (re-exported; tools import it from here)
     evaluate_for_strategy,
     gate_status,
     has_bracket_leg,
@@ -61,6 +61,8 @@ from bot_internals import (
     order_avg_price,
     resolve_strategy_name,
     strategy_uses_channel_exit,
+    strategy_uses_trend_exit,
+    trend_exit_signal,
 )
 from exchange import principal, state, trade_events
 from exchange.binance_client import BinanceClient
@@ -131,6 +133,19 @@ INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
         "state_db":  REPO_ROOT / "data" / "state_cnh_short_sol.db",
         "log_file":  REPO_ROOT / "logs" / "cnh_short_sol.jsonl",
         "heartbeat": REPO_ROOT / "data" / "heartbeat_cnh_short_sol",
+    },
+    # NEW LEG (2026-07-25): SOL supertrend — replaces the never-funded
+    # cnh_short slot per God's decision. Winner of the round-3 win-rate-blended
+    # walk-forward (9/9 OOS folds positive); see SOL_LEG_VERDICT.md.
+    # BLOCKED until risk.py ALLOWED_SYMBOLS includes "SOL/USDT:USDT" —
+    # check_symbol() runs at startup so this gate blocks even --dry-run.
+    # Tier-3 edit (RISK_REVIEW=1 + explicit user OK). Reuses the cnh_short
+    # sub-account credentials via .env.sol_supertrend.
+    "sol_supertrend": {
+        "config":    REPO_ROOT / "config" / "params_sol_supertrend.yaml",
+        "state_db":  REPO_ROOT / "data" / "state_sol_supertrend.db",
+        "log_file":  REPO_ROOT / "logs" / "sol_supertrend.jsonl",
+        "heartbeat": REPO_ROOT / "data" / "heartbeat_sol_supertrend",
     },
 }
 
@@ -1128,7 +1143,7 @@ class Bot:
         surviving SL sibling is swept by close_position's own COID-scoped
         cancel_open_orders before the reduce-only close is placed.
         """
-        if not strategy_uses_channel_exit(self.strategy_name):
+        if not strategy_uses_trend_exit(self.strategy_name):
             return
         try:
             pos = self.client.fetch_position(self.symbol)
@@ -1143,11 +1158,12 @@ class Bot:
             # and suppressing an EXIT on a short fetch is worse than checking
             # (Sourcery, PR #7).
             df = df.iloc[:-1]
-            should_exit, dbg = channel_exit_signal(df, pos.side, self.params)
+            should_exit, dbg = trend_exit_signal(
+                self.strategy_name, df, pos.side, self.params)
             if not should_exit:
                 return
             if self.dry_run:
-                self.log.info("DRY-RUN: would channel-exit close %s %.4f BTC (%s)",
+                self.log.info("DRY-RUN: would trend-exit close %s %.4f (%s)",
                               pos.side, pos.qty, dbg.get("reason"))
                 return
             root = state.latest_entry_coid_root()

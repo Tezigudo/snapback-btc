@@ -23,20 +23,51 @@ from strategy.live_donchian_v3 import (  # noqa: F401  (channel_exit_signal re-e
     evaluate_signal_donchian_v3,
 )
 from strategy.live_multifactor_v1 import evaluate_signal
+from strategy.live_supertrend import evaluate_signal_supertrend, flip_exit_signal
 from strategy.live_v3all_wider4 import evaluate_signal_v3all_wider4
 
 
 def strategy_uses_channel_exit(strategy_name: str) -> bool:
-    """True for strategies that close via a live Donchian channel-cross exit
-    instead of a fixed TP bracket. Currently only donchian-v3.
+    """True for strategies that omit the TP bracket leg because a live trend
+    exit IS their profit-taking mechanism. Currently only donchian-v3.
 
-    Centralised so the two callers agree on exactly ONE predicate:
-      - the entry path omits the TP leg (place_tp = not this), and
-      - the loop hook (bot._maybe_channel_exit) runs the channel-exit check.
-    Every other strategy (v1/multifactor, cnh, v3all) is untouched: it keeps
-    its TP bracket and never runs the channel-exit check.
+    NOT the same question as "does this leg run a trend-exit check each tick" —
+    that is `strategy_uses_trend_exit`. supertrend keeps its TP bracket AND runs
+    a trend exit, so it is deliberately absent here.
+
+    Every other strategy (v1/multifactor, cnh, v3all) is untouched: it keeps its
+    TP bracket.
     """
     return strategy_name == "donchian-v3"
+
+
+def strategy_uses_trend_exit(strategy_name: str) -> bool:
+    """True for strategies whose loop must run a trend-exit check each tick.
+
+    - donchian-v3: Donchian channel cross — its ONLY profit-taking mechanism.
+    - supertrend: opposite STDir flip, which closes the position even though a
+      TP bracket also exists. Both exits are live at once.
+
+    Kept separate from `strategy_uses_channel_exit` so donchian's TP-omission
+    behaviour is unchanged by adding a leg that needs the hook but keeps its TP.
+    """
+    return strategy_name in ("donchian-v3", "supertrend")
+
+
+def trend_exit_signal(
+    strategy_name: str,
+    bars: pd.DataFrame,
+    position_side: str,
+    params: dict,
+) -> tuple[bool, dict]:
+    """Dispatch the per-strategy trend exit. Returns (should_exit, debug).
+
+    Thin dispatcher so bot._maybe_trend_exit has one callsite, and the donchian
+    path is reached by exactly the same call as before this leg was added.
+    """
+    if strategy_name == "supertrend":
+        return flip_exit_signal(bars, position_side, params)
+    return channel_exit_signal(bars, position_side, params)
 
 
 def resolve_strategy_name(params: dict) -> str:
@@ -126,6 +157,20 @@ def evaluate_for_strategy(
 
     if strategy_name == "donchian-v3":
         side, sl_dist, tp_dist, dbg = evaluate_signal_donchian_v3(
+            bars_15m, funding_rate, params)
+        price = (dbg.get("cur_close", fallback_price)
+                 if isinstance(dbg, dict) else fallback_price)
+        return SignalDecision(
+            side=side, price=price,
+            sl_distance=float(sl_dist), tp_distance=float(tp_dist),
+            debug=dbg if isinstance(dbg, dict) else {},
+        )
+
+    if strategy_name == "supertrend":
+        # Supertrend flip on native 4h. SL and TP are both real bracket legs
+        # (unlike donchian, whose tp_dist is advisory only), and the opposite
+        # flip closes the position on top of them via trend_exit_signal.
+        side, sl_dist, tp_dist, dbg = evaluate_signal_supertrend(
             bars_15m, funding_rate, params)
         price = (dbg.get("cur_close", fallback_price)
                  if isinstance(dbg, dict) else fallback_price)
@@ -278,6 +323,43 @@ def gate_status(strategy_name: str, decision: SignalDecision, params: dict) -> d
             "gates_long":  gates_long,
             "gates_short": gates_short,
             "missing_long":  missing_long,
+            "missing_short": missing_short,
+            "waiting_for": _format_waiting(missing_long, missing_short, decision.side),
+        }
+
+    if strategy_name == "supertrend":
+        close = dbg.get("cur_close")
+        dir_now = dbg.get("st_dir")
+        dir_prev = dbg.get("st_dir_prev")
+        allow_shorts = bool(dbg.get("allow_shorts", True))
+
+        flip_long = dir_prev == -1.0 and dir_now == 1.0
+        flip_short = dir_prev == 1.0 and dir_now == -1.0
+        gates_long = {"st_flip_up": bool(flip_long)}
+        gates_short = {"st_flip_down": bool(flip_short),
+                       "shorts_enabled": allow_shorts}
+        missing_long = [k for k, v in gates_long.items() if not v]
+        missing_short = [k for k, v in gates_short.items() if not v]
+        return {
+            "strategy": strategy_name,
+            "would_fire": decision.side,
+            "values": {
+                "close": float(close) if close is not None else None,
+                "st_dir": float(dir_now) if dir_now is not None else None,
+                "st_dir_prev": float(dir_prev) if dir_prev is not None else None,
+                "atr": (float(dbg["atr"]) if dbg.get("atr") is not None else None),
+            },
+            "thresholds": {
+                "st_period": float(dbg.get("st_period", s.get("st_period", 14))),
+                "st_multiplier": float(dbg.get("st_multiplier",
+                                               s.get("st_multiplier", 3.5))),
+                "sl_atr": float(dbg.get("sl_atr", s.get("st_sl_atr", 2.0))),
+                "tp_atr": float(dbg.get("tp_atr", s.get("st_tp_atr", 10.0))),
+                "allow_shorts": allow_shorts,
+            },
+            "gates_long": gates_long,
+            "gates_short": gates_short,
+            "missing_long": missing_long,
             "missing_short": missing_short,
             "waiting_for": _format_waiting(missing_long, missing_short, decision.side),
         }

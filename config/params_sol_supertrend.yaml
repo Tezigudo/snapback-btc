@@ -1,0 +1,109 @@
+# SOL supertrend leg — native 4h Supertrend flip, long + short.
+#
+# Replaces the never-funded cnh_short slot (God's decision 2026-07-25).
+# Winner of the round-3 win-rate-blended walk-forward. Evidence in
+# SOL_LEG_VERDICT.md; harnesses tools/sol_leg_return_search.py (--analyze,
+# objective `blend40`) and tools/sol_leg_blend_confirm.py.
+#
+# Backtest 2022-04-01 → 2026-07-25 (4.32 yr) at risk 3.5%, lev 3, 5bps/side
+# + funding:  +515.0% · CAGR +30.5% · maxDD -26.6% · WR 37.0% · PF 1.63
+#             119 trades (27.5/yr, median 12.2 days apart)
+# Walk-forward: 9 of 9 OOS folds positive, params re-selected per fold.
+# Plateau:     170 of 180 neighbouring grid points positive; this point ranks
+#              11th of 180, i.e. mid-plateau rather than the peak.
+# Cost stress: +476% at 20 bps/side.
+# BTC control: the same params on BTC return only -9.9% — the edge is
+#              SOL-specific and ~uncorrelated with both live BTC legs
+#              (-0.02 vs multifactor-v1, +0.06 vs donchian-v3).
+#
+# KNOWN BIAS, read before funding: the short side carried +571% of the return
+# vs the long side's +108%, over a span where SOL fell 56%. The leg was -5.0%
+# in SOL's +804% year. Underwrite "makes money when SOL falls, roughly flat
+# when it rips" — NOT CAGR 30%.
+#
+# DO NOT TUNE without re-running the walk-forward + the plateau check.
+
+symbol: SOL/USDT:USDT
+
+# Selects strategy/live_supertrend.py in bot_internals.evaluate_for_strategy.
+strategy_name: supertrend
+
+timeframes:
+  entry: 4h           # native 4h, NOT 15m
+  trend: 4h           # single-TF
+
+strategy:
+  # --- Supertrend band (the entry trigger) ---
+  st_period: 14                 # ATR period inside the Supertrend band
+  st_multiplier: 3.5            # band width in ATRs
+  st_atr_period: 14             # ATR used for SL/TP distances
+
+  # --- Bracket geometry ---
+  # The WIDE stop is the whole point: it is what lifts win rate to 37% AND
+  # halves max drawdown vs the round-2 narrow-stop config, and a smaller
+  # drawdown is what lets the leg be sized up inside the kill-switch budget.
+  st_sl_atr: 2.0                # SL distance = 2.0 × ATR(14)
+  st_tp_atr: 10.0               # TP distance = 10.0 × ATR(14) — a real bracket leg
+  allow_shorts: true            # shorts are ~84% of this leg's backtested edge
+
+  # Unused by supertrend; kept so the YAML loader and _apply_params_to_class
+  # have every field they expect.
+  atr_period: 14
+  atr_sl_multiple: 2.0
+  atr_tp_multiple: 10.0
+  atr_trail_multiple: 0.0
+  time_stop_bars: 0
+  max_hold_bars: 0
+  rsi_period: 14
+  rsi_long_threshold: 40
+  rsi_short_threshold: 70
+  ema_period: 200
+  mf_trend_ema_period: 200
+  volume_ma_period: 20
+  volume_multiple: 1.0
+  funding_extreme_threshold: 0.0005
+  require_funding_not_extreme: false   # supertrend does NOT gate on funding
+  funding_long_max: -0.0003
+  funding_short_min: 0.0003
+  sl_pct: 0.015
+  tp_pct: 0.030
+  require_trend: false
+  require_candlestick: false
+  require_macd: false
+
+sizing:
+  # 3.5%, NOT the 4.0% that maximised backtest return. risk.py
+  # MAX_DAILY_LOSS_PCT = 4.5: at 4.0% a single full stop (4.0% + slippage)
+  # lands within a whisker of the breaker and would freeze the leg for the rest
+  # of the UTC day on most stop-outs. 3.5% keeps the same 1.0pp cushion the v1
+  # leg has, and still backtests +515% with maxDD -26.6% (8.9pp of kill-switch
+  # headroom).
+  risk_per_trade_pct: 3.5
+  leverage: 3                   # ceiling. Risk-based sizing → ~0.6-1.0× effective.
+                                # This is NOT a 20x strategy; the backtest that
+                                # authorised it ran at 3x.
+
+# clientOrderId prefix — tags this leg's fills for attribution/dashboard.
+# Sub-account isolation does the real separation; the prefix keeps the exchange
+# ledger readable.
+hedge:
+  enabled: false
+  client_order_id_prefix: "sol-st-"
+
+execution:
+  order_type: limit
+  limit_offset_bps: 0.0
+  limit_timeout_s: 20.0
+  poll_interval_s: 5
+  reconcile_on_boot: true
+
+deploy:
+  # -35.5% equity drawdown → HALT + email + flatten. Backtest maxDD at risk
+  # 3.5% is -26.6%, leaving 8.9pp of cushion.
+  kill_switch_equity_fraction: 0.645
+  daily_status_email_hour_utc: 0
+  # Below ~$200 the leg starts skipping signals on min-notional: at $150 → 3%
+  # of signals skipped, $100 → 9%, $50 → 91%. Above ~$500 the risk.py
+  # MAX_NOTIONAL_USD=500 cap truncates entries instead (76% clipped at $800).
+  # Usable band is $200-500. See SOL_LEG_VERDICT.md round 6.
+  min_capital_warn_usdt: 200.0

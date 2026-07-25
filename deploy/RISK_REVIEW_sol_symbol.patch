@@ -1,0 +1,59 @@
+Proposed risk.py change — Tier 3, NOT APPLIED. Needs God's explicit approval
+and `RISK_REVIEW=1` to get past the pre-commit hook.
+
+WHY
+---
+`check_symbol()` runs at bot startup (bot.py:274) against the config's symbol and
+raises RiskBreach for anything outside ALLOWED_SYMBOLS. It blocks even
+`--dry-run`, so the SOL supertrend leg cannot be paper-traded — let alone go
+live — until SOL is on the list.
+
+Everything else for that leg is built and tested: strategy/live_supertrend.py,
+the bot_internals dispatch, config/params_sol_supertrend.yaml,
+deploy/snapback-sol-supertrend.service, and tools/supertrend_parity.py (119/119
+backtest entries reproduced, 0 spurious, 0 premature exits). This one line is
+the remaining gate.
+
+WHAT IT WIDENS, HONESTLY
+------------------------
+This is the allowlist that has kept every leg on a single, deeply liquid
+instrument since v1. Adding SOL means:
+
+  * Any leg whose config names SOL/USDT:USDT can now trade — not just this one.
+    `config/params_cnh_hybrid_short_sol.yaml` also names SOL and would become
+    runnable. That leg measured WR 61% but CAGR 1.3% with 1,360 days underwater
+    (SOL_LEG_VERDICT.md round 5) and should NOT be funded. The allowlist stops
+    being the thing that prevents it; only not-enabling its unit does.
+  * SOL is ~3-4x more volatile than BTC (4h ATR 2.33% of price vs BTC's ~1%),
+    with thinner depth. Slippage and gap risk past the SL are correspondingly
+    worse than every backtest here models.
+  * exchange/constraints.py is BTC-specific (min_qty_btc, min_notional_usdt=50,
+    price_step=0.1) and merge_with_live keeps the TIGHTER value, so SOL inherits
+    BTC's $50 min-notional and $0.10 tick. Safe (it only over-constrains), but
+    it is why minimum capital is $200 rather than ~$25.
+
+MAX_NOTIONAL_USD = 500 is NOT touched by this patch and stays the real backstop:
+whatever the allowlist says, no single order can exceed $500 notional.
+
+THE DIFF
+--------
+--- a/risk.py
++++ b/risk.py
+@@
+-    # Hard symbol allowlist. v1 = BTC only.
+-    ALLOWED_SYMBOLS: tuple[str, ...] = ("BTC/USDT:USDT",)
++    # Hard symbol allowlist.
++    # BTC: v1 (multifactor) + donchian-v3 legs.
++    # SOL: added 2026-07-25 (RISK_REVIEW, user-approved) for the sol_supertrend
++    #      leg — round-3 win-rate-blended walk-forward winner, 9/9 OOS folds
++    #      positive, ~uncorrelated with both BTC legs (-0.02 / +0.06). Evidence
++    #      in SOL_LEG_VERDICT.md. NOTE: this also un-blocks
++    #      config/params_cnh_hybrid_short_sol.yaml, which measured CAGR 1.3%
++    #      with 1,360 days underwater — do not enable that unit.
++    ALLOWED_SYMBOLS: tuple[str, ...] = ("BTC/USDT:USDT", "SOL/USDT:USDT")
+
+TO APPLY
+--------
+    RISK_REVIEW=1 git commit ...
+
+after editing risk.py by hand. I have deliberately not made the edit.

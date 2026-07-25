@@ -283,6 +283,17 @@ class TestPlaceLiveEntryPlaceTp:
                                   signal_id="1", equity=10000.0)
         assert mc.market_order_with_bracket.call_args.kwargs["place_tp"] is True
 
+    def test_supertrend_entry_KEEPS_tp(self):
+        """supertrend's TP is a real bracket leg — only donchian omits it."""
+        bot, mc = _make_bot(strategy_name="supertrend", order_type="market",
+                            entry_tf="4h")
+        mc.market_order_with_bracket.return_value = {"entry": {}, "sl": {}, "tp": {}}
+        with patch("bot.trade_events.record_market_entry"), \
+             patch("bot.state.set_meta"):
+            bot._place_live_entry(self._decision(), qty=0.01,
+                                  signal_id="1", equity=10000.0)
+        assert mc.market_order_with_bracket.call_args.kwargs["place_tp"] is True
+
     def test_donchian_market_entry_omits_tp(self):
         bot, mc = _make_bot(strategy_name="donchian-v3", order_type="market",
                             entry_tf="4h")
@@ -344,11 +355,29 @@ class TestMaybeChannelExit:
         mc.fetch_position.return_value = _open("long")
         raw = _big_df(260)
         mc.fetch_ohlcv.return_value = raw
-        with patch("bot.channel_exit_signal", return_value=(False, {})) as ce:
+        with patch("bot.trend_exit_signal", return_value=(False, {})) as ce:
             bot._maybe_channel_exit(equity=10000.0)
-        passed_df = ce.call_args.args[0]
+        # dispatcher signature is (strategy_name, bars, side, params)
+        assert ce.call_args.args[0] == "donchian-v3"
+        passed_df = ce.call_args.args[1]
         assert len(passed_df) == len(raw) - 1  # forming last row dropped
         mc.close_position.assert_not_called()
+
+    def test_supertrend_leg_also_reaches_the_exit_hook(self):
+        """The hook is gated on strategy_uses_trend_exit, NOT on TP omission.
+
+        supertrend keeps its TP bracket and ALSO needs the flip exit, so it must
+        reach the hook. The regression this guards: re-gating the hook on
+        strategy_uses_channel_exit would silently disable the flip exit and
+        leave supertrend positions running to SL/TP only.
+        """
+        bot, mc = _make_bot(strategy_name="supertrend", entry_tf="4h")
+        mc.fetch_position.return_value = _open("long")
+        mc.fetch_ohlcv.return_value = _big_df(260)
+        with patch("bot.trend_exit_signal", return_value=(False, {})) as ce:
+            bot._maybe_channel_exit(equity=10000.0)
+        ce.assert_called_once()
+        assert ce.call_args.args[0] == "supertrend"
 
     def test_trigger_closes_reduce_only_and_records(self):
         bot, mc = _make_bot(strategy_name="donchian-v3", entry_tf="4h")
@@ -356,7 +385,7 @@ class TestMaybeChannelExit:
         mc.fetch_ohlcv.return_value = _big_df(260)
         dbg = {"reason": "channel_exit_long", "cur_close": 29999.0,
                "exit_lower": 30000.0, "exit_upper": 30010.0}
-        with patch("bot.channel_exit_signal", return_value=(True, dbg)), \
+        with patch("bot.trend_exit_signal", return_value=(True, dbg)), \
              patch("bot.state.latest_entry_coid_root", return_value="1700000000000"), \
              patch("bot.state.record_fill") as rec, \
              patch("bot.state.enqueue_bot_event") as enq, \
@@ -376,7 +405,7 @@ class TestMaybeChannelExit:
         mc.fetch_ohlcv.return_value = _big_df(260)
         dbg = {"reason": "channel_exit_short", "cur_close": 30011.0,
                "exit_lower": 30000.0, "exit_upper": 30010.0}
-        with patch("bot.channel_exit_signal", return_value=(True, dbg)), \
+        with patch("bot.trend_exit_signal", return_value=(True, dbg)), \
              patch("bot.state.record_fill") as rec, \
              patch("bot.send_alert") as alert:
             bot._maybe_channel_exit(equity=10000.0)
