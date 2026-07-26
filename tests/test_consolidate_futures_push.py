@@ -176,6 +176,47 @@ def test_bracket_map_close_position_flag_and_sl_only():
     assert build_bracket_map(orders) == {"BTCUSDT": {"slPrice": 105000.0, "tpPrice": None}}
 
 
+def test_bracket_map_reads_algo_order_shape():
+    # Binance parks conditional orders under /fapi/v1/openAlgoOrders now:
+    # orderType + triggerPrice + real booleans, wrapped as {"info": row}.
+    orders = [
+        {"info": {"symbol": "BTCUSDT", "orderType": "STOP_MARKET", "side": "BUY",
+                  "reduceOnly": True, "closePosition": False, "triggerPrice": "65183.4"}},
+        {"info": {"symbol": "BTCUSDT", "orderType": "TAKE_PROFIT_MARKET", "side": "BUY",
+                  "reduceOnly": True, "closePosition": False, "triggerPrice": "62293.5"}},
+    ]
+    assert build_bracket_map(orders) == {
+        "BTCUSDT": {"slPrice": 65183.4, "tpPrice": 62293.5}}
+
+
+def test_bracket_map_side_filter_drops_orphans_from_closed_trades():
+    # Live position is SHORT (reduce side BUY). Orphaned SELL brackets from an
+    # old LONG keep resting on the algo endpoint — they must not overwrite the
+    # live bracket's prices.
+    orders = [
+        {"info": {"symbol": "BTCUSDT", "orderType": "STOP_MARKET", "side": "BUY",
+                  "reduceOnly": True, "triggerPrice": "65183.4"}},
+        {"info": {"symbol": "BTCUSDT", "orderType": "TAKE_PROFIT_MARKET", "side": "BUY",
+                  "reduceOnly": True, "triggerPrice": "62293.5"}},
+        # orphan TP from a closed long (plus its 98 reprotect spam copies)
+        {"info": {"symbol": "BTCUSDT", "orderType": "TAKE_PROFIT_MARKET", "side": "SELL",
+                  "reduceOnly": True, "triggerPrice": "67945.6"}},
+        # orphan SL from an older closed long
+        {"info": {"symbol": "BTCUSDT", "orderType": "STOP_MARKET", "side": "SELL",
+                  "reduceOnly": True, "triggerPrice": "63527.2"}},
+    ]
+    assert build_bracket_map(orders, reduce_sides={"BTCUSDT": "BUY"}) == {
+        "BTCUSDT": {"slPrice": 65183.4, "tpPrice": 62293.5}}
+
+
+def test_bracket_map_no_side_filter_when_side_unknown():
+    # No reduce_sides entry for the symbol → behave as before (keep all).
+    orders = [{"info": {"symbol": "ETHUSDT", "orderType": "STOP_MARKET", "side": "SELL",
+                        "reduceOnly": True, "triggerPrice": "3000"}}]
+    assert build_bracket_map(orders, reduce_sides={"BTCUSDT": "BUY"}) == {
+        "ETHUSDT": {"slPrice": 3000.0, "tpPrice": None}}
+
+
 def test_bracket_map_skips_non_reduce_only_and_zero_stop():
     orders = [
         {"info": {"symbol": "BTCUSDT", "type": "STOP_MARKET",

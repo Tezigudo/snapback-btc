@@ -11,6 +11,7 @@ READ-ONLY BY CONSTRUCTION. This module only calls GET endpoints:
   - ex.fetch_balance({"type": "future"})   → /fapi/v3/account (balances)
   - ex.fetch_positions()                   → /fapi/v2/positionRisk (open pos)
   - ex.fetch_open_orders()                 → /fapi/v1/openOrders (resting SL/TP)
+  - ex.fapiPrivateGetOpenAlgoOrders()      → /fapi/v1/openAlgoOrders (conditional SL/TP)
   - ex.fapiPrivateGetIncome(...)           → /fapi/v1/income (realized/funding/fees)
   - ex.fapiPrivateGetSymbolConfig()        → /fapi/v1/symbolConfig (leverage setting)
 It NEVER places, cancels, or modifies orders. It does not import or touch the
@@ -78,17 +79,27 @@ def build_account_payload(balance_info: dict[str, Any]) -> dict[str, float]:
     }
 
 
-def build_bracket_map(orders: list[dict[str, Any]]) -> dict[str, dict[str, float | None]]:
-    """Map ccxt fetch_open_orders() → {symbol: {"slPrice", "tpPrice"}}.
+def build_bracket_map(
+    orders: list[dict[str, Any]],
+    reduce_sides: dict[str, str] | None = None,
+) -> dict[str, dict[str, float | None]]:
+    """Map open trigger orders → {symbol: {"slPrice", "tpPrice"}}.
 
-    Keeps only reduce-only (or closePosition) STOP_MARKET / TAKE_PROFIT_MARKET
-    orders and reads their trigger `stopPrice` — the resting bracket that will
-    close the position. STOP* → SL, TAKE_PROFIT* → TP. Matched to a position by
-    symbol only (one position per symbol per account, so side need not match).
-    Non-reduce-only working orders (e.g. an unfilled LIMIT entry) are ignored.
-    If a symbol has multiple SL (or TP) trigger orders, the last one seen wins —
-    snapback places a single bracket per side, so this collision isn't expected.
+    Accepts BOTH shapes: ccxt fetch_open_orders() rows (type/stopPrice) and raw
+    /fapi/v1/openAlgoOrders rows wrapped as {"info": row} (orderType/
+    triggerPrice) — Binance migrated conditional orders to the algo system, so
+    resting SL/TP no longer appear in /fapi/v1/openOrders at all (the same
+    blind spot that broke the bot's reprotect loop on 2026-07-22).
+
+    Keeps only reduce-only (or closePosition) STOP* / TAKE_PROFIT* orders.
+    `reduce_sides` ({symbol: "BUY"|"SELL"}, from the live position's sign)
+    keeps only orders whose side can actually reduce the CURRENT position —
+    load-bearing on the algo endpoint, where orphaned brackets from closed
+    trades keep resting (their side matches the OLD position, so this filter
+    drops them instead of letting them overwrite the live bracket's prices).
+    If a symbol has multiple surviving SL (or TP) orders, the last one wins.
     """
+    reduce_sides = reduce_sides or {}
     out: dict[str, dict[str, float | None]] = {}
     for o in orders:
         info = o.get("info") or {}
@@ -101,8 +112,14 @@ def build_bracket_map(orders: list[dict[str, Any]]) -> dict[str, dict[str, float
         )
         if not reduce_only:
             continue
-        otype = str(info.get("type") or info.get("origType") or o.get("type") or "").upper()
-        stop = _f(info.get("stopPrice") or o.get("stopPrice") or o.get("triggerPrice"))
+        want_side = reduce_sides.get(symbol)
+        side = str(info.get("side") or o.get("side") or "").upper()
+        if want_side and side and side != want_side:
+            continue
+        otype = str(info.get("type") or info.get("origType")
+                    or info.get("orderType") or o.get("type") or "").upper()
+        stop = _f(info.get("stopPrice") or info.get("triggerPrice")
+                  or o.get("stopPrice") or o.get("triggerPrice"))
         if stop <= 0:
             continue
         entry = out.setdefault(symbol, {"slPrice": None, "tpPrice": None})
@@ -312,24 +329,39 @@ def _collect_one_account(income_days: int) -> dict[str, Any]:
     balance = ex.fetch_balance({"type": "future"})
     account = build_account_payload(balance.get("info") or {})
 
-    # Resting bracket orders (SL/TP). Best-effort: if the open-orders read
-    # fails we must NOT let this push overwrite the last-known SL/TP with null
-    # (the orders are still resting on the exchange). See `bracketsKnown`.
+    raw_positions = ex.fetch_positions()
+    has_open = any(
+        abs(_f((p.get("info") or {}).get("positionAmt"))) > 0 for p in raw_positions
+    )
+    # Side that would REDUCE each open position: short → BUY, long → SELL.
+    # Feeds the bracket map's orphan filter (see build_bracket_map).
+    reduce_sides: dict[str, str] = {}
+    for p in raw_positions:
+        info = p.get("info") or {}
+        amt = _f(info.get("positionAmt"))
+        if abs(amt) > 0:
+            sym = info.get("symbol") or p.get("symbol") or ""
+            reduce_sides[sym] = "BUY" if amt < 0 else "SELL"
+
+    # Resting bracket orders (SL/TP). Two sources, both needed: plain open
+    # orders (legacy shape) AND the algo/conditional endpoint, where Binance
+    # now parks STOP_MARKET / TAKE_PROFIT_MARKET triggers. Best-effort: if the
+    # reads fail we must NOT let this push overwrite the last-known SL/TP with
+    # null (the orders are still resting on the exchange). See `bracketsKnown`.
     try:
         # ccxt (binanceusdm) refuses fetch_open_orders() with no symbol by
         # default — it raises to flag the stricter (40x) rate-limit weight.
         # Acknowledge it: hourly cron, few symbols, negligible weight.
         ex.options["warnOnFetchOpenOrdersWithoutSymbol"] = False
-        brackets = build_bracket_map(ex.fetch_open_orders())
+        trigger_orders = list(ex.fetch_open_orders())
+        trigger_orders += [{"info": r} for r in ex.fapiPrivateGetOpenAlgoOrders()]
+        brackets = build_bracket_map(trigger_orders, reduce_sides)
         brackets_known = True
     except Exception as e:  # noqa: BLE001 — any ccxt/network error, keep pushing
-        log.warning("fetch_open_orders failed (%s) — preserving prior SL/TP this push", e)
+        log.warning("open-orders read failed (%s) — preserving prior SL/TP this push", e)
         brackets, brackets_known = {}, False
-    raw_positions = ex.fetch_positions()
     # Only bother with the symbolConfig call when there's a position to label.
-    leverages = fetch_symbol_leverages(ex) if any(
-        abs(_f((p.get("info") or {}).get("positionAmt"))) > 0 for p in raw_positions
-    ) else {}
+    leverages = fetch_symbol_leverages(ex) if has_open else {}
     positions = build_position_payloads(raw_positions, brackets, leverages)
 
     start_ms = int(time.time() * 1000) - income_days * 86_400_000
