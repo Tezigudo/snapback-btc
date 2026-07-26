@@ -12,6 +12,7 @@ READ-ONLY BY CONSTRUCTION. This module only calls GET endpoints:
   - ex.fetch_positions()                   → /fapi/v2/positionRisk (open pos)
   - ex.fetch_open_orders()                 → /fapi/v1/openOrders (resting SL/TP)
   - ex.fapiPrivateGetIncome(...)           → /fapi/v1/income (realized/funding/fees)
+  - ex.fapiPrivateGetSymbolConfig()        → /fapi/v1/symbolConfig (leverage setting)
 It NEVER places, cancels, or modifies orders. It does not import or touch the
 trading loop. Run by cron, hourly. Fire-and-forget: any failure is logged and
 the bot is entirely unaffected (this is a separate process from bot.py).
@@ -115,6 +116,7 @@ def build_bracket_map(orders: list[dict[str, Any]]) -> dict[str, dict[str, float
 def build_position_payloads(
     positions: list[dict[str, Any]],
     brackets: dict[str, dict[str, float | None]] | None = None,
+    leverages: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """Map ccxt fetch_positions() → ingest shape. Skips flat positions.
 
@@ -123,8 +125,15 @@ def build_position_payloads(
     `brackets` (from build_bracket_map) merges each symbol's resting SL/TP;
     absent when the open-orders fetch was skipped or failed → slPrice/tpPrice
     are None, which the server stores as NULL.
+
+    `leverages` (from fetch_symbol_leverages) supplies the configured leverage
+    per raw symbol: Binance's /fapi/v3 position payload dropped the `leverage`
+    field entirely, so without it every position rendered as "0×". When the map
+    is absent too, leverage is DERIVED from |notional| / positionInitialMargin
+    (exact in cross mode: initial margin = notional / leverage by definition).
     """
     brackets = brackets or {}
+    leverages = leverages or {}
     out: list[dict[str, Any]] = []
     for p in positions:
         info = p.get("info") or {}
@@ -134,6 +143,19 @@ def build_position_payloads(
         liq = _f(info.get("liquidationPrice") or p.get("liquidationPrice"))
         symbol = info.get("symbol") or p.get("symbol") or ""
         b = brackets.get(symbol) or {}
+        # Margin actually tied up by this position: isolated wallet when the
+        # position is isolated, else the cross-mode initial margin.
+        iso = _f(info.get("isolatedWallet"))
+        pos_im = _f(info.get("positionInitialMargin") or info.get("initialMargin"))
+        margin = iso if iso > 0 else pos_im
+        lev = _f(info.get("leverage") or p.get("leverage") or 0)
+        if lev <= 0:
+            lev = _f(leverages.get(symbol))
+        if lev <= 0 and margin > 0:
+            notional = abs(_f(info.get("notional")))
+            if notional <= 0:
+                notional = abs(amt) * _f(info.get("markPrice") or p.get("markPrice"))
+            lev = round(notional / margin, 1)
         out.append({
             "symbol": symbol,
             "positionSide": info.get("positionSide") or "BOTH",
@@ -142,11 +164,29 @@ def build_position_payloads(
             "markPrice": _f(info.get("markPrice") or p.get("markPrice")),
             "unrealizedPnlUsd": _f(info.get("unRealizedProfit") or p.get("unrealizedPnl")),
             "liquidationPrice": liq if liq > 0 else None,
-            "leverage": _f(info.get("leverage") or p.get("leverage") or 0),
+            "leverage": lev,
+            "marginUsd": margin if margin > 0 else None,
             "slPrice": b.get("slPrice"),
             "tpPrice": b.get("tpPrice"),
         })
     return out
+
+
+def fetch_symbol_leverages(ex: Any) -> dict[str, float]:
+    """{raw symbol → configured leverage} via GET /fapi/v1/symbolConfig.
+
+    Read-only, one call per account. Needed because Binance removed `leverage`
+    from the position payload (/fapi/v3), so the setting now lives only in the
+    per-symbol account config. Best-effort: {} on any failure — the caller then
+    falls back to deriving leverage from margin, and 0 renders as unknown.
+    """
+    try:
+        cfg = ex.fapiPrivateGetSymbolConfig()
+        return {str(r.get("symbol")): _f(r.get("leverage"))
+                for r in cfg if r.get("symbol")}
+    except Exception as e:  # noqa: BLE001 — cosmetic field, never block the push
+        log.warning("symbolConfig fetch failed (%s) — leverage will be derived", e)
+        return {}
 
 
 def build_income_payloads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -285,7 +325,12 @@ def _collect_one_account(income_days: int) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001 — any ccxt/network error, keep pushing
         log.warning("fetch_open_orders failed (%s) — preserving prior SL/TP this push", e)
         brackets, brackets_known = {}, False
-    positions = build_position_payloads(ex.fetch_positions(), brackets)
+    raw_positions = ex.fetch_positions()
+    # Only bother with the symbolConfig call when there's a position to label.
+    leverages = fetch_symbol_leverages(ex) if any(
+        abs(_f((p.get("info") or {}).get("positionAmt"))) > 0 for p in raw_positions
+    ) else {}
+    positions = build_position_payloads(raw_positions, brackets, leverages)
 
     start_ms = int(time.time() * 1000) - income_days * 86_400_000
     income = build_income_payloads(_fetch_income(ex, start_ms))
