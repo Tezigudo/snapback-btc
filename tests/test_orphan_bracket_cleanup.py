@@ -198,6 +198,81 @@ class TestCancelOpenOrdersCoidPrefix:
                 for c in client.ex.cancel_order.call_args_list] == ["1", "2", "3"]
 
 
+class TestCancelAlgoOrders:
+    """The bracket sweep must ALSO clear conditional orders: Binance parks
+    STOP_MARKET/TAKE_PROFIT_MARKET triggers under /fapi/v1/openAlgoOrders,
+    invisible to fetch_open_orders — a plain-only sweep orphans the surviving
+    bracket sibling (found live on v1's account 2026-07-26)."""
+
+    def _client(self, algo_rows: list, plain_orders: list | None = None) -> BinanceClient:
+        mc_ex = MagicMock()
+        mc_ex.fetch_open_orders.return_value = plain_orders or []
+        mc_ex.market.return_value = {"id": "BTCUSDT"}
+        mc_ex.fapiPrivateGetOpenAlgoOrders.return_value = algo_rows
+        return BinanceClient(ex=mc_ex, env="testnet", coid_prefix="snap-v1-")
+
+    def test_algo_orders_swept_with_coid_scoping(self):
+        rows = [
+            {"algoId": "111", "clientAlgoId": "snap-v1-1234-s"},   # ours → cancel
+            {"algoId": "222", "clientAlgoId": "snap-d3-1234-s"},   # other leg → skip
+            {"algoId": "333", "clientAlgoId": "x-cvBPrNm9abc"},    # ccxt default → skip
+            {"algoId": "444"},                                     # no coid → skip
+        ]
+        client = self._client(rows)
+        n = client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-")
+        assert n == 1
+        client.ex.fapiPrivateDeleteAlgoOrder.assert_called_once_with(
+            {"symbol": "BTCUSDT", "algoId": "111"})
+
+    def test_counts_combine_plain_and_algo(self):
+        plain = [{"id": "9", "clientOrderId": "snap-v1-aaa-s"}]
+        algo = [{"algoId": "111", "clientAlgoId": "snap-v1-aaa-t"}]
+        client = self._client(algo, plain_orders=plain)
+        assert client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-") == 2
+
+    def test_no_prefix_cancels_all_algo_orders(self):
+        rows = [
+            {"algoId": "111", "clientAlgoId": "snap-v1-1234-s"},
+            {"algoId": "222", "clientAlgoId": "x-cvBPrNm9abc"},
+        ]
+        client = self._client(rows)
+        assert client.cancel_open_orders("BTC/USDT:USDT") == 2
+
+    def test_algo_fetch_failure_does_not_block_plain_sweep(self):
+        plain = [{"id": "9", "clientOrderId": "snap-v1-aaa-s"}]
+        client = self._client([], plain_orders=plain)
+        client.ex.fapiPrivateGetOpenAlgoOrders.side_effect = Exception("boom")
+        assert client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-") == 1
+
+    def test_partial_algo_cancel_failure_is_non_fatal(self):
+        rows = [
+            {"algoId": "111", "clientAlgoId": "snap-v1-a-s"},
+            {"algoId": "222", "clientAlgoId": "snap-v1-b-s"},
+            {"algoId": "333", "clientAlgoId": "snap-v1-c-t"},
+        ]
+        client = self._client(rows)
+        client.ex.fapiPrivateDeleteAlgoOrder.side_effect = [
+            None, Exception("rejected"), None]
+        assert client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-") == 2
+
+    def test_market_id_fallback_when_markets_not_loaded(self):
+        rows = [{"algoId": "111", "clientAlgoId": "snap-v1-a-s"}]
+        client = self._client(rows)
+        client.ex.market.side_effect = Exception("markets not loaded")
+        n = client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-")
+        assert n == 1
+        client.ex.fapiPrivateGetOpenAlgoOrders.assert_called_once_with(
+            {"symbol": "BTCUSDT"})
+
+    def test_missing_algo_endpoints_degrade_to_plain_only(self):
+        # Old ccxt without the algo endpoints: spec-limited mock has no such attrs.
+        mc_ex = MagicMock(spec=["fetch_open_orders", "cancel_order", "market"])
+        mc_ex.fetch_open_orders.return_value = [
+            {"id": "9", "clientOrderId": "snap-v1-aaa-s"}]
+        client = BinanceClient(ex=mc_ex, env="testnet", coid_prefix="snap-v1-")
+        assert client.cancel_open_orders("BTC/USDT:USDT", coid_prefix="snap-v1-") == 1
+
+
 # ---------------------------------------------------------------------------
 # 2. _detect_bracket_exit: sweep on open->flat transition
 # ---------------------------------------------------------------------------

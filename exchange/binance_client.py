@@ -6,7 +6,7 @@ Provides the small surface area the bot loop needs:
   - fetch_funding_rate(symbol)
   - fetch_equity_usdt()
   - fetch_position(symbol)
-  - cancel_open_orders(symbol)
+  - cancel_open_orders(symbol)   # plain + algo/conditional (openAlgoOrders)
   - market_order_with_bracket(symbol, side, qty, sl, tp)
   - close_position(symbol)
 
@@ -217,15 +217,28 @@ class BinanceClient:
     # --- order management ---------------------------------------------------
     def cancel_open_orders(self, symbol: str,
                            coid_prefix: str | None = None) -> int:
-        """Cancel open orders for `symbol`.
+        """Cancel open orders for `symbol` — plain AND algo/conditional.
 
-        When `coid_prefix` is given, only orders whose clientOrderId starts
-        with that prefix are cancelled — manual orders and orders from other
-        bot legs are left untouched.  When `coid_prefix` is None, all open
-        orders for the symbol are cancelled (backward-compatible behaviour).
+        When `coid_prefix` is given, only orders whose clientOrderId (or
+        clientAlgoId) starts with that prefix are cancelled — manual orders and
+        orders from other bot legs are left untouched.  When `coid_prefix` is
+        None, all open orders for the symbol are cancelled.
 
-        Returns the count of orders actually cancelled.
+        Two sweeps, independently fault-isolated: Binance migrated conditional
+        orders (STOP_MARKET / TAKE_PROFIT_MARKET triggers — i.e. our brackets)
+        to the algo system, where they rest under /fapi/v1/openAlgoOrders and
+        are INVISIBLE to /fapi/v1/openOrders. A plain-only sweep therefore sees
+        nothing to cancel and silently leaves the surviving bracket sibling
+        orphaned — the blind spot that broke the reprotect loop on 2026-07-22
+        and re-orphaned brackets on the live v1 account (found 2026-07-26).
+
+        Returns the count of orders actually cancelled (both kinds).
         """
+        n = self._cancel_plain_orders(symbol, coid_prefix)
+        n += self._cancel_algo_orders(symbol, coid_prefix)
+        return n
+
+    def _cancel_plain_orders(self, symbol: str, coid_prefix: str | None) -> int:
         try:
             orders = self.ex.fetch_open_orders(symbol=symbol)
         except Exception as e:
@@ -247,6 +260,45 @@ class BinanceClient:
                 n += 1
             except Exception as e:
                 log.warning("cancel_order %s failed: %s", o.get("id"), e)
+        return n
+
+    def _cancel_algo_orders(self, symbol: str, coid_prefix: str | None) -> int:
+        """Sweep resting algo/conditional trigger orders (raw fapi endpoints).
+
+        The raw endpoint speaks exchange ids ("BTCUSDT"), not ccxt symbols, and
+        the client order id lives in `clientAlgoId`. Missing endpoint (old ccxt)
+        degrades to a no-op with a warning rather than breaking the sweep.
+        """
+        fetch = getattr(self.ex, "fapiPrivateGetOpenAlgoOrders", None)
+        cancel = getattr(self.ex, "fapiPrivateDeleteAlgoOrder", None)
+        if fetch is None or cancel is None:
+            log.warning("ccxt build lacks algo-order endpoints — "
+                        "conditional brackets cannot be swept")
+            return 0
+        try:
+            market_id = self.ex.market(symbol)["id"]
+        except Exception:
+            # "BTC/USDT:USDT" -> "BTCUSDT" (markets not loaded yet, e.g. boot)
+            market_id = symbol.split(":")[0].replace("/", "")
+        try:
+            rows = fetch({"symbol": market_id})
+        except Exception as e:
+            log.warning("openAlgoOrders fetch failed: %s", e)
+            return 0
+        if not isinstance(rows, list):
+            # Unexpected payload shape (or a bare mock in tests) — nothing to do.
+            return 0
+        n = 0
+        for r in rows:
+            if coid_prefix is not None:
+                coid = r.get("clientAlgoId")
+                if not isinstance(coid, str) or not coid.startswith(coid_prefix):
+                    continue
+            try:
+                cancel({"symbol": market_id, "algoId": r["algoId"]})
+                n += 1
+            except Exception as e:
+                log.warning("cancel algo order %s failed: %s", r.get("algoId"), e)
         return n
 
     def set_leverage(self, symbol: str, leverage: int) -> None:
