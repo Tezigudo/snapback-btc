@@ -83,6 +83,52 @@ def test_position_falls_back_to_unified_fields():
     assert out[0]["unrealizedPnlUsd"] == 1.0
 
 
+def test_position_leverage_from_symbol_config_map():
+    # Binance /fapi/v3 dropped `leverage` from the position payload — the
+    # symbolConfig map is now the normal source.
+    positions = [{"info": {
+        "symbol": "BTCUSDT", "positionAmt": "-0.005", "entryPrice": "64220.10",
+        "markPrice": "64499.50", "unRealizedProfit": "-1.40",
+        "positionInitialMargin": "64.52", "isolatedWallet": "0",
+        "notional": "-322.62",
+    }}]
+    out = build_position_payloads(positions, leverages={"BTCUSDT": 5.0})
+    assert out[0]["leverage"] == 5.0
+    assert out[0]["marginUsd"] == 64.52
+
+
+def test_position_leverage_derived_from_margin_when_config_absent():
+    # symbolConfig unavailable → |notional| / positionInitialMargin (exact in
+    # cross mode) rather than a lying 0×.
+    positions = [{"info": {
+        "symbol": "BTCUSDT", "positionAmt": "-0.005", "entryPrice": "64220.10",
+        "markPrice": "64499.50", "positionInitialMargin": "64.52380129",
+        "isolatedWallet": "0", "notional": "-322.61900644",
+    }}]
+    out = build_position_payloads(positions)
+    assert out[0]["leverage"] == 5.0
+    assert round(out[0]["marginUsd"], 2) == 64.52
+
+
+def test_position_isolated_wallet_wins_as_margin():
+    positions = [{"info": {
+        "symbol": "SOLUSDT", "positionAmt": "1.0", "entryPrice": "74.0",
+        "markPrice": "74.5", "positionInitialMargin": "14.90",
+        "isolatedWallet": "20.00", "notional": "74.5",
+    }}]
+    out = build_position_payloads(positions)
+    assert out[0]["marginUsd"] == 20.00
+
+
+def test_position_margin_null_and_leverage_zero_when_unknowable():
+    # No margin fields at all (defensive: never invent numbers).
+    positions = [{"info": {"symbol": "ETHUSDT", "positionAmt": "1.0",
+                           "entryPrice": "3000", "markPrice": "3010"}}]
+    out = build_position_payloads(positions)
+    assert out[0]["marginUsd"] is None
+    assert out[0]["leverage"] == 0.0
+
+
 def test_income_payloads_map_and_preserve_time():
     rows = [
         {"tranId": 9001, "symbol": "BTCUSDT", "incomeType": "REALIZED_PNL",
