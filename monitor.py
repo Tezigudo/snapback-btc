@@ -63,15 +63,16 @@ DEFAULTS: dict[str, Any] = {
 LEGS: list[dict[str, str]] = [
     {"name": "v1",         "heartbeat": "heartbeat",            "log": "bot.jsonl",        "state": "state.db",            "systemd": "snapback-btc",                   "live": True},
     {"name": "donchian",   "heartbeat": "heartbeat_donchian",   "log": "donchian.jsonl",   "state": "state_donchian.db",   "systemd": "snapback-btc-donchian",          "live": True},   # real-money since 2026-07-02
-    {"name": "sol_supertrend", "heartbeat": "heartbeat_sol_supertrend", "log": "sol_supertrend.jsonl", "state": "state_sol_supertrend.db", "systemd": "snapback-sol-supertrend", "live": False},  # deployed 2026-07-25, DRY_RUN=1 until God flips it
+    {"name": "sol_supertrend", "heartbeat": "heartbeat_sol_supertrend", "log": "sol_supertrend.jsonl", "state": "state_sol_supertrend.db", "systemd": "snapback-sol-supertrend", "live": True},  # real-money since 2026-07-27 (God's go)
     # cnh_short retired 2026-07-12 (archive/cnh_short_retired_20260712). Its
     # permanent DOWN/STALE alerts every 5 min were failing sends that kept the
     # MailerSend account paused for "high API error rate" — do not re-add a
     # leg here unless its systemd unit actually runs.
     #
-    # sol_supertrend is safe to list because its unit IS enabled and running.
-    # `live: False` reflects DRY_RUN=1 — flip it to True at the same time as
-    # DRY_RUN=0 in .env.sol_supertrend so real-money checks apply.
+    # sol_supertrend flipped to real money 2026-07-27 (DRY_RUN=0 in
+    # .env.sol_supertrend on the droplet); `live: True` keeps the equity-drop
+    # and error checks armed. Keep both flags in sync if it ever goes back to
+    # dry-run.
 ]
 
 
