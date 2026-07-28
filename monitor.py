@@ -8,8 +8,11 @@ Checks (per leg):
   4. systemd unit state (active vs failed)
 
 State persistence:
-  data/monitor_state.json — last seen log offsets per leg, last alert ts per kind.
-  Prevents duplicate alerts every 5 min for the same condition.
+  data/monitor_state.json — last seen log offsets per leg, last alert ts per
+  kind, and the last equity band (ok/warn/alert) per leg.
+  Prevents duplicate alerts every 5 min for the same condition. Event-style
+  checks are rate-limited by cooldown; the equity check fires only when its
+  band changes (see _check_equity).
 
 Email alerts via alerts.send_alert(). NO LLM calls.
 
@@ -58,6 +61,10 @@ DEFAULTS: dict[str, Any] = {
     "error_alert":                True,  # any ERROR-level log line → alert
     "nan_4h_gate_alert":          True,  # any mtf_4h_gate_nan event → alert
     "alert_cooldown_min":         30,    # don't re-alert same kind within 30 min
+    # Equity alerts fire on BAND TRANSITIONS, not on a cooldown (see
+    # _check_equity). The severe band still repeats this often so a sustained
+    # drawdown can't go silent.
+    "equity_alert_reminder_hours": 24,
 }
 
 LEGS: list[dict[str, str]] = [
@@ -138,16 +145,23 @@ def _stamp_alert(state: dict[str, Any], kind: str) -> None:
     state["alerts"][kind] = dt.datetime.now(tz=dt.timezone.utc).isoformat()
 
 
-def _emit(subject: str, body: str, state: dict[str, Any], kind: str, cooldown_min: int) -> None:
-    if not _can_alert(state, kind, cooldown_min):
+def _emit(subject: str, body: str, state: dict[str, Any], kind: str,
+          cooldown_min: int, force: bool = False) -> bool:
+    """Send an alert unless it is within its cooldown. Returns True if sent.
+
+    `force` bypasses the cooldown — used by the equity band checks, which are
+    already rate-limited by only firing on state transitions.
+    """
+    if not force and not _can_alert(state, kind, cooldown_min):
         log.info("monitor: %s within cooldown, suppressing", kind)
-        return
+        return False
     full = f"{body}\n\n--\nGenerated {_now_ict()} by monitor.py"
     sent = send_alert(subject, full, tag="snapback-monitor")
     if sent:
         _stamp_alert(state, kind)
     else:
         log.warning("monitor: alert send failed for %s", kind)
+    return bool(sent)
 
 
 def _heartbeat_age_s(path: Path) -> int | None:
@@ -323,22 +337,83 @@ def _check_leg(leg: dict[str, str], cfg: dict[str, Any], state: dict[str, Any]) 
 
     # 4. equity check (LIVE only — for DRY legs, balance changes are paper)
     if leg.get("live") and db_path.exists():
-        cur, anchor = _equity_from_db(db_path)
-        if cur is not None and anchor is not None and anchor > 0:
-            drop_pct = (1 - cur / anchor) * 100
-            if drop_pct >= float(cfg["equity_drop_alert_pct"]):
-                _emit(
-                    f"EQUITY DROP {drop_pct:.1f}%: {name}",
-                    f"Equity ${cur:.2f} vs anchor ${anchor:.2f} = -{drop_pct:.2f}%. "
-                    f"Bot kill switch flattens at -35.5% from principal. Investigate immediately.",
-                    state, kind=f"equity_alert:{name}", cooldown_min=cooldown,
-                )
-            elif drop_pct >= float(cfg["equity_drop_warn_pct"]):
-                _emit(
-                    f"EQUITY WARN {drop_pct:.1f}%: {name}",
-                    f"Equity ${cur:.2f} vs anchor ${anchor:.2f} = -{drop_pct:.2f}%.",
-                    state, kind=f"equity_warn:{name}", cooldown_min=cooldown,
-                )
+        _check_equity(name, db_path, cfg, state)
+
+
+def _equity_band(drop_pct: float, cfg: dict[str, Any]) -> str:
+    """Classify a drawdown-from-anchor into ok / warn / alert."""
+    if drop_pct >= float(cfg["equity_drop_alert_pct"]):
+        return "alert"
+    if drop_pct >= float(cfg["equity_drop_warn_pct"]):
+        return "warn"
+    return "ok"
+
+
+def _check_equity(name: str, db_path: Path, cfg: dict[str, Any],
+                  state: dict[str, Any]) -> None:
+    """Alert on equity-band TRANSITIONS rather than every tick the band holds.
+
+    Equity-vs-anchor is a state, not an event. The previous version re-emitted
+    on the 30-min cooldown for as long as the condition persisted — v1 sat 6.3%
+    below its anchor for 30 hours and sent 52 identical warns, which is how a
+    real alert gets buried. Behaviour now:
+
+      - crossing into warn/alert emits once,
+      - holding that band is silent, except `alert` repeats every
+        `equity_alert_reminder_hours` so a sustained drawdown can't go quiet,
+      - returning to ok emits a recovery notice,
+      - a non-ok band seen with no prior history still emits, so a problem that
+        already exists at deploy time is never silently swallowed.
+
+    The band is committed only after a successful send, so an SMTP failure is
+    retried on the next tick instead of being lost.
+    """
+    cur, anchor = _equity_from_db(db_path)
+    if cur is None or anchor is None or anchor <= 0:
+        return
+    drop_pct = (1 - cur / anchor) * 100
+    band = _equity_band(drop_pct, cfg)
+    bands = state.setdefault("equity_bands", {})
+    prev = bands.get(name)
+    position = f"Equity ${cur:.2f} vs anchor ${anchor:.2f} = -{drop_pct:.2f}%."
+
+    if band == prev:
+        if band == "alert":
+            _emit(
+                f"EQUITY DROP {drop_pct:.1f}%: {name} (ongoing)",
+                f"{position} Still past the {cfg['equity_drop_alert_pct']}% alert line. "
+                f"Bot kill switch flattens at -35.5% from principal.",
+                state, kind=f"equity_alert:{name}",
+                cooldown_min=int(float(cfg["equity_alert_reminder_hours"]) * 60),
+            )
+        return
+
+    if band == "ok":
+        if prev is None:
+            bands[name] = band  # healthy and nothing to compare against
+            return
+        sent = _emit(
+            f"EQUITY RECOVERED: {name}",
+            f"{position} Back inside the {cfg['equity_drop_warn_pct']}% warn threshold.",
+            state, kind=f"equity_ok:{name}", cooldown_min=0, force=True,
+        )
+    elif band == "alert":
+        sent = _emit(
+            f"EQUITY DROP {drop_pct:.1f}%: {name}",
+            f"{position} Bot kill switch flattens at -35.5% from principal. "
+            f"Investigate immediately.",
+            state, kind=f"equity_alert:{name}", cooldown_min=0, force=True,
+        )
+    else:
+        origin = ("improving — was past the alert line" if prev == "alert"
+                  else "newly below the warn line")
+        sent = _emit(
+            f"EQUITY WARN {drop_pct:.1f}%: {name}",
+            f"{position} ({origin}) No further warns unless this changes band.",
+            state, kind=f"equity_warn:{name}", cooldown_min=0, force=True,
+        )
+    if sent:
+        bands[name] = band
 
 
 def main() -> int:
