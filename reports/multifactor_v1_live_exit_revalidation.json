@@ -1,0 +1,687 @@
+{
+  "strategy": "multifactor-v1 (deployed config) \u2014 exit-model comparison",
+  "exit_models": {
+    "as_validated": "DayTradeMultiFactorBTC \u2014 TP/SL + time stop + adverse EMA200 exit",
+    "as_live_runs": "LiveExitMultiFactorBTC \u2014 TP/SL + time stop ONLY (bot.py behaviour)"
+  },
+  "deployed_overrides": {
+    "rsi_period": 14,
+    "rsi_long_threshold": 35.0,
+    "rsi_short_threshold": 70.0,
+    "volume_ma_period": 20,
+    "volume_multiple": 1.5,
+    "mf_trend_ema_period": 200,
+    "require_trend": true,
+    "require_candlestick": false,
+    "require_macd": false,
+    "require_funding_not_extreme": true,
+    "funding_extreme_threshold": 0.0015,
+    "sl_pct": 0.015,
+    "tp_pct": 0.03,
+    "max_hold_bars": 1344,
+    "risk_per_trade_pct": 3.5,
+    "leverage": 20,
+    "allow_shorts": true,
+    "use_mtf_4h_gate": true,
+    "mtf_4h_ema_period": 200,
+    "mtf_4h_parquet_path": "/Users/god/Desktop/work/snapback-btc/data/historical/BTC_USDT_USDT_4h.parquet"
+  },
+  "commission_note": "5 bps per side unless stated (cost_stress varies it)",
+  "oos_5_windows": {
+    "as_validated": {
+      "compounded_pct": 162.8259,
+      "windows_positive": "5/5",
+      "n_trades": 143,
+      "per_window": {
+        "2022H1": {
+          "trades": 20,
+          "return_pct": 19.71,
+          "max_dd_pct": -11.44,
+          "win_rate_pct": 35.0
+        },
+        "2023H1": {
+          "trades": 35,
+          "return_pct": 39.54,
+          "max_dd_pct": -17.37,
+          "win_rate_pct": 40.0
+        },
+        "2024H1": {
+          "trades": 22,
+          "return_pct": 20.6,
+          "max_dd_pct": -10.14,
+          "win_rate_pct": 40.9
+        },
+        "2024H2": {
+          "trades": 42,
+          "return_pct": 20.74,
+          "max_dd_pct": -21.66,
+          "win_rate_pct": 26.2
+        },
+        "2025H1": {
+          "trades": 24,
+          "return_pct": 8.05,
+          "max_dd_pct": -11.49,
+          "win_rate_pct": 37.5
+        }
+      },
+      "psr_wf": 0.982,
+      "interpretation": "evidence_of_edge"
+    },
+    "as_live_runs": {
+      "compounded_pct": 135.4544,
+      "windows_positive": "3/5",
+      "n_trades": 136,
+      "per_window": {
+        "2022H1": {
+          "trades": 19,
+          "return_pct": 22.9,
+          "max_dd_pct": -14.83,
+          "win_rate_pct": 47.4
+        },
+        "2023H1": {
+          "trades": 35,
+          "return_pct": 38.18,
+          "max_dd_pct": -23.45,
+          "win_rate_pct": 45.7
+        },
+        "2024H1": {
+          "trades": 22,
+          "return_pct": -10.43,
+          "max_dd_pct": -19.43,
+          "win_rate_pct": 31.8
+        },
+        "2024H2": {
+          "trades": 39,
+          "return_pct": 61.0,
+          "max_dd_pct": -22.31,
+          "win_rate_pct": 48.7
+        },
+        "2025H1": {
+          "trades": 21,
+          "return_pct": -3.86,
+          "max_dd_pct": -15.24,
+          "win_rate_pct": 33.3
+        }
+      },
+      "psr_wf": 0.9415,
+      "interpretation": "insufficient_evidence"
+    }
+  },
+  "walk_forward_quarterly": {
+    "as_validated": {
+      "quarters": [
+        {
+          "q": "2020Q1",
+          "trades": 15,
+          "return_pct": -2.77,
+          "max_dd_pct": -14.74
+        },
+        {
+          "q": "2020Q2",
+          "trades": 20,
+          "return_pct": 32.22,
+          "max_dd_pct": -12.19
+        },
+        {
+          "q": "2020Q3",
+          "trades": 15,
+          "return_pct": -4.7,
+          "max_dd_pct": -15.41
+        },
+        {
+          "q": "2020Q4",
+          "trades": 23,
+          "return_pct": 10.13,
+          "max_dd_pct": -16.04
+        },
+        {
+          "q": "2021Q1",
+          "trades": 17,
+          "return_pct": 12.54,
+          "max_dd_pct": -13.5
+        },
+        {
+          "q": "2021Q2",
+          "trades": 10,
+          "return_pct": -3.8,
+          "max_dd_pct": -13.29
+        },
+        {
+          "q": "2021Q3",
+          "trades": 15,
+          "return_pct": 8.3,
+          "max_dd_pct": -15.54
+        },
+        {
+          "q": "2021Q4",
+          "trades": 15,
+          "return_pct": -2.0,
+          "max_dd_pct": -22.56
+        },
+        {
+          "q": "2022Q1",
+          "trades": 16,
+          "return_pct": 10.76,
+          "max_dd_pct": -10.91
+        },
+        {
+          "q": "2022Q2",
+          "trades": 4,
+          "return_pct": 8.1,
+          "max_dd_pct": -6.39
+        },
+        {
+          "q": "2022Q3",
+          "trades": 8,
+          "return_pct": -0.85,
+          "max_dd_pct": -10.5
+        },
+        {
+          "q": "2022Q4",
+          "trades": 10,
+          "return_pct": -5.81,
+          "max_dd_pct": -12.34
+        },
+        {
+          "q": "2023Q1",
+          "trades": 20,
+          "return_pct": 15.76,
+          "max_dd_pct": -17.37
+        },
+        {
+          "q": "2023Q2",
+          "trades": 15,
+          "return_pct": 20.39,
+          "max_dd_pct": -14.06
+        },
+        {
+          "q": "2023Q3",
+          "trades": 9,
+          "return_pct": -10.89,
+          "max_dd_pct": -11.43
+        },
+        {
+          "q": "2023Q4",
+          "trades": 20,
+          "return_pct": 6.75,
+          "max_dd_pct": -12.14
+        },
+        {
+          "q": "2024Q1",
+          "trades": 12,
+          "return_pct": 11.73,
+          "max_dd_pct": -10.14
+        },
+        {
+          "q": "2024Q2",
+          "trades": 10,
+          "return_pct": 7.83,
+          "max_dd_pct": -7.17
+        },
+        {
+          "q": "2024Q3",
+          "trades": 18,
+          "return_pct": -16.77,
+          "max_dd_pct": -19.8
+        },
+        {
+          "q": "2024Q4",
+          "trades": 24,
+          "return_pct": 45.45,
+          "max_dd_pct": -12.48
+        },
+        {
+          "q": "2025Q1",
+          "trades": 12,
+          "return_pct": 1.87,
+          "max_dd_pct": -11.49
+        },
+        {
+          "q": "2025Q2",
+          "trades": 12,
+          "return_pct": 5.97,
+          "max_dd_pct": -8.51
+        },
+        {
+          "q": "2025Q3",
+          "trades": 11,
+          "return_pct": -5.99,
+          "max_dd_pct": -13.22
+        },
+        {
+          "q": "2025Q4",
+          "trades": 8,
+          "return_pct": 7.58,
+          "max_dd_pct": -10.25
+        },
+        {
+          "q": "2026Q1",
+          "trades": 11,
+          "return_pct": 5.01,
+          "max_dd_pct": -8.39
+        },
+        {
+          "q": "2026Q2",
+          "trades": 10,
+          "return_pct": -0.79,
+          "max_dd_pct": -13.38
+        }
+      ],
+      "n_quarters": 26,
+      "n_sufficient": 26,
+      "n_positive_sufficient": 16,
+      "pct_positive_sufficient": 61.5,
+      "gate_70pct": false,
+      "worst_quarter": {
+        "q": "2024Q3",
+        "trades": 18,
+        "return_pct": -16.77,
+        "max_dd_pct": -19.8
+      }
+    },
+    "as_live_runs": {
+      "quarters": [
+        {
+          "q": "2020Q1",
+          "trades": 14,
+          "return_pct": 34.37,
+          "max_dd_pct": -11.72
+        },
+        {
+          "q": "2020Q2",
+          "trades": 20,
+          "return_pct": 31.45,
+          "max_dd_pct": -14.43
+        },
+        {
+          "q": "2020Q3",
+          "trades": 11,
+          "return_pct": -0.45,
+          "max_dd_pct": -13.74
+        },
+        {
+          "q": "2020Q4",
+          "trades": 21,
+          "return_pct": 22.72,
+          "max_dd_pct": -17.73
+        },
+        {
+          "q": "2021Q1",
+          "trades": 16,
+          "return_pct": 37.84,
+          "max_dd_pct": -15.83
+        },
+        {
+          "q": "2021Q2",
+          "trades": 10,
+          "return_pct": 3.34,
+          "max_dd_pct": -16.04
+        },
+        {
+          "q": "2021Q3",
+          "trades": 15,
+          "return_pct": 16.47,
+          "max_dd_pct": -10.62
+        },
+        {
+          "q": "2021Q4",
+          "trades": 15,
+          "return_pct": -14.18,
+          "max_dd_pct": -35.4
+        },
+        {
+          "q": "2022Q1",
+          "trades": 15,
+          "return_pct": 16.44,
+          "max_dd_pct": -14.13
+        },
+        {
+          "q": "2022Q2",
+          "trades": 4,
+          "return_pct": 5.61,
+          "max_dd_pct": -8.5
+        },
+        {
+          "q": "2022Q3",
+          "trades": 8,
+          "return_pct": 0.61,
+          "max_dd_pct": -8.09
+        },
+        {
+          "q": "2022Q4",
+          "trades": 9,
+          "return_pct": 2.88,
+          "max_dd_pct": -15.52
+        },
+        {
+          "q": "2023Q1",
+          "trades": 20,
+          "return_pct": 18.54,
+          "max_dd_pct": -23.45
+        },
+        {
+          "q": "2023Q2",
+          "trades": 15,
+          "return_pct": 16.64,
+          "max_dd_pct": -15.41
+        },
+        {
+          "q": "2023Q3",
+          "trades": 9,
+          "return_pct": -17.1,
+          "max_dd_pct": -18.99
+        },
+        {
+          "q": "2023Q4",
+          "trades": 20,
+          "return_pct": 18.42,
+          "max_dd_pct": -16.85
+        },
+        {
+          "q": "2024Q1",
+          "trades": 12,
+          "return_pct": -4.06,
+          "max_dd_pct": -16.4
+        },
+        {
+          "q": "2024Q2",
+          "trades": 10,
+          "return_pct": -6.59,
+          "max_dd_pct": -13.71
+        },
+        {
+          "q": "2024Q3",
+          "trades": 17,
+          "return_pct": -11.78,
+          "max_dd_pct": -22.31
+        },
+        {
+          "q": "2024Q4",
+          "trades": 22,
+          "return_pct": 82.7,
+          "max_dd_pct": -10.96
+        },
+        {
+          "q": "2025Q1",
+          "trades": 12,
+          "return_pct": -3.95,
+          "max_dd_pct": -15.24
+        },
+        {
+          "q": "2025Q2",
+          "trades": 9,
+          "return_pct": 0.08,
+          "max_dd_pct": -14.21
+        },
+        {
+          "q": "2025Q3",
+          "trades": 10,
+          "return_pct": -20.35,
+          "max_dd_pct": -24.47
+        },
+        {
+          "q": "2025Q4",
+          "trades": 8,
+          "return_pct": 0.75,
+          "max_dd_pct": -18.74
+        },
+        {
+          "q": "2026Q1",
+          "trades": 11,
+          "return_pct": -10.12,
+          "max_dd_pct": -12.43
+        },
+        {
+          "q": "2026Q2",
+          "trades": 9,
+          "return_pct": 18.83,
+          "max_dd_pct": -11.75
+        }
+      ],
+      "n_quarters": 26,
+      "n_sufficient": 26,
+      "n_positive_sufficient": 17,
+      "pct_positive_sufficient": 65.4,
+      "gate_70pct": false,
+      "worst_quarter": {
+        "q": "2025Q3",
+        "trades": 10,
+        "return_pct": -20.35,
+        "max_dd_pct": -24.47
+      }
+    }
+  },
+  "walk_forward_control_original_method": {
+    "method": "rolling 90-day test windows, quarterly advance, 2020-01-01..2026-02-28 (no train phase \u2014 locked config)",
+    "n_windows": 25,
+    "reference_artifact": "reports/multifactor_v1_4h_gate_walk_forward.json = 20/25 positive (80.0%), compounded +243.8111%",
+    "old_params__as_validated": {
+      "windows_positive": "20/25",
+      "pct_positive": 80.0,
+      "gate_70pct": true,
+      "compounded_pct": 243.8118,
+      "trades": 265,
+      "per_window_return_pct": [
+        2.9623,
+        24.8836,
+        3.299,
+        8.4635,
+        8.8523,
+        -2.4743,
+        7.2486,
+        6.7678,
+        7.2358,
+        13.2329,
+        3.8442,
+        -2.838,
+        10.8459,
+        8.255,
+        5.6473,
+        8.202,
+        -3.6199,
+        1.6216,
+        -11.5811,
+        8.1046,
+        6.3336,
+        7.9244,
+        -5.2145,
+        12.5351,
+        1.9372
+      ]
+    },
+    "deployed_params__as_validated": {
+      "windows_positive": "19/25",
+      "pct_positive": 76.0,
+      "gate_70pct": true,
+      "compounded_pct": 412.6785,
+      "trades": 343,
+      "per_window_return_pct": [
+        -2.7666,
+        32.2159,
+        -4.7006,
+        14.5968,
+        24.9423,
+        -6.4284,
+        8.3005,
+        5.5067,
+        6.9027,
+        13.9082,
+        2.9698,
+        -8.1759,
+        10.867,
+        10.3524,
+        4.9223,
+        10.2446,
+        1.1494,
+        15.2671,
+        -15.6893,
+        33.5238,
+        6.7738,
+        8.4313,
+        -6.1107,
+        15.3751,
+        1.9163
+      ]
+    },
+    "deployed_params__as_live_runs": {
+      "windows_positive": "16/25",
+      "pct_positive": 64.0,
+      "gate_70pct": false,
+      "compounded_pct": 601.2425,
+      "trades": 326,
+      "per_window_return_pct": [
+        34.3715,
+        31.4495,
+        -0.454,
+        27.7551,
+        41.7341,
+        10.4497,
+        16.4678,
+        -4.9791,
+        2.406,
+        8.5315,
+        4.4927,
+        -9.2651,
+        8.0685,
+        16.5376,
+        -3.1802,
+        26.5438,
+        -7.2086,
+        -7.4439,
+        -13.4833,
+        63.454,
+        8.8229,
+        1.4195,
+        -12.1064,
+        -6.5811,
+        0.6891
+      ]
+    },
+    "old_params__as_live_runs": {
+      "windows_positive": "19/25",
+      "pct_positive": 76.0,
+      "gate_70pct": true,
+      "compounded_pct": 425.0789,
+      "trades": 252,
+      "per_window_return_pct": [
+        21.9614,
+        25.5698,
+        9.2033,
+        20.1261,
+        7.4474,
+        15.7261,
+        14.0905,
+        3.114,
+        10.7077,
+        6.9094,
+        6.7766,
+        -4.3956,
+        10.0142,
+        13.2176,
+        3.5595,
+        20.7563,
+        -9.8045,
+        -4.3423,
+        -14.7577,
+        21.5439,
+        13.6712,
+        4.4903,
+        -7.0211,
+        0.6426,
+        -4.445
+      ]
+    },
+    "harness_reproduces_artifact": true
+  },
+  "cost_stress_live_exit": {
+    "5bps": {
+      "compounded_pct": 135.4544,
+      "windows_positive": "3/5",
+      "n_trades": 136,
+      "psr_wf": 0.9415,
+      "interpretation": "insufficient_evidence"
+    },
+    "10bps": {
+      "compounded_pct": 72.6227,
+      "windows_positive": "3/5",
+      "n_trades": 136,
+      "psr_wf": 0.8651,
+      "interpretation": "insufficient_evidence"
+    },
+    "15bps": {
+      "compounded_pct": 25.7658,
+      "windows_positive": "3/5",
+      "n_trades": 136,
+      "psr_wf": 0.7223,
+      "interpretation": "insufficient_evidence"
+    }
+  },
+  "full_period": {
+    "as_validated": {
+      "return_pct": 381.27,
+      "return_pct_net_funding": 354.44,
+      "funding_cost_usdt": 268347.0,
+      "funding_events": 415,
+      "trades": 368,
+      "win_rate_pct": 30.2,
+      "profit_factor": 1.397,
+      "sharpe": 0.746,
+      "max_dd_pct_peak_to_trough": -24.84,
+      "median_hold_days": 0.182,
+      "worst_start_anchored_dd_pct": -24.84,
+      "worst_deploy_date": "2024-05-21",
+      "pct_of_start_dates_breaching_floor": 0.0,
+      "kill_switch_breached": false,
+      "worst_start_anchored_dd_if_deployed_2025plus": -16.14,
+      "equity_return_pct_by_year": {
+        "2020": 34.4,
+        "2021": 43.7,
+        "2022": 11.9,
+        "2023": 31.3,
+        "2024": 46.7,
+        "2025": 16.4,
+        "2026": 0.6
+      }
+    },
+    "as_live_runs": {
+      "return_pct": 639.81,
+      "return_pct_net_funding": 557.59,
+      "funding_cost_usdt": 822162.0,
+      "funding_events": 918,
+      "trades": 350,
+      "win_rate_pct": 42.3,
+      "profit_factor": 1.328,
+      "sharpe": 0.679,
+      "max_dd_pct_peak_to_trough": -38.35,
+      "median_hold_days": 0.484,
+      "worst_start_anchored_dd_pct": -38.35,
+      "worst_deploy_date": "2023-12-09",
+      "pct_of_start_dates_breaching_floor": 0.41,
+      "kill_switch_breached": true,
+      "worst_start_anchored_dd_if_deployed_2025plus": -37.44,
+      "equity_return_pct_by_year": {
+        "2020": 109.7,
+        "2021": 79.2,
+        "2022": 27.6,
+        "2023": 29.4,
+        "2024": 44.8,
+        "2025": -21.3,
+        "2026": 5.8
+      }
+    }
+  },
+  "gates_live_exit_model": {
+    "harness_reproduces_signed_off_artifact": true,
+    "oos_compounded_positive": true,
+    "oos_psr_evidence_of_edge": false,
+    "walk_forward_70pct": false,
+    "cost_stress_15bps_positive": true,
+    "kill_switch_respected": false
+  },
+  "verdict": "FAILS_REVALIDATION",
+  "gates_failed": [
+    "oos_psr_evidence_of_edge",
+    "walk_forward_70pct",
+    "kill_switch_respected"
+  ]
+}

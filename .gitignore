@@ -69,3 +69,7 @@ reports/*.csv
 # SOL leg search train caches — regenerable, ~9MB
 reports/sol_search_train/
 reports/sol_leg_return_search_train.json
+
+# Scaled-price parquet scratch written by the revalidation harnesses —
+# regenerable from data/historical/, ~4MB
+reports/_tmp/
