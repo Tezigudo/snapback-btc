@@ -26,7 +26,8 @@ import traceback
 from collections import Counter
 from pathlib import Path
 
-from alerts import send_alert, is_configured
+from alerts import is_configured, send_alert
+
 # Equity comes from the SAME reader the 5-minute monitor uses, deliberately.
 # This file used to scrape `current=(\d+)` out of the last 24h of a leg's
 # jsonl; the bot stopped logging that token, so cur_equity was always None,
@@ -69,7 +70,7 @@ def _now_ict() -> dt.datetime:
 
 
 def _yesterday_utc() -> dt.datetime:
-    return dt.datetime.now(tz=dt.timezone.utc) - dt.timedelta(hours=24)
+    return dt.datetime.now(tz=dt.UTC) - dt.timedelta(hours=24)
 
 
 def _read_log_lines(p: Path, since_utc: dt.datetime) -> list[dict]:
@@ -135,7 +136,7 @@ def _summarize_leg(leg: dict) -> dict:
         "top_block_reasons": top_block_reasons,
         "nan_4h_count": nan_count,
         "heartbeat_loglines": hb_lines,
-        "heartbeat_mtime_age_s": int((dt.datetime.now().timestamp() - hb_path.stat().st_mtime)) if hb_path.exists() else None,
+        "heartbeat_mtime_age_s": int(dt.datetime.now().timestamp() - hb_path.stat().st_mtime) if hb_path.exists() else None,
         "anchor_equity": anchor_equity,
         "current_equity": cur_equity,
     }
@@ -177,7 +178,7 @@ def main() -> int:
 
     now = _now_ict()
     body_lines = [
-        f"# snapback-btc daily digest",
+        "# snapback-btc daily digest",
         f"_generated {now.strftime('%Y-%m-%d %H:%M ICT')} • 24h window_",
         "",
     ]
