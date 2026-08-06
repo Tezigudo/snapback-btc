@@ -76,11 +76,33 @@ def _pivots(series: np.ndarray, lbL: int, lbR: int, low: bool) -> np.ndarray:
     return out
 
 
-def divergences(df: pd.DataFrame, osc: pd.Series) -> tuple[pd.Series, pd.Series]:
-    """(bull, bear) booleans indexed like df, fired at pivot + LB_R.
+def divergences(
+    df: pd.DataFrame,
+    osc: pd.Series,
+    lb_l: int = LB_L,
+    lb_r: int = LB_R,
+    range_lower: int = RANGE_LOWER,
+    range_upper: int = RANGE_UPPER,
+) -> tuple[pd.Series, pd.Series]:
+    """(bull, bear) booleans indexed like df, fired at pivot + lb_r.
 
-    The +LB_R shift is the confirmation lag and is NOT optional: the pivot is
-    unknowable until LB_R bars later, so firing at the pivot bar is lookahead.
+    The +lb_r shift is the confirmation lag and is NOT optional: the pivot is
+    unknowable until lb_r bars later, so firing at the pivot bar is lookahead.
+
+    Parameters default to TradingView's built-in values and should normally stay
+    there -- the point of this module is fidelity to the detector Cutter Trade
+    actually runs. They are exposed for SENSITIVITY ANALYSIS only. Treat any
+    improvement found by tuning them as a multiple-comparisons artifact until it
+    survives the usual walk-forward/OOS gates: the headline verdict already
+    searched 3 variants x 3 horizons and topped out at z=+1.80 on n=6, so a
+    parameter sweep will find "edge" that is not there.
+
+    KNOWN EDGE CASE (measured, deliberately not "fixed"): _pivots() marks a bar
+    when it ties the window min/max, so a perfectly flat oscillator run would
+    mark several adjacent bars. Measured on BTC 4h/1D/1W: ZERO adjacent pivots,
+    and only 2/1/3 exact consecutive RSI ties across thousands of bars. Adding
+    tie-breaking would change a port that is validated against his real chart
+    output, for no measurable gain.
     """
     o = osc.to_numpy(dtype=float)
     lo = df["low"].to_numpy(dtype=float)
@@ -94,7 +116,7 @@ def divergences(df: pd.DataFrame, osc: pd.Series) -> tuple[pd.Series, pd.Series]
         (True, lo, bull, lambda a, b: a > b),      # bullish: osc higher low
         (False, hi, bear, lambda a, b: a < b),     # bearish: osc lower high
     ):
-        piv = _pivots(o, LB_L, LB_R, low=is_low)
+        piv = _pivots(o, lb_l, lb_r, low=is_low)
         prev = None
         for i in range(n):
             if not piv[i]:
@@ -102,8 +124,8 @@ def divergences(df: pd.DataFrame, osc: pd.Series) -> tuple[pd.Series, pd.Series]
             if prev is not None:
                 gap = i - prev
                 price_div = arr[i] < arr[prev] if is_low else arr[i] > arr[prev]
-                if RANGE_LOWER <= gap <= RANGE_UPPER and cmp_osc(o[i], o[prev]) and price_div:
-                    fire = i + LB_R
+                if range_lower <= gap <= range_upper and cmp_osc(o[i], o[prev]) and price_div:
+                    fire = i + lb_r
                     if fire < n:
                         out[fire] = True
             prev = i
