@@ -10,6 +10,8 @@ st_line telemetry was added; the entry caller was updated, this one was not, so
 `direction, atr_s = _st_frame(...)` raised ValueError on EVERY call.
 `bot._maybe_channel_exit` catches broadly and logs a WARNING, so the leg ran in
 production with its flip exit silently dead, protected only by SL/TP.
+`_st_frame` now returns a NamedTuple read by field, so widening it again cannot
+break a caller the same way.
 
 `tools/supertrend_parity.py` does exercise this function, but it's a tool — the
 suite never runs it, so nothing failed. Hence these tests.
@@ -21,7 +23,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from strategy.live_supertrend import _cfg, _st_frame, _warmup_bars, flip_exit_signal
+from strategy.live_supertrend import (
+    StFrame,
+    _cfg,
+    _st_frame,
+    _warmup_bars,
+    flip_exit_signal,
+)
 
 PARAMS = {"strategy": {"st_period": 14, "st_multiplier": 3.5,
                        "st_atr_period": 14, "allow_shorts": True}}
@@ -45,17 +53,27 @@ def _trend_bars(n: int, start: float, step: float) -> pd.DataFrame:
 
 
 def _direction(bars: pd.DataFrame) -> float:
-    return float(_st_frame(bars, _cfg(PARAMS))[0].iloc[-1])
+    return float(_st_frame(bars, _cfg(PARAMS)).direction.iloc[-1])
 
 
 class TestStFrameContract:
-    """The arity that broke the exit. Pin it so widening _st_frame again
-    can't silently break a caller."""
+    """The shape that broke the exit. _st_frame is now a NamedTuple so callers
+    read by field and a future widening can't break them — but the fields
+    themselves are load-bearing, so pin those."""
 
-    def test_returns_three_series(self) -> None:
+    def test_is_a_named_frame_with_all_three_series(self) -> None:
         out = _st_frame(_trend_bars(80, 100.0, 1.0), _cfg(PARAMS))
-        assert len(out) == 3
-        assert all(isinstance(s, pd.Series) for s in out)
+        assert isinstance(out, StFrame)
+        for name in ("direction", "atr", "line"):
+            assert isinstance(getattr(out, name), pd.Series), name
+
+    def test_fields_are_not_interchangeable(self) -> None:
+        # Guards against a swapped construction: direction is ±1, the line is a
+        # price, ATR is a small positive spread.
+        out = _st_frame(_trend_bars(80, 100.0, 1.0), _cfg(PARAMS))
+        assert set(np.unique(out.direction.dropna())) <= {-1.0, 1.0}
+        assert out.atr.dropna().iloc[-1] > 0
+        assert out.line.dropna().iloc[-1] > out.atr.dropna().iloc[-1]
 
 
 class TestFlipExitSignal:
@@ -113,7 +131,7 @@ class TestFlipExitSignal:
     def test_st_line_agrees_with_st_frame(self) -> None:
         bars = _trend_bars(80, 100.0, 1.0)
         _, dbg = flip_exit_signal(bars, "long", PARAMS)
-        expected = float(_st_frame(bars, _cfg(PARAMS))[2].iloc[-1])
+        expected = float(_st_frame(bars, _cfg(PARAMS)).line.iloc[-1])
         assert dbg["st_line"] == pytest.approx(expected)
 
     def test_st_line_sits_below_price_in_an_uptrend(self) -> None:

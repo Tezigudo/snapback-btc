@@ -38,6 +38,8 @@ Parity notes
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 import pandas as pd
 
@@ -65,19 +67,34 @@ def _cfg(params: dict) -> dict:
     }
 
 
-def _st_frame(bars: pd.DataFrame, c: dict) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """Return (STDir, ATR, STLine) computed the same way attach_supertrend does.
+class StFrame(NamedTuple):
+    """Supertrend series computed the same way attach_supertrend does.
 
-    STLine is the trailing band itself. It is not needed for the entry decision
-    (the flip is read off STDir) but it IS the number a human needs: it is the
-    price level that has to be crossed for the next flip, so the dashboard can
-    say "needs +4.1%" instead of only "direction is -1".
+    NAMED, not a bare tuple, on purpose. This started as a 2-tuple; adding
+    `line` silently broke `flip_exit_signal`'s `direction, atr = _st_frame(...)`
+    — a ValueError swallowed by the caller's except-block, which took the leg's
+    flip exit out of service unnoticed. Read fields by NAME so widening this
+    again can't break a call site.
+
+    line is the trailing band itself. The entry decision doesn't need it (the
+    flip is read off direction) but it IS the number a human needs: the price
+    level that has to be crossed for the next flip, so the dashboard can say
+    "needs +4.1%" instead of only "direction is -1".
     """
+
+    direction: pd.Series
+    atr: pd.Series
+    line: pd.Series
+
+
+def _st_frame(bars: pd.DataFrame, c: dict) -> StFrame:
     st = supertrend(bars["High"], bars["Low"], bars["Close"],
                     period=c["period"], multiplier=c["multiplier"])
-    return (st["direction"],
-            atr(bars["High"], bars["Low"], bars["Close"], c["atr_period"]),
-            st["supertrend"])
+    return StFrame(
+        direction=st["direction"],
+        atr=atr(bars["High"], bars["Low"], bars["Close"], c["atr_period"]),
+        line=st["supertrend"],
+    )
 
 
 def _bars_since_flip(direction: pd.Series, max_lookback: int = 500) -> int | None:
@@ -125,12 +142,12 @@ def evaluate_signal_supertrend(
         return None, float("nan"), float("nan"), {
             "reason": "warmup", "have": len(bars_4h), "need": need}
 
-    direction, atr_s, st_line_s = _st_frame(bars_4h, c)
-    dir_now = float(direction.iloc[-1]) if np.isfinite(direction.iloc[-1]) else float("nan")
-    dir_prev = float(direction.iloc[-2]) if np.isfinite(direction.iloc[-2]) else float("nan")
-    atr_v = float(atr_s.iloc[-1])
+    st = _st_frame(bars_4h, c)
+    dir_now = float(st.direction.iloc[-1]) if np.isfinite(st.direction.iloc[-1]) else float("nan")
+    dir_prev = float(st.direction.iloc[-2]) if np.isfinite(st.direction.iloc[-2]) else float("nan")
+    atr_v = float(st.atr.iloc[-1])
     cur_close = float(bars_4h["Close"].iloc[-1])
-    st_line = float(st_line_s.iloc[-1]) if np.isfinite(st_line_s.iloc[-1]) else float("nan")
+    st_line = float(st.line.iloc[-1]) if np.isfinite(st.line.iloc[-1]) else float("nan")
 
     debug = {
         "cur_close": cur_close, "atr": atr_v,
@@ -147,7 +164,7 @@ def evaluate_signal_supertrend(
         # directly as "how wide the stop will be".
         "atr_pct": (atr_v / cur_close * 100.0
                     if np.isfinite(atr_v) and cur_close > 0 else None),
-        "bars_since_flip": _bars_since_flip(direction),
+        "bars_since_flip": _bars_since_flip(st.direction),
         "st_period": c["period"], "st_multiplier": c["multiplier"],
         "sl_atr": c["sl_atr"], "tp_atr": c["tp_atr"],
         "allow_shorts": c["allow_shorts"],
@@ -216,20 +233,17 @@ def flip_exit_signal(
     if len(bars_4h) < need:
         return False, {"reason": "warmup", "have": len(bars_4h), "need": need}
 
-    # _st_frame returns THREE series (STDir, ATR, STLine). Unpacking two here
-    # raised ValueError on every call, and bot._maybe_channel_exit swallows it
-    # as a WARNING — so the supertrend leg's flip exit never once ran in live
-    # trading. It stayed invisible because the leg's OTHER bug (max_hold_bars=0
-    # time-stopping every entry within seconds) meant a position never survived
-    # long enough for this check to be reached with one open.
-    direction, atr_s, st_line_s = _st_frame(bars_4h, c)
-    dir_now = direction.iloc[-1]
-    st_line_now = st_line_s.iloc[-1]
+    # Read StFrame BY FIELD — unpacking this as a 2-tuple is what silently took
+    # this exit out of service (see StFrame's docstring).
+    st = _st_frame(bars_4h, c)
+    dir_now = st.direction.iloc[-1]
+    st_line_now = st.line.iloc[-1]
+    atr_now = st.atr.iloc[-1]
     cur_close = float(bars_4h["Close"].iloc[-1])
     dbg = {
         "cur_close": cur_close,
         "st_dir": float(dir_now) if np.isfinite(dir_now) else None,
-        "atr": float(atr_s.iloc[-1]) if np.isfinite(atr_s.iloc[-1]) else None,
+        "atr": float(atr_now) if np.isfinite(atr_now) else None,
         # The level price must cross to flip — the same number the entry path
         # and the dashboard report, so an exit decision can be read against it.
         "st_line": float(st_line_now) if np.isfinite(st_line_now) else None,
