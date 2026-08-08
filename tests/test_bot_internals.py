@@ -15,7 +15,11 @@ from bot_internals import (
     evaluate_for_strategy,
     limit_entry_price,
     resolve_strategy_name,
+    time_stop_due,
 )
+
+H4_S = 4 * 3600
+M15_S = 15 * 60
 
 
 class TestResolveStrategyName:
@@ -35,6 +39,51 @@ class TestResolveStrategyName:
 
     def test_passthrough_v3(self) -> None:
         assert resolve_strategy_name({"strategy_name": "v3-all-wider-4"}) == "v3-all-wider-4"
+
+
+class TestTimeStopDue:
+    """Regression cover for the 2026-08-08 sol_supertrend incident: the leg
+    entered LONG 1.2 SOL @ 75.63 and was time-stopped 7 seconds later because
+    max_hold_bars=0 was read as "close after zero bars" rather than "no time
+    stop". This path had no test at all, which is how it reached real money."""
+
+    def test_zero_means_disabled_not_immediate(self) -> None:
+        # THE incident: a position 7s old, config says 0.
+        assert time_stop_due(0, H4_S, age_s=7.0) is False
+
+    def test_zero_stays_disabled_however_old(self) -> None:
+        # Not merely "not yet due" — never due, at any age.
+        assert time_stop_due(0, H4_S, age_s=365 * 86400.0) is False
+
+    def test_negative_also_disabled(self) -> None:
+        assert time_stop_due(-1, H4_S, age_s=1e9) is False
+
+    def test_not_due_before_window(self) -> None:
+        # donchian: 48 × 4h = 8 days.
+        assert time_stop_due(48, H4_S, age_s=7 * 86400.0) is False
+
+    def test_due_at_exact_boundary(self) -> None:
+        assert time_stop_due(48, H4_S, age_s=48 * H4_S) is True
+
+    def test_due_past_window(self) -> None:
+        assert time_stop_due(48, H4_S, age_s=48 * H4_S + 1) is True
+
+    def test_bar_seconds_scales_the_window(self) -> None:
+        """max_hold_bars counts ENTRY-TF bars. The same 48 bars is 8 days on a
+        4h leg but only 12 hours on 15m — a 4h leg reading 15m seconds would
+        time-stop 16x too early."""
+        age = 24 * 3600.0  # one day
+        assert time_stop_due(48, M15_S, age_s=age) is True    # 12h window
+        assert time_stop_due(48, H4_S, age_s=age) is False    # 8d window
+
+    def test_v1_window_is_fourteen_days(self) -> None:
+        # params.yaml: 1344 bars × 15m = 14 days.
+        assert time_stop_due(1344, M15_S, age_s=13.9 * 86400.0) is False
+        assert time_stop_due(1344, M15_S, age_s=14.1 * 86400.0) is True
+
+    def test_zero_bar_seconds_is_disabled_not_crash(self) -> None:
+        # Defensive: a bad/unparsed timeframe must not make every tick "due".
+        assert time_stop_due(48, 0, age_s=1e9) is False
 
 
 class TestLimitEntryPrice:

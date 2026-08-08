@@ -62,6 +62,7 @@ from bot_internals import (
     resolve_strategy_name,
     strategy_uses_channel_exit,
     strategy_uses_trend_exit,
+    time_stop_due,
     trend_exit_signal,
 )
 from exchange import principal, state, trade_events
@@ -235,6 +236,9 @@ class Bot:
                  instance: str = "v1") -> None:
         self.params = params
         self.symbol = params["symbol"]
+        # "SOL/USDT:USDT" -> "SOL". Alerts used to hardcode "BTC", so the
+        # sol_supertrend leg emailed "Closed long 1.2000 BTC" for a SOL trade.
+        self.base_asset = str(self.symbol).split("/")[0]
         self.strategy_name = resolve_strategy_name(params)
         self.dry_run = dry_run
         self.instance = instance
@@ -1082,7 +1086,7 @@ class Bot:
             )
             send_alert(
                 f"Bot {entry_side.upper()} exit",
-                f"{entry_side.upper()} {entry_qty:.4f} BTC closed "
+                f"{entry_side.upper()} {entry_qty:.4f} {self.base_asset} closed "
                 f"by bracket (SL or TP)\n"
                 f"Entry: {entry_price:,.2f}  Exit: {exit_price:,.2f}\n"
                 f"PnL: ${pnl:+,.2f} ({pnl_pct:+.2f}%)\n"
@@ -1093,14 +1097,14 @@ class Bot:
             self.log.warning("bracket-exit detection failed: %s", e)
 
     def _maybe_time_stop(self, equity: float) -> None:
+        # Checked BEFORE fetch_position: legs with no time stop (supertrend,
+        # donchian-v3) then cost zero API calls per tick instead of one.
+        max_hold = int((self.params.get("strategy") or {}).get("max_hold_bars", 0))
+        if max_hold <= 0:
+            return
         pos = self.client.fetch_position(self.symbol)
         if pos.side == "flat":
             return
-        max_hold = int(self.params["strategy"]["max_hold_bars"])
-        # max_hold_bars is in entry-TF bars, not 15m bars. Multiply by the
-        # entry timeframe's bar duration so 4h strategies don't time-stop 16×
-        # too early.
-        max_hold_s = max_hold * self.bar_seconds
         try:
             with sqlite3.connect(state.DB_PATH) as c:
                 row = c.execute(
@@ -1113,26 +1117,31 @@ class Bot:
             if entry_ts.tzinfo is None:
                 entry_ts = entry_ts.replace(tzinfo=UTC)
             age_s = (datetime.now(UTC) - entry_ts).total_seconds()
-            if age_s >= max_hold_s:
+            if time_stop_due(max_hold, self.bar_seconds, age_s):
                 if self.dry_run:
                     self.log.info("DRY-RUN: would time-stop close after %.1f hours", age_s / 3600)
                     return
                 root = state.latest_entry_coid_root()
                 self.log.info("Time-stop firing after %.1f hours (root=%s)",
                               age_s / 3600, root or "—")
-                self.client.close_position(self.symbol,
-                                           client_order_id_root=root, close_leg="x")
-                state.record_fill(side="close", qty=pos.qty, price=0.0,
+                order = self.client.close_position(
+                    self.symbol, client_order_id_root=root, close_leg="x")
+                exit_price = order_avg_price(order)
+                state.record_fill(side="close", qty=pos.qty,
+                                  price=float(exit_price or 0.0),
                                   reason="time_stop", equity_after=equity,
                                   client_order_id_root=root)
                 state.enqueue_bot_event(
                     "exit", signal_id=root, side=pos.side, qty=float(pos.qty),
+                    price_usd=exit_price,
                     equity_usd=float(equity),
                     payload={"reason": "time_stop", "age_h": age_s / 3600},
                 )
                 send_alert("Bot time-stop close",
-                           f"Closed {pos.side} {pos.qty:.4f} BTC after "
-                           f"{age_s/3600:.1f}h hold. Equity: {equity:.2f}\n"
+                           f"Closed {pos.side} {pos.qty:.4f} {self.base_asset} after "
+                           f"{age_s/3600:.1f}h hold"
+                           + (f" @ {exit_price:,.4f}" if exit_price else "")
+                           + f". Equity: {equity:.2f}\n"
                            f"signal_id: {root or '(untagged)'}")
         except Exception as e:
             self.log.warning("time-stop check failed: %s", e)
@@ -1180,13 +1189,16 @@ class Bot:
                           pos.side, root or "—", dbg.get("cur_close", float("nan")),
                           dbg.get("exit_lower", float("nan")),
                           dbg.get("exit_upper", float("nan")))
-            self.client.close_position(self.symbol,
-                                       client_order_id_root=root, close_leg="ce")
-            state.record_fill(side="close", qty=pos.qty, price=0.0,
+            order = self.client.close_position(
+                self.symbol, client_order_id_root=root, close_leg="ce")
+            exit_price = order_avg_price(order)
+            state.record_fill(side="close", qty=pos.qty,
+                              price=float(exit_price or 0.0),
                               reason="channel_exit", equity_after=equity,
                               client_order_id_root=root)
             state.enqueue_bot_event(
                 "exit", signal_id=root, side=pos.side, qty=float(pos.qty),
+                price_usd=exit_price,
                 equity_usd=float(equity),
                 payload={"reason": "channel_exit",
                          "cur_close": dbg.get("cur_close"),
@@ -1194,8 +1206,10 @@ class Bot:
                          "exit_upper": dbg.get("exit_upper")},
             )
             send_alert("Bot channel-exit close",
-                       f"Closed {pos.side} {pos.qty:.4f} BTC on Donchian channel "
-                       f"cross. Equity: {equity:.2f}\n"
+                       f"Closed {pos.side} {pos.qty:.4f} {self.base_asset} on Donchian "
+                       f"channel cross"
+                       + (f" @ {exit_price:,.4f}" if exit_price else "")
+                       + f". Equity: {equity:.2f}\n"
                        f"signal_id: {root or '(untagged)'}")
         except Exception as e:
             self.log.warning("channel-exit check failed: %s", e)
