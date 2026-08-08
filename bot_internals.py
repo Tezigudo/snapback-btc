@@ -463,6 +463,25 @@ def _format_waiting(missing_long: list, missing_short: list, fired: str | None) 
     return f"{long_part} | {short_part}"
 
 
+def time_stop_due(max_hold_bars: int, bar_seconds: int, age_s: float) -> bool:
+    """True when an open position has outlived its time stop.
+
+    max_hold_bars <= 0 means THERE IS NO TIME STOP — not "close after zero
+    bars". Strategies whose exit is a trend flip (supertrend, donchian-v3) set
+    it to 0 on purpose, and config/params_sol_supertrend.yaml even labels the
+    field "Unused by supertrend". Reading 0 as a due time stop made
+    `age_s >= 0` true for every position the leg could ever open: on
+    2026-08-08 the sol_supertrend leg entered LONG 1.2 SOL @ 75.63 and was
+    flattened 7 seconds later, and would have been on every subsequent entry.
+
+    max_hold_bars counts ENTRY-TF bars, not 15m bars, so the caller passes
+    bar_seconds — otherwise a 4h leg time-stops 16x too early.
+    """
+    if max_hold_bars <= 0 or bar_seconds <= 0:
+        return False
+    return age_s >= max_hold_bars * bar_seconds
+
+
 def order_avg_price(order: dict | None) -> float | None:
     """Best-effort average fill price from a ccxt order dict (market fills).
     Returns None if no positive price is present."""
