@@ -216,13 +216,23 @@ def flip_exit_signal(
     if len(bars_4h) < need:
         return False, {"reason": "warmup", "have": len(bars_4h), "need": need}
 
-    direction, atr_s = _st_frame(bars_4h, c)
+    # _st_frame returns THREE series (STDir, ATR, STLine). Unpacking two here
+    # raised ValueError on every call, and bot._maybe_channel_exit swallows it
+    # as a WARNING — so the supertrend leg's flip exit never once ran in live
+    # trading. It stayed invisible because the leg's OTHER bug (max_hold_bars=0
+    # time-stopping every entry within seconds) meant a position never survived
+    # long enough for this check to be reached with one open.
+    direction, atr_s, st_line_s = _st_frame(bars_4h, c)
     dir_now = direction.iloc[-1]
+    st_line_now = st_line_s.iloc[-1]
     cur_close = float(bars_4h["Close"].iloc[-1])
     dbg = {
         "cur_close": cur_close,
         "st_dir": float(dir_now) if np.isfinite(dir_now) else None,
         "atr": float(atr_s.iloc[-1]) if np.isfinite(atr_s.iloc[-1]) else None,
+        # The level price must cross to flip — the same number the entry path
+        # and the dashboard report, so an exit decision can be read against it.
+        "st_line": float(st_line_now) if np.isfinite(st_line_now) else None,
         "position_side": position_side,
     }
     if not np.isfinite(dir_now):
