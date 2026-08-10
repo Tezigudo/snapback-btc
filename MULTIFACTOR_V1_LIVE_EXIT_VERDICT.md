@@ -182,6 +182,29 @@ backtest's indicator fails the test instead of silently re-opening the divergenc
 at the next bar's open; the bot closes at market as soon as it sees the triggering CLOSED
 bar. Sub-bar timing only — the decision is identical. Shared with the donchian channel exit.
 
-**Still open from the section above** (not touched here, both are tooling debt):
-`tools/multifactor_validate.py` still has no exit-parity stage, and its `LOCKED` import
-from `tools/run_mf_deepening.py` still holds the pre-2026-07 params.
+**Tooling debt CLOSED, same day.** `tools/multifactor_validate.py` grew the two things
+the section above asked for:
+
+- **stage 3 — exit parity.** Compares `next()`'s in-position branch against
+  `trend_exit_signal_multifactor_v1` bar by bar over the stage-2 window, probing a
+  hypothetical long AND short at every bar, in two shapes: `full_prefix` (algebraic,
+  gate 100%) and `rolling_1500` (the shape `bot.py` actually fetches, whose EMA is
+  seeded at the window start rather than at genesis — gate 99.5%). A `non_vacuous`
+  guard fails the stage if fewer than 10 exits fire on either side, so it cannot pass
+  by seeing nothing. **Result on 2025-04-01..06-30: 100.0000% on both shapes**,
+  3,598 long / 4,939 short exit bars over 8,537 evaluable bars — so the rolling fetch
+  window introduces ZERO decision drift on real data, not merely tolerable drift.
+- **stage 0 — params provenance.** Params now come from `config/params.yaml`, the file
+  the bot reads; `LOCKED` is imported for COMPARISON ONLY and its divergence is reported.
+  It found the three keys this verdict flagged: `volume_multiple` 2.0→1.5,
+  `funding_extreme_threshold` 0.0005→0.0015, `risk_per_trade_pct` 2.75→3.5. Stages 1–2
+  now run on the deployed config too, and keys a Strategy class can't accept are
+  reported as `deployed_keys_dropped_*` rather than silently filtered.
+
+Overall verdict on the refreshed run: **PASS** (stage 0 PASS / 1 PASS / 2 100% / 3 100%).
+
+`tests/test_multifactor_validate_wiring.py` (14 tests) pins the wiring, because the
+lesson of both this bug and the supertrend flip-exit bug is that **the suite never runs
+tools** — a checker nobody checks is how a green run stays green while the thing it
+covers is broken. Mutation-tested: reverting stage 0 to `DEPLOYED = LOCKED` fails with
+`assert 2.75 == 3.5`, and deleting the recorder's `require_trend` guard fails too.
