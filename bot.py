@@ -63,6 +63,7 @@ from bot_internals import (
     strategy_uses_channel_exit,
     strategy_uses_trend_exit,
     time_stop_due,
+    trend_exit_fill_reason,
     trend_exit_signal,
 )
 from exchange import state, trade_events
@@ -931,18 +932,28 @@ class Bot:
             self.log.warning("time-stop check failed: %s", e)
 
     def _maybe_channel_exit(self, equity: float) -> None:
-        """Donchian-v3 real exit: close an open position when the last CLOSED
-        4h bar crosses the opposite Donchian exit channel (10-bar). This is the
-        strategy's actual profit-taking mechanism — the entry places NO TP leg.
+        """The generic live trend-exit hook. Name is historical — donchian-v3
+        was the first leg to need it; three legs use it now, each with its own
+        rule (see bot_internals.trend_exit_signal):
 
-        Strategy-gated: a no-op for every other leg (v1/multifactor, cnh,
-        v3all), which keep their TP brackets and never reach this code.
+          - donchian-v3:   opposite Donchian exit-channel cross on 4h. Its ONLY
+                           profit-taking mechanism — the entry places no TP leg.
+          - supertrend:    opposite STDir flip on 4h, alongside its TP bracket.
+          - multifactor-v1: adverse 15m EMA(200) cross, alongside its TP bracket
+                           (added 2026-08-10 — see MULTIFACTOR_V1_LIVE_EXIT_VERDICT.md).
+
+        Strategy-gated: a no-op for every leg not in strategy_uses_trend_exit
+        (cnh, v3all), which keep their brackets and never reach this code.
 
         Structurally mirrors _maybe_time_stop: fetch position, evaluate, and on
         a trigger close reduce-only (COID-tagged, close_leg='ce'), record the
-        fill with reason='channel_exit', enqueue the exit event, alert. The
-        surviving SL sibling is swept by close_position's own COID-scoped
-        cancel_open_orders before the reduce-only close is placed.
+        fill, enqueue the exit event, alert. The surviving bracket sibling is
+        swept by close_position's own COID-scoped cancel_open_orders before the
+        reduce-only close is placed.
+
+        Bars are fetched on self.entry_tf, so each leg is evaluated on the
+        timeframe its own rule is defined on (4h for donchian/supertrend, 15m
+        for v1) without any per-strategy branching here.
         """
         if not strategy_uses_trend_exit(self.strategy_name):
             return
@@ -968,30 +979,35 @@ class Bot:
                               pos.side, pos.qty, dbg.get("reason"))
                 return
             root = state.latest_entry_coid_root()
-            self.log.info("Channel-exit firing: closing %s (root=%s) close=%.2f "
-                          "exit_lower=%.2f exit_upper=%.2f",
-                          pos.side, root or "—", dbg.get("cur_close", float("nan")),
-                          dbg.get("exit_lower", float("nan")),
-                          dbg.get("exit_upper", float("nan")))
+            fill_reason = trend_exit_fill_reason(self.strategy_name)
+            self.log.info("Trend-exit firing (%s): closing %s (root=%s) rule=%s "
+                          "close=%.2f dbg=%s",
+                          fill_reason, pos.side, root or "—", dbg.get("reason"),
+                          dbg.get("cur_close", float("nan")), dbg)
             order = self.client.close_position(
                 self.symbol, client_order_id_root=root, close_leg="ce")
             exit_price = order_avg_price(order)
             state.record_fill(side="close", qty=pos.qty,
                               price=float(exit_price or 0.0),
-                              reason="channel_exit", equity_after=equity,
+                              reason=fill_reason, equity_after=equity,
                               client_order_id_root=root)
             state.enqueue_bot_event(
                 "exit", signal_id=root, side=pos.side, qty=float(pos.qty),
                 price_usd=exit_price,
                 equity_usd=float(equity),
-                payload={"reason": "channel_exit",
+                # Rule-specific keys are absent per strategy (donchian has no
+                # trend_ema, v1 has no channel) — .get() yields None, which the
+                # dashboard renders as blank rather than a wrong number.
+                payload={"reason": fill_reason,
+                         "rule": dbg.get("reason"),
                          "cur_close": dbg.get("cur_close"),
                          "exit_lower": dbg.get("exit_lower"),
-                         "exit_upper": dbg.get("exit_upper")},
+                         "exit_upper": dbg.get("exit_upper"),
+                         "trend_ema": dbg.get("trend_ema")},
             )
-            send_alert("Bot channel-exit close",
-                       f"Closed {pos.side} {pos.qty:.4f} {self.base_asset} on Donchian "
-                       f"channel cross"
+            send_alert("Bot trend-exit close",
+                       f"Closed {pos.side} {pos.qty:.4f} {self.base_asset} on "
+                       f"{dbg.get('reason', 'trend exit')}"
                        + (f" @ {exit_price:,.4f}" if exit_price else "")
                        + f". Equity: {equity:.2f}\n"
                        f"signal_id: {root or '(untagged)'}")

@@ -22,7 +22,7 @@ from strategy.live_donchian_v3 import (  # noqa: F401  (channel_exit_signal re-e
     channel_exit_signal,
     evaluate_signal_donchian_v3,
 )
-from strategy.live_multifactor_v1 import evaluate_signal
+from strategy.live_multifactor_v1 import evaluate_signal, trend_exit_signal_multifactor_v1
 from strategy.live_supertrend import evaluate_signal_supertrend, flip_exit_signal
 from strategy.live_v3all_wider4 import evaluate_signal_v3all_wider4
 
@@ -47,11 +47,16 @@ def strategy_uses_trend_exit(strategy_name: str) -> bool:
     - donchian-v3: Donchian channel cross — its ONLY profit-taking mechanism.
     - supertrend: opposite STDir flip, which closes the position even though a
       TP bracket also exists. Both exits are live at once.
+    - multifactor-v1: adverse 15m EMA(200) cross, gated on `require_trend`.
+      Added 2026-08-10 — every v1 sign-off measured the model WITH this exit,
+      but it had never run live. See MULTIFACTOR_V1_LIVE_EXIT_VERDICT.md and
+      strategy.live_multifactor_v1.trend_exit_signal_multifactor_v1.
 
     Kept separate from `strategy_uses_channel_exit` so donchian's TP-omission
     behaviour is unchanged by adding a leg that needs the hook but keeps its TP.
+    v1, like supertrend, KEEPS its TP bracket — it is deliberately absent there.
     """
-    return strategy_name in ("donchian-v3", "supertrend")
+    return strategy_name in ("donchian-v3", "supertrend", "multifactor-v1")
 
 
 def trend_exit_signal(
@@ -67,7 +72,23 @@ def trend_exit_signal(
     """
     if strategy_name == "supertrend":
         return flip_exit_signal(bars, position_side, params)
+    if strategy_name == "multifactor-v1":
+        return trend_exit_signal_multifactor_v1(bars, position_side, params)
     return channel_exit_signal(bars, position_side, params)
+
+
+def trend_exit_fill_reason(strategy_name: str) -> str:
+    """The `reason` string recorded on the fill/telemetry when the trend-exit
+    hook fires.
+
+    donchian-v3 and supertrend keep "channel_exit" — that value is already live
+    in the fills table, the consolidate dashboard and its fixtures, and renaming
+    it would orphan the history. v1's exit is a different mechanism (EMA cross,
+    not a channel), so it gets its own value rather than lying about which rule
+    closed the trade. Consumer-side `exitReason` is a pass-through string with
+    no enum validation, so a new value renders as-is.
+    """
+    return "trend_exit" if strategy_name == "multifactor-v1" else "channel_exit"
 
 
 def resolve_strategy_name(params: dict) -> str:

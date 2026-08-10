@@ -141,3 +141,47 @@ Regardless of which: `tools/multifactor_validate.py` should grow an exit-parity 
 and its `LOCKED` import from `tools/run_mf_deepening.py` is stale (vol 2.0, funding
 0.0005, risk 2.75 vs deployed 1.5 / 0.0015 / 3.5) — re-running it today validates a
 config that is not in production.
+
+---
+
+## RESOLUTION — Option 1 taken, 2026-08-10
+
+Branch `fix/v1-adverse-trend-exit`. **Code complete and tested; NOT yet deployed** —
+`boot()` flattens open positions and v1 has been LONG 0.005 @ 64,911.2 since
+2026-08-08 23:30 UTC, so the restart must wait for a flat leg.
+
+**What changed**
+
+| file | change |
+|---|---|
+| `strategy/live_multifactor_v1.py` | new `trend_exit_signal_multifactor_v1()` — the pure-function port of `next()`'s adverse-EMA branch |
+| `bot_internals.py` | `strategy_uses_trend_exit()` gains `multifactor-v1`; `trend_exit_signal()` dispatches to it; new `trend_exit_fill_reason()` |
+| `bot.py` | the trend-exit hook records the per-strategy fill reason and carries `rule`/`trend_ema` in the exit payload |
+| `config/params.yaml` | comments corrected — the kill-switch "never fires" claim and `require_trend` both described a model that wasn't running |
+| `tests/test_v1_trend_exit.py` | 24 tests, incl. bar-for-bar exit parity vs the backtest branch |
+| `tests/test_channel_exit.py` | `test_noop_for_non_donchian_strategy` was parameterised on v1 — re-pointed at legs that genuinely have no trend exit, plus a positive v1-reaches-the-hook test |
+
+Full suite: **346 tests, 0 failures, 1 pre-existing skip.**
+
+**The parity gap that hid this is now closed in the suite.** The old harness compared
+entry signal bars only; `TestTrendExitParity` compares the EXIT decision bar-for-bar
+against a reference rebuilt the way `init()` builds `_trend_ema`, so a change to the
+backtest's indicator fails the test instead of silently re-opening the divergence.
+
+**Two behaviours deliberately preserved rather than "fixed":**
+
+- A NaN close HOLDS. `next()` guards only `t`, so a NaN close falls through both strict
+  comparisons and the backtest holds too. Labelled `nan_close` for observability; the
+  behaviour is unchanged and matches.
+- donchian-v3 and supertrend keep the `channel_exit` fill reason. It is already in the
+  fills table and the consolidate fixtures; v1 gets a new `trend_exit` value instead of
+  renaming shared history. `exitReason` is a pass-through string consumer-side with no
+  enum validation, so the new value renders as-is.
+
+**Known divergence, documented not closed:** backtesting.py executes `position.close()`
+at the next bar's open; the bot closes at market as soon as it sees the triggering CLOSED
+bar. Sub-bar timing only — the decision is identical. Shared with the donchian channel exit.
+
+**Still open from the section above** (not touched here, both are tooling debt):
+`tools/multifactor_validate.py` still has no exit-parity stage, and its `LOCKED` import
+from `tools/run_mf_deepening.py` still holds the pre-2026-07 params.
