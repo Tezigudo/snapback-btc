@@ -21,13 +21,20 @@ import datetime as dt
 import json
 import logging
 import re
-import sqlite3
 import sys
 import traceback
 from collections import Counter
 from pathlib import Path
 
-from alerts import send_alert, is_configured
+from alerts import is_configured, send_alert
+
+# Equity comes from the SAME reader the 5-minute monitor uses, deliberately.
+# This file used to scrape `current=(\d+)` out of the last 24h of a leg's
+# jsonl; the bot stopped logging that token, so cur_equity was always None,
+# every digest printed "+0.00%", and the -5% flag below could never fire.
+# One reader, one definition of "current equity" — see monitor._equity_from_db
+# for why it prefers principal_anchor and the day/trade-fresh current value.
+from monitor import _equity_from_db
 
 REPO_ROOT = Path(__file__).resolve().parent
 DATA = REPO_ROOT / "data"
@@ -36,10 +43,16 @@ ICT = dt.timezone(dt.timedelta(hours=7), name="ICT")
 
 log = logging.getLogger("snapback.daily_digest")
 
+# Keep this roster in sync with monitor.LEGS — the two files are the only
+# places a leg's live/dry status is declared, and a digest that disagrees with
+# the monitor is worse than no digest. Drift found 2026-08-05: this list still
+# carried cnh_short (retired 2026-07-12), called donchian DRY (real money since
+# 2026-07-02) and had never heard of sol_supertrend (real money since
+# 2026-07-27), so the daily mail described a book that no longer existed.
 LEGS = [
-    {"name": "v1",        "log": "bot.jsonl",       "state": "state.db",            "heartbeat": "heartbeat",            "live": True,  "anchor_label": "deploy_start_equity"},
-    {"name": "donchian",  "log": "donchian.jsonl",  "state": "state_donchian.db",   "heartbeat": "heartbeat_donchian",   "live": False, "anchor_label": "deploy_start_equity"},
-    {"name": "cnh_short", "log": "cnh_short.jsonl", "state": "state_cnh_short.db",  "heartbeat": "heartbeat_cnh_short",  "live": False, "anchor_label": "deploy_start_equity"},
+    {"name": "v1",             "log": "bot.jsonl",            "state": "state.db",                "heartbeat": "heartbeat",                "live": True},
+    {"name": "donchian",       "log": "donchian.jsonl",       "state": "state_donchian.db",       "heartbeat": "heartbeat_donchian",       "live": True},   # real money since 2026-07-02
+    {"name": "sol_supertrend", "log": "sol_supertrend.jsonl", "state": "state_sol_supertrend.db", "heartbeat": "heartbeat_sol_supertrend", "live": True},   # real money since 2026-07-27
 ]
 
 
@@ -57,7 +70,7 @@ def _now_ict() -> dt.datetime:
 
 
 def _yesterday_utc() -> dt.datetime:
-    return dt.datetime.now(tz=dt.timezone.utc) - dt.timedelta(hours=24)
+    return dt.datetime.now(tz=dt.UTC) - dt.timedelta(hours=24)
 
 
 def _read_log_lines(p: Path, since_utc: dt.datetime) -> list[dict]:
@@ -108,27 +121,11 @@ def _summarize_leg(leg: dict) -> dict:
     # Heartbeat: count log lines in last 24h as proxy for uptime
     hb_lines = len([e for e in events if "heartbeat" in e.get("logger", "")])  # may be 0 if logger differs
 
-    # Equity (LIVE only): fetch anchor + try to read latest "Resuming deploy" or "current=" line
-    cur_equity = None
-    anchor_equity = None
-    try:
-        if db_path.exists():
-            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0) as conn:
-                cur = conn.execute("SELECT value FROM meta WHERE key = ?", (leg["anchor_label"],))
-                row = cur.fetchone()
-                if row:
-                    anchor_equity = float(row[0] or 0) or None
-    except sqlite3.Error as e:
-        log.warning("digest: db read failed for %s: %s", name, e)
-    # latest "current=" from log
-    for e in reversed(events):
-        m = re.search(r"current=([0-9.]+)", e.get("msg", ""))
-        if m:
-            try:
-                cur_equity = float(m.group(1))
-                break
-            except ValueError:
-                continue
+    # Equity (LIVE only). Anchor is the principal anchor the kill switch
+    # actually uses, and current is the freshest day/trade reading — both from
+    # the leg's state.db, never from log scraping.
+    cur_equity, anchor_equity = (_equity_from_db(db_path) if db_path.exists()
+                                 else (None, None))
 
     return {
         "name": name,
@@ -139,7 +136,7 @@ def _summarize_leg(leg: dict) -> dict:
         "top_block_reasons": top_block_reasons,
         "nan_4h_count": nan_count,
         "heartbeat_loglines": hb_lines,
-        "heartbeat_mtime_age_s": int((dt.datetime.now().timestamp() - hb_path.stat().st_mtime)) if hb_path.exists() else None,
+        "heartbeat_mtime_age_s": int(dt.datetime.now().timestamp() - hb_path.stat().st_mtime) if hb_path.exists() else None,
         "anchor_equity": anchor_equity,
         "current_equity": cur_equity,
     }
@@ -152,10 +149,16 @@ def _format_leg(s: dict) -> str:
     if s["heartbeat_mtime_age_s"] is not None:
         lines.append(f"- heartbeat: {s['heartbeat_mtime_age_s']}s old")
     if s["live"] and s["anchor_equity"]:
-        cur = s["current_equity"] or s["anchor_equity"]
-        delta = cur - s["anchor_equity"]
-        delta_pct = (delta / s["anchor_equity"]) * 100
-        lines.append(f"- equity: ${cur:.2f} (anchor ${s['anchor_equity']:.2f}, delta {delta:+.2f} / {delta_pct:+.2f}%)")
+        cur = s["current_equity"]
+        if cur is None:
+            # Say so rather than substituting the anchor. The old fallback
+            # rendered a fabricated "+0.00%" that was indistinguishable from a
+            # genuinely flat day, which is how this stayed broken for weeks.
+            lines.append(f"- equity: unavailable (anchor ${s['anchor_equity']:.2f})")
+        else:
+            delta = cur - s["anchor_equity"]
+            delta_pct = (delta / s["anchor_equity"]) * 100
+            lines.append(f"- equity: ${cur:.2f} (anchor ${s['anchor_equity']:.2f}, delta {delta:+.2f} / {delta_pct:+.2f}%)")
     if s["top_block_reasons"]:
         reasons = ", ".join(f"{k}×{v}" for k, v in s["top_block_reasons"])
         lines.append(f"- top gate blocks: {reasons}")
@@ -175,7 +178,7 @@ def main() -> int:
 
     now = _now_ict()
     body_lines = [
-        f"# snapback-btc daily digest",
+        "# snapback-btc daily digest",
         f"_generated {now.strftime('%Y-%m-%d %H:%M ICT')} • 24h window_",
         "",
     ]
