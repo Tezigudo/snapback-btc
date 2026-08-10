@@ -87,6 +87,11 @@ strategy:
   max_hold_bars: 1344
 
   # Required toggles for multifactor-v1
+  # Gates BOTH the entry trend filter and the adverse-trend EXIT (close when
+  # price crosses back through the 15m EMA(200)). The exit half only started
+  # running live on 2026-08-10 — before that this key was half-honoured, which
+  # is the whole subject of MULTIFACTOR_V1_LIVE_EXIT_VERDICT.md. Flipping this
+  # to false now disables both halves in live AND backtest, keeping them paired.
   require_trend: true           # close on correct side of EMA(200)
   require_candlestick: false    # disabled in production (too rare on 15m)
   require_macd: false           # disabled in production (redundant)
@@ -147,6 +152,14 @@ deploy:
   # 0.645 = -35.5% drawdown ceiling. Widened from -18% on 2026-05-23 for combined-deploy:
   # at risk 2.75% the per-leg start-anchored DD worst-case is around -22% (v1 leg, Nov 2019),
   # so -35.5% leaves ~14pp cushion. Realistic-sim verified kill never fires.
+  #
+  # ^ That claim was measured on the model WITH v1's adverse-trend exit, which
+  # the live bot did not run until 2026-08-10. While the gap was open it was
+  # FALSE for what actually ran: 0.41% of deploy dates breached -35.5%
+  # (worst -38.35%), incl. an April-2025 cluster — MULTIFACTOR_V1_LIVE_EXIT_VERDICT.md.
+  # The exit is now wired live (bot_internals.strategy_uses_trend_exit), so the
+  # claim and the running model agree again. Anchored to deploy-start equity,
+  # NOT the running peak — peak-to-trough max DD is the wrong test for it.
   kill_switch_equity_fraction: 0.645
   # Send daily status email at this UTC hour.
   daily_status_email_hour_utc: 0
