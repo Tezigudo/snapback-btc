@@ -339,13 +339,32 @@ def _big_df(rows: int = 260) -> pd.DataFrame:
 
 class TestMaybeChannelExit:
 
-    def test_noop_for_non_donchian_strategy(self):
-        bot, mc = _make_bot(strategy_name="multifactor-v1")
-        mc.reset_mock()
-        bot._maybe_channel_exit(equity=10000.0)
-        mc.fetch_position.assert_not_called()
-        mc.fetch_ohlcv.assert_not_called()
-        mc.close_position.assert_not_called()
+    def test_noop_for_a_leg_without_a_trend_exit(self):
+        """Was parameterised on multifactor-v1 until 2026-08-10, when v1 gained
+        its adverse-EMA exit (see tests/test_v1_trend_exit.py). Re-pointed at
+        legs that genuinely have no trend exit, so the no-op path stays covered
+        instead of the assertion just being deleted."""
+        for name in ("v3-all-wider-4", "cnh-hybrid-short"):
+            bot, mc = _make_bot(strategy_name=name)
+            mc.reset_mock()
+            bot._maybe_channel_exit(equity=10000.0)
+            mc.fetch_position.assert_not_called()
+            mc.fetch_ohlcv.assert_not_called()
+            mc.close_position.assert_not_called()
+
+    def test_v1_leg_also_reaches_the_exit_hook(self):
+        """v1's adverse-EMA(200) exit is the rule every v1 sign-off measured but
+        the live bot never ran. Like supertrend, v1 keeps its TP bracket AND
+        needs the hook — and it must be evaluated on v1's 15m entry timeframe,
+        not the 4h the other two trend-exit legs use."""
+        bot, mc = _make_bot(strategy_name="multifactor-v1", entry_tf="15m")
+        mc.fetch_position.return_value = _open("long")
+        mc.fetch_ohlcv.return_value = _big_df(260)
+        with patch("bot.trend_exit_signal", return_value=(False, {})) as ce:
+            bot._maybe_channel_exit(equity=10000.0)
+        ce.assert_called_once()
+        assert ce.call_args.args[0] == "multifactor-v1"
+        assert mc.fetch_ohlcv.call_args.args[1] == "15m"
 
     def test_noop_when_flat(self):
         bot, mc = _make_bot(strategy_name="donchian-v3", entry_tf="4h")

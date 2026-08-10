@@ -207,3 +207,87 @@ def evaluate_signal(
             and not funding_short_blocked and regime_short_ok):
         return "short", debug
     return None, debug
+
+
+def trend_exit_signal_multifactor_v1(
+    bars_15m: pd.DataFrame,
+    position_side: str,
+    params: dict,
+) -> tuple[bool, dict]:
+    """Should an OPEN multifactor-v1 position close on an adverse EMA(200) cross?
+
+    Byte-for-byte with `DayTradeMultiFactorBTC.next()`'s in-position branch
+    (strategy/signals_multifactor.py:317-326), which runs whenever
+    `require_trend` is true:
+
+        t = self._trend_ema[i]
+        if np.isfinite(t):
+            long  closes when close_v < t
+            short closes when close_v > t
+
+    STRICT comparisons — a close exactly AT the EMA does NOT exit. `t` is the
+    EMA on the ENTRY timeframe (15m, `mf_trend_ema_period`), NOT the 4H EMA200
+    that gates entries (`mtf_4h_ema_period`); those are different lines and
+    confusing them would exit on the wrong one.
+
+    Why this exists: every v1 sign-off measured the model WITH this exit, but
+    the live bot never ran it — `strategy_uses_trend_exit()` returned True only
+    for donchian-v3 and supertrend, so live v1 exited on SL/TP/time-stop alone.
+    The 2026-08-01 re-validation (MULTIFACTOR_V1_LIVE_EXIT_VERDICT.md) measured
+    what that gap costs: walk-forward 64% vs the 70% gate, OOS 3/5, and a
+    start-anchored drawdown that breaches the kill floor on 0.41% of deploy
+    dates where the as-validated model breaches on 0.00%. This function closes
+    the gap in the direction of the model that was actually validated.
+
+    `require_trend: false` disables the exit, exactly as it disables the branch
+    in the backtest — the two stay in lockstep off one config key.
+
+    KNOWN DIVERGENCE (shared with the donchian channel exit): backtesting.py
+    executes `position.close()` at the NEXT bar's open, while the bot closes at
+    market as soon as it sees the triggering CLOSED bar. Sub-bar timing only;
+    the decision itself is identical.
+
+    CALLER CONTRACT: bars_15m.iloc[-1] MUST be a CLOSED bar (drop Binance's
+    forming last row first). Returns (should_exit, debug). Never raises;
+    returns False for a flat/unknown side, during warmup, or on a NaN EMA.
+    """
+    if position_side not in ("long", "short"):
+        return False, {"reason": "not_in_position", "side": position_side}
+
+    s = params.get("strategy", {})
+    if not s.get("require_trend", False):
+        return False, {"reason": "require_trend_off", "side": position_side}
+
+    period = int(s.get("mf_trend_ema_period", 200))
+    if len(bars_15m) < period:
+        return False, {"reason": "warmup", "have": len(bars_15m), "need": period}
+
+    close = bars_15m["Close"]
+    trend_ema_v = ema(close, period).iloc[-1]
+    cur_close = float(close.iloc[-1])
+
+    # next() guards on isfinite(t) only — min_periods=period already makes the
+    # warmup rows NaN, so this catches a short/ragged frame that slipped the
+    # length check above.
+    if not np.isfinite(trend_ema_v):
+        return False, {"reason": "nan_indicators", "side": position_side}
+
+    debug = {
+        "side": position_side,
+        "cur_close": cur_close,
+        "trend_ema": float(trend_ema_v),
+        "trend_ema_period": period,
+    }
+
+    # A NaN close makes BOTH strict comparisons below False, so next() holds
+    # through it as well — it never guards close_v. Labelling it is therefore a
+    # zero-behaviour-change addition that makes "held on bad data"
+    # distinguishable from "held because price is on the right side" in logs.
+    if not np.isfinite(cur_close):
+        return False, {**debug, "reason": "nan_close"}
+
+    if position_side == "long" and cur_close < trend_ema_v:
+        return True, {**debug, "reason": "trend_exit_long"}
+    if position_side == "short" and cur_close > trend_ema_v:
+        return True, {**debug, "reason": "trend_exit_short"}
+    return False, {**debug, "reason": "hold"}
