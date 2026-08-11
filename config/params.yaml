@@ -76,12 +76,16 @@ strategy:
   # Fixed % SL / TP geometry (multifactor-v1 uses these, not ATR).
   sl_pct: 0.015                 # 1.5% stop loss
   tp_pct: 0.030                 # 3.0% take profit (2:1 R:R)
-  # ⚠ time_stop_bars is DEAD — nothing reads it. Both the live bot
-  # (bot.py:421/887) and the backtest class (DayTradeMultiFactorBTC) read
-  # `max_hold_bars`. Retuning the time stop by editing time_stop_bars would
-  # silently do nothing. Kept only because it is the historical name.
+  # ⚠ TWO NAMES FOR ONE CONCEPT — keep them EQUAL.
+  #   max_hold_bars   ← the live bot (Bot._maybe_time_stop) and the backtest
+  #                     class (DayTradeMultiFactorBTC.max_hold_bars)
+  #   time_stop_bars  ← tools/data_parity_check.py and
+  #                     tools/build_deployed_strategies_viz.py
+  # Editing only one silently desynchronises the tools from the bot, and
+  # data_parity_check falls back to 48 bars (12h) if the key is missing — so
+  # neither key may be deleted. tests/test_v1_trend_exit.py pins them equal.
   time_stop_bars: 1344          # 14 days × 96 bars/day at 15m = 1344 bars
-  max_hold_bars: 1344           # ← the one that is actually read
+  max_hold_bars: 1344           # ← the one the LIVE BOT reads
 
   # Required toggles for multifactor-v1
   # Gates BOTH the entry trend filter and the adverse-trend EXIT (close when

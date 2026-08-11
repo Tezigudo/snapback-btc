@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from bot_internals import (
     strategy_uses_channel_exit,
@@ -38,6 +39,7 @@ from strategy.signals_multifactor import DayTradeMultiFactorBTC
 
 PERIOD = 200
 PARAMS = {"strategy": {"mf_trend_ema_period": PERIOD, "require_trend": True}}
+_PARAMS_YAML = Path(__file__).resolve().parent.parent / "config" / "params.yaml"
 
 
 def _ohlc(close: np.ndarray) -> pd.DataFrame:
@@ -245,11 +247,30 @@ class TestTrendExitEdges:
 
     def test_deployed_config_actually_sets_require_trend(self) -> None:
         """The default above is a safety net, not the plan — production must set
-        the key explicitly."""
-        import yaml
-        cfg = yaml.safe_load(
-            (Path(__file__).resolve().parent.parent / "config" / "params.yaml").read_text())
+        the key explicitly.
+
+        Deliberately reads the REAL config/params.yaml rather than a fixture:
+        asserting a fixture sets the key would prove nothing about production,
+        and "production quietly stopped setting it" is the exact scenario the
+        safety net exists for.
+        """
+        cfg = yaml.safe_load(_PARAMS_YAML.read_text())
         assert cfg["strategy"]["require_trend"] is True
+
+    def test_time_stop_keys_stay_equal(self) -> None:
+        """`max_hold_bars` and `time_stop_bars` are two names for one concept
+        with different readers — the bot and backtest read the former, while
+        tools/data_parity_check.py and tools/build_deployed_strategies_viz.py
+        read the latter. Retuning one alone desynchronises the tools from the
+        bot silently, and data_parity_check's fallback is 48 bars (12h) versus
+        the deployed 1344 (14d), so a deletion is worse than a mismatch.
+        """
+        s = yaml.safe_load(_PARAMS_YAML.read_text())["strategy"]
+        assert "max_hold_bars" in s, "the live bot's time-stop key is missing"
+        assert "time_stop_bars" in s, (
+            "deleting time_stop_bars silently drops data_parity_check to a "
+            "48-bar time stop")
+        assert s["time_stop_bars"] == s["max_hold_bars"] == DayTradeMultiFactorBTC.max_hold_bars
 
     def test_insufficient_bars_is_warmup(self) -> None:
         should, dbg = trend_exit_signal_multifactor_v1(_wavy(50), "long", PARAMS)

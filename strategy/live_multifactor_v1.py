@@ -273,6 +273,13 @@ def trend_exit_signal_multifactor_v1(
 
     s = params.get("strategy", {})
     # Default True to match DayTradeMultiFactorBTC.require_trend — see docstring.
+    # Deliberately a literal, NOT `DayTradeMultiFactorBTC.require_trend`: that
+    # class subclasses backtesting.Strategy, and this module is on the LIVE
+    # import chain (bot.py -> bot_internals -> here), which today does not pull
+    # `backtesting` in at all. Importing it for one bool would put a backtest-only
+    # dependency inside the trading process. Drift is instead made loud by
+    # tests/test_v1_trend_exit.py, which asserts this default equals the class
+    # attribute — detection without the coupling.
     if not s.get("require_trend", True):
         return False, {"reason": "require_trend_off", "side": position_side}
 
