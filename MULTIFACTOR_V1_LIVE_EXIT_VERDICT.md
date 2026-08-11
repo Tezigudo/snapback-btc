@@ -203,8 +203,56 @@ the section above asked for:
 
 Overall verdict on the refreshed run: **PASS** (stage 0 PASS / 1 PASS / 2 100% / 3 100%).
 
-`tests/test_multifactor_validate_wiring.py` (14 tests) pins the wiring, because the
+`tests/test_multifactor_validate_wiring.py` (18 tests) pins the wiring, because the
 lesson of both this bug and the supertrend flip-exit bug is that **the suite never runs
 tools** — a checker nobody checks is how a green run stays green while the thing it
 covers is broken. Mutation-tested: reverting stage 0 to `DEPLOYED = LOCKED` fails with
 `assert 2.75 == 3.5`, and deleting the recorder's `require_trend` guard fails too.
+
+---
+
+## RE-RUN AFTER THE FIX — 2026-08-11: the deployed model is REVALIDATED
+
+The v1 leg restarted onto the adverse-trend exit at **2026-08-10 16:45:23 UTC**, so
+`as_validated` stopped being the counterfactual and became **the deployed model**. This
+tool's subject flipped with it: the headline verdict now tracks what runs, and the
+live-exit arm is retained as the historical comparison that motivated the change.
+
+Two gaps had to be closed first. Cost stress had only ever been computed for the
+live-exit arm, and the data cache ended 2026-07-25. So: klines + funding refreshed
+through **2026-08-11**, full period extended to match, `run_cost_stress` parameterised
+by model, and a symmetric six-gate block computed for both arms.
+
+| gate | **deployed (`as_validated`)** | previous live-exit model |
+|---|---|---|
+| harness reproduces signed-off artifact | **PASS** | PASS |
+| OOS compounded positive | **PASS** (+162.83%, 5/5) | PASS (+135.45%, 3/5) |
+| OOS PSR `evidence_of_edge` | **PASS** (0.982) | **FAIL** (0.9415) |
+| walk-forward ≥70% | **PASS** (76.0%) | **FAIL** (64.0%) |
+| cost stress 15 bps positive | **PASS** (+36.23%) | PASS (+25.77%) |
+| kill switch respected | **PASS** (0.00% breach) | **FAIL** (0.41%) |
+| **verdict** | **REVALIDATED (6/6)** | FAILS_REVALIDATION (3/6) |
+
+Full period 2020-01-01..2026-08-11, deployed model: +373.2% (+346.4% net funding),
+370 trades, **WR 30.0%**, PF 1.392, Sharpe 0.737, worst start-anchored DD **−24.84%**
+(worst deploy date 2024-05-21), **0.00% of deploy dates breach the −35.5% floor**, worst
+if deployed 2025+ −16.14%, median hold 0.18d, funding carry $268k/\$1M vs $826k for the
+live-exit arm.
+
+**Two honest caveats, neither gate-failing:**
+
+- **2026 YTD is −1.1%** for the deployed model (−1.9% for the old one). The refreshed
+  17 days pulled both arms down — the freshest evidence is flat-to-slightly-negative, so
+  the gates say "validated design", not "currently printing money".
+- **At 15 bps/side the edge thins**: +36.23% but 3/5 windows and PSR 0.9443
+  `insufficient_evidence`. It clears the gate on return, not on statistical evidence.
+  At realistic cost (5 bps) it is 5/5 / PSR 0.982, and it still holds 5/5 / PSR 0.9818
+  at 10 bps — i.e. it survives 2× realistic costs, not 3×.
+
+**Do not read the live 0-for-4 as a verdict on this model.** All four closed live trades
+(−4.96, −5.04, −4.83, −4.89) ran under the exit model that fails 3/6 gates; the last of
+them SL'd at 16:44:54 UTC, 29 seconds before the restart. Under the model now running it
+would have closed on 2026-08-09 01:29 UTC for **−$0.38** instead of −$4.89. At a designed
+30% win rate, P(0 wins in 4) = 0.695⁴ = **23%** — about one run in four. The deployed
+model has **zero** completed live trades so far.
+

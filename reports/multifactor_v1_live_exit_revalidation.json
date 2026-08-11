@@ -616,16 +616,39 @@
       "interpretation": "insufficient_evidence"
     }
   },
+  "cost_stress_as_validated": {
+    "5bps": {
+      "compounded_pct": 162.8259,
+      "windows_positive": "5/5",
+      "n_trades": 143,
+      "psr_wf": 0.982,
+      "interpretation": "evidence_of_edge"
+    },
+    "10bps": {
+      "compounded_pct": 90.6639,
+      "windows_positive": "5/5",
+      "n_trades": 143,
+      "psr_wf": 0.9818,
+      "interpretation": "evidence_of_edge"
+    },
+    "15bps": {
+      "compounded_pct": 36.2333,
+      "windows_positive": "3/5",
+      "n_trades": 143,
+      "psr_wf": 0.9443,
+      "interpretation": "insufficient_evidence"
+    }
+  },
   "full_period": {
     "as_validated": {
-      "return_pct": 381.27,
-      "return_pct_net_funding": 354.44,
-      "funding_cost_usdt": 268347.0,
-      "funding_events": 415,
-      "trades": 368,
-      "win_rate_pct": 30.2,
-      "profit_factor": 1.397,
-      "sharpe": 0.746,
+      "return_pct": 373.2,
+      "return_pct_net_funding": 346.37,
+      "funding_cost_usdt": 268319.0,
+      "funding_events": 418,
+      "trades": 370,
+      "win_rate_pct": 30.0,
+      "profit_factor": 1.392,
+      "sharpe": 0.737,
       "max_dd_pct_peak_to_trough": -24.84,
       "median_hold_days": 0.182,
       "worst_start_anchored_dd_pct": -24.84,
@@ -640,20 +663,20 @@
         "2023": 31.3,
         "2024": 46.7,
         "2025": 16.4,
-        "2026": 0.6
+        "2026": -1.1
       }
     },
     "as_live_runs": {
-      "return_pct": 639.81,
-      "return_pct_net_funding": 557.59,
-      "funding_cost_usdt": 822162.0,
-      "funding_events": 918,
-      "trades": 350,
-      "win_rate_pct": 42.3,
-      "profit_factor": 1.328,
-      "sharpe": 0.679,
+      "return_pct": 585.68,
+      "return_pct_net_funding": 503.1,
+      "funding_cost_usdt": 825766.0,
+      "funding_events": 928,
+      "trades": 352,
+      "win_rate_pct": 42.0,
+      "profit_factor": 1.315,
+      "sharpe": 0.654,
       "max_dd_pct_peak_to_trough": -38.35,
-      "median_hold_days": 0.484,
+      "median_hold_days": 0.49,
       "worst_start_anchored_dd_pct": -38.35,
       "worst_deploy_date": "2023-12-09",
       "pct_of_start_dates_breaching_floor": 0.41,
@@ -666,7 +689,7 @@
         "2023": 29.4,
         "2024": 44.8,
         "2025": -21.3,
-        "2026": 5.8
+        "2026": -1.9
       }
     }
   },
@@ -678,8 +701,20 @@
     "cost_stress_15bps_positive": true,
     "kill_switch_respected": false
   },
-  "verdict": "FAILS_REVALIDATION",
-  "gates_failed": [
+  "gates_as_validated_model": {
+    "harness_reproduces_signed_off_artifact": true,
+    "oos_compounded_positive": true,
+    "oos_psr_evidence_of_edge": true,
+    "walk_forward_70pct": true,
+    "cost_stress_15bps_positive": true,
+    "kill_switch_respected": true
+  },
+  "deployed_exit_model": "as_validated",
+  "deployed_exit_model_since": "2026-08-10T16:45:23Z",
+  "verdict": "REVALIDATED",
+  "gates_failed": [],
+  "verdict_previous_live_exit_model": "FAILS_REVALIDATION",
+  "gates_failed_previous_live_exit_model": [
     "oos_psr_evidence_of_edge",
     "walk_forward_70pct",
     "kill_switch_respected"
