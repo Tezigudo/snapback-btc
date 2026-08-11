@@ -79,7 +79,10 @@ OUT = ROOT / "reports" / "multifactor_v1_live_exit_revalidation.json"
 KILL_SWITCH_DD_PCT = -35.5   # deploy.kill_switch_equity_fraction 0.645
 SUFFICIENT_TRADES = 3
 WF_GATE = 0.70
-FULL_START, FULL_END = "2020-01-01", "2026-07-25"
+# Extended 2026-07-25 -> 2026-08-11 when the data cache was refreshed for the
+# post-fix re-run. Keep this at (or before) the parquet's last bar: a window
+# reaching past the data silently shortens instead of erroring.
+FULL_START, FULL_END = "2020-01-01", "2026-08-11"
 
 
 class LiveExitMultiFactorBTC(DayTradeMultiFactorBTC):
@@ -283,17 +286,24 @@ def run_control_walk_forward(ov: dict) -> dict:
     return out
 
 
-def run_cost_stress(ov: dict, slices: dict) -> dict:
+def run_cost_stress(ov: dict, slices: dict, model: str = "as_live_runs") -> dict:
+    """Cost stress for one exit model.
+
+    Parameterised by model on 2026-08-10: until then this only ever ran the
+    live-exit arm, because that was the model under suspicion. The adverse-trend
+    exit shipped that day (main 92433d4), so the as-validated arm IS production
+    now and needs its own stress numbers rather than inheriting the other arm's.
+    """
     import tools.run_mf_deepening as mfd
+    cls = MODELS[model]
     saved = mfd.COMMISSION
     out = {}
     try:
         for bps in (5, 10, 15):
             mfd.COMMISSION = bps / 1e4
-            per_window = {lbl: run_one(slices[lbl], ov,
-                                       strategy_class=LiveExitMultiFactorBTC)
+            per_window = {lbl: run_one(slices[lbl], ov, strategy_class=cls)
                           for lbl, _s, _e in WINDOWS}
-            summ = summarize(f"live_exit_{bps}bps", per_window)
+            summ = summarize(f"{model}_{bps}bps", per_window)
             agg = summ["summary"]
             out[f"{bps}bps"] = {
                 "compounded_pct": agg["compounded_pct"],
@@ -301,7 +311,7 @@ def run_cost_stress(ov: dict, slices: dict) -> dict:
                 "n_trades": agg["n_trades"],
                 **_psr_of(summ),
             }
-            print(f"  stress {bps}bps: comp={agg['compounded_pct']:8.2f}% "
+            print(f"  stress[{model}] {bps}bps: comp={agg['compounded_pct']:8.2f}% "
                   f"wins={agg['windows_positive']} psr={out[f'{bps}bps']['psr_wf']}",
                   file=sys.stderr)
     finally:
@@ -399,40 +409,68 @@ def main() -> int:
     out["oos_5_windows"] = run_oos(ov, slices)
     out["walk_forward_quarterly"] = run_walk_forward(ov)
     out["walk_forward_control_original_method"] = run_control_walk_forward(ov)
-    out["cost_stress_live_exit"] = run_cost_stress(ov, slices)
+    out["cost_stress_live_exit"] = run_cost_stress(ov, slices, "as_live_runs")
+    out["cost_stress_as_validated"] = run_cost_stress(ov, slices, "as_validated")
     out["full_period"] = run_full_period(ov)
 
-    live_oos = out["oos_5_windows"]["as_live_runs"]
-    live_full = out["full_period"]["as_live_runs"]
     ctrl = out["walk_forward_control_original_method"]
-    s15 = out["cost_stress_live_exit"]["15bps"]
 
-    # The walk-forward gate is judged on the ORIGINAL method (the one the deploy
-    # was signed off against, and the one this harness is verified to reproduce),
-    # not the stricter calendar-quarter variant — which fails for both models and
-    # so cannot attribute anything to the exit change.
-    gates = {
-        "harness_reproduces_signed_off_artifact": ctrl["harness_reproduces_artifact"],
-        "oos_compounded_positive":    live_oos["compounded_pct"] > 0,
-        # params.yaml's sign-off language is "the only ablation variant clearing
-        # evidence_of_edge", so the canonical interpretation string is the gate —
-        # not a raw PSR threshold, which passes on a number the harness itself
-        # labels insufficient.
-        "oos_psr_evidence_of_edge":   live_oos["interpretation"] == "evidence_of_edge",
-        "walk_forward_70pct":         ctrl["deployed_params__as_live_runs"]["gate_70pct"],
-        "cost_stress_15bps_positive": s15["compounded_pct"] > 0,
-        "kill_switch_respected":      not live_full["kill_switch_breached"],
-    }
-    out["gates_live_exit_model"] = gates
-    out["verdict"] = "REVALIDATED" if all(gates.values()) else "FAILS_REVALIDATION"
-    out["gates_failed"] = [k for k, v in gates.items() if not v]
+    def _gates(model: str, ctrl_arm: str, stress_key: str) -> dict:
+        """The same six gates, applied to one exit model.
+
+        The walk-forward gate is judged on the ORIGINAL method (the one the
+        deploy was signed off against, and the one this harness is verified to
+        reproduce), not the stricter calendar-quarter variant — which fails for
+        BOTH models and so cannot attribute anything to the exit change.
+        """
+        oos = out["oos_5_windows"][model]
+        full = out["full_period"][model]
+        s15 = out[stress_key]["15bps"]
+        return {
+            "harness_reproduces_signed_off_artifact": ctrl["harness_reproduces_artifact"],
+            "oos_compounded_positive": oos["compounded_pct"] > 0,
+            # params.yaml's sign-off language is "the only ablation variant
+            # clearing evidence_of_edge", so the canonical interpretation string
+            # is the gate — not a raw PSR threshold, which passes on a number the
+            # harness itself labels insufficient.
+            "oos_psr_evidence_of_edge": oos["interpretation"] == "evidence_of_edge",
+            "walk_forward_70pct": ctrl[ctrl_arm]["gate_70pct"],
+            "cost_stress_15bps_positive": s15["compounded_pct"] > 0,
+            "kill_switch_respected": not full["kill_switch_breached"],
+        }
+
+    gates_live = _gates("as_live_runs", "deployed_params__as_live_runs",
+                        "cost_stress_live_exit")
+    gates_val = _gates("as_validated", "deployed_params__as_validated",
+                       "cost_stress_as_validated")
+
+    out["gates_live_exit_model"] = gates_live
+    out["gates_as_validated_model"] = gates_val
+
+    # SUBJECT FLIP 2026-08-10: the adverse-trend exit shipped (main 92433d4,
+    # droplet c876aaf) and the v1 leg restarted onto it at 16:45 UTC, so the
+    # DEPLOYED exit model is now `as_validated`. The headline verdict tracks
+    # what is actually running; the live-exit arm is retained as the historical
+    # comparison that motivated the change, not as the subject.
+    out["deployed_exit_model"] = "as_validated"
+    out["deployed_exit_model_since"] = "2026-08-10T16:45:23Z"
+    out["verdict"] = "REVALIDATED" if all(gates_val.values()) else "FAILS_REVALIDATION"
+    out["gates_failed"] = [k for k, v in gates_val.items() if not v]
+    out["verdict_previous_live_exit_model"] = (
+        "REVALIDATED" if all(gates_live.values()) else "FAILS_REVALIDATION")
+    out["gates_failed_previous_live_exit_model"] = [
+        k for k, v in gates_live.items() if not v]
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, indent=2, default=str))
 
     print()
-    print(f"verdict: {out['verdict']}")
-    for k, v in gates.items():
+    print(f"DEPLOYED model ({out['deployed_exit_model']}): {out['verdict']}")
+    for k, v in gates_val.items():
+        print(f"  {'PASS' if v else 'FAIL'}  {k}")
+    print()
+    print(f"previous live-exit model: {out['verdict_previous_live_exit_model']}")
+    for k, v in gates_live.items():
         print(f"  {'PASS' if v else 'FAIL'}  {k}")
     print(f"saved   -> {OUT}")
     return 0 if out["verdict"] == "REVALIDATED" else 1
