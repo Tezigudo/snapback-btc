@@ -238,6 +238,12 @@ _BASE_PARAMS: dict = {
     "sizing": {"leverage": 5, "risk_per_trade_pct": 1.0},
     "deploy": {"kill_switch_equity_fraction": 0.5},
     "strategy": {},
+    # observe_only False so the TestMaybeReprotect cases below still exercise
+    # the acting path they were written for; production ships observe_only True
+    # for its rollout phase (see config/params.yaml and
+    # tests/test_reprotect_algo_aware.py).
+    "reprotect": {"enabled": True, "observe_only": False,
+                  "max_replaces_per_position": 3},
 }
 
 
@@ -247,6 +253,11 @@ def _mock_client() -> MagicMock:
     mc.coid_prefix = "snap-v1-"
     mc.env = "testnet"
     mc.cancel_open_orders.return_value = 0
+    # Algo order book: reprotect reads BOTH books since 2026-08-11. Default to
+    # "readable, and empty" so these tests keep describing the PLAIN book only —
+    # a bare MagicMock here would be iterated as if it were rows.
+    mc.fetch_algo_orders.return_value = []
+    mc.algo_orders_readable.return_value = True
     return mc
 
 
@@ -468,8 +479,13 @@ class TestMaybeReprotect:
         bot, mc = self._bot()
         mc.ex.fetch_open_orders.return_value = []  # gone (and stays gone post-cancel)
         with patch("bot.state.get_meta", return_value=_ACTIVE_BRACKET), \
+             patch("bot.state.set_meta") as set_meta, \
              patch("bot.state.record_event"), patch("bot.send_alert") as alert:
             bot._maybe_reprotect(equity=10000.0)
+        # The per-position re-place counter is persisted back into
+        # active_bracket so the cap survives a restart (2026-08-11).
+        persisted = json.loads(set_meta.call_args.args[1])
+        assert persisted["reprotect_count"] == 1
         # Must go through the raw ccxt client (self.client.ex), NOT self.client —
         # guards the AttributeError-on-every-poll regression the reviewer caught.
         assert mc.ex.fetch_open_orders.called
