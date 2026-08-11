@@ -21,8 +21,11 @@ So the load-bearing tests here are the two the old harness lacked:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+import yaml
 
 from bot_internals import (
     strategy_uses_channel_exit,
@@ -36,6 +39,7 @@ from strategy.signals_multifactor import DayTradeMultiFactorBTC
 
 PERIOD = 200
 PARAMS = {"strategy": {"mf_trend_ema_period": PERIOD, "require_trend": True}}
+_PARAMS_YAML = Path(__file__).resolve().parent.parent / "config" / "params.yaml"
 
 
 def _ohlc(close: np.ndarray) -> pd.DataFrame:
@@ -222,13 +226,51 @@ class TestTrendExitEdges:
         assert should is False
         assert dbg["reason"] == "require_trend_off"
 
-    def test_require_trend_missing_defaults_to_off(self) -> None:
-        """Absent key must not silently start closing positions on a leg that
-        never opted in."""
+    def test_require_trend_missing_defaults_to_the_backtest_default(self) -> None:
+        """An absent key must fall back to the SAME default the backtest class
+        uses (True), not to "off".
+
+        This is the bug this whole module exists to fix, in miniature: a live
+        default of False would mean a config that lost the key runs the adverse
+        exit in the backtest and NOT live — silently, on the same leg, with no
+        test failing. Pinned against the class attribute rather than a literal
+        so the two cannot drift apart.
+        """
+        assert DayTradeMultiFactorBTC.require_trend is True
+        df, level = self._at_ema()
+        close = df["Close"].to_numpy(copy=True)
+        close[-1] = level - 500.0  # deeply adverse — must exit
         should, dbg = trend_exit_signal_multifactor_v1(
-            _wavy(), "long", {"strategy": {"mf_trend_ema_period": PERIOD}})
-        assert should is False
-        assert dbg["reason"] == "require_trend_off"
+            _ohlc(close), "long", {"strategy": {"mf_trend_ema_period": PERIOD}})
+        assert should is True, "absent require_trend silently disabled the exit"
+        assert dbg["reason"] == "trend_exit_long"
+
+    def test_deployed_config_actually_sets_require_trend(self) -> None:
+        """The default above is a safety net, not the plan — production must set
+        the key explicitly.
+
+        Deliberately reads the REAL config/params.yaml rather than a fixture:
+        asserting a fixture sets the key would prove nothing about production,
+        and "production quietly stopped setting it" is the exact scenario the
+        safety net exists for.
+        """
+        cfg = yaml.safe_load(_PARAMS_YAML.read_text())
+        assert cfg["strategy"]["require_trend"] is True
+
+    def test_time_stop_keys_stay_equal(self) -> None:
+        """`max_hold_bars` and `time_stop_bars` are two names for one concept
+        with different readers — the bot and backtest read the former, while
+        tools/data_parity_check.py and tools/build_deployed_strategies_viz.py
+        read the latter. Retuning one alone desynchronises the tools from the
+        bot silently, and data_parity_check's fallback is 48 bars (12h) versus
+        the deployed 1344 (14d), so a deletion is worse than a mismatch.
+        """
+        s = yaml.safe_load(_PARAMS_YAML.read_text())["strategy"]
+        assert "max_hold_bars" in s, "the live bot's time-stop key is missing"
+        assert "time_stop_bars" in s, (
+            "deleting time_stop_bars silently drops data_parity_check to a "
+            "48-bar time stop")
+        assert s["time_stop_bars"] == s["max_hold_bars"] == DayTradeMultiFactorBTC.max_hold_bars
 
     def test_insufficient_bars_is_warmup(self) -> None:
         should, dbg = trend_exit_signal_multifactor_v1(_wavy(50), "long", PARAMS)
