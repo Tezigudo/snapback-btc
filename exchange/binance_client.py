@@ -215,6 +215,48 @@ class BinanceClient:
                 log.warning("cancel_order %s failed: %s", o.get("id"), e)
         return n
 
+    def _market_id(self, symbol: str) -> str:
+        """Exchange id for the raw fapi endpoints, which don't speak ccxt symbols."""
+        try:
+            return self.ex.market(symbol)["id"]
+        except Exception:
+            # "BTC/USDT:USDT" -> "BTCUSDT" (markets not loaded yet, e.g. boot)
+            return symbol.split(":")[0].replace("/", "")
+
+    def fetch_algo_orders(self, symbol: str) -> tuple[list[dict[str, Any]], bool]:
+        """Resting algo/conditional trigger orders — READ ONLY.
+
+        Returns ``(rows, ok)``. **`ok` is the whole point of the signature.**
+
+        `_place_brackets` lands SL/TP on Binance's algo endpoint, which
+        `fetch_open_orders()` (/fapi/v1/openOrders) does NOT return. Anything
+        asking "is the bracket still there?" must read this too, or it sees a
+        healthy bracket as missing — the false negative behind the 2026-07-22
+        -4045 re-place spam.
+
+        This never raises, so a bare list return would make "there are no algo
+        orders" and "I could not ask" the same value — and a caller that acts on
+        the ambiguity re-places a live bracket on a 5-second network blip, which
+        is that same July bug wearing a different hat. Checking whether the ccxt
+        method *exists* is not sufficient: the endpoint can be present and the
+        CALL still fail. `ok=False` therefore covers all three — missing
+        endpoint, failed call, unexpected payload shape — and callers that would
+        place orders must abstain unless `ok` is True.
+        """
+        fetch = getattr(self.ex, "fapiPrivateGetOpenAlgoOrders", None)
+        if fetch is None:
+            log.warning("ccxt build lacks openAlgoOrders — algo brackets invisible")
+            return [], False
+        try:
+            rows = fetch({"symbol": self._market_id(symbol)})
+        except Exception as e:
+            log.warning("openAlgoOrders fetch failed: %s", e)
+            return [], False
+        if not isinstance(rows, list):
+            log.warning("openAlgoOrders returned %s, not a list", type(rows).__name__)
+            return [], False
+        return rows, True
+
     def _cancel_algo_orders(self, symbol: str, coid_prefix: str | None) -> int:
         """Sweep resting algo/conditional trigger orders (raw fapi endpoints).
 
@@ -222,25 +264,15 @@ class BinanceClient:
         the client order id lives in `clientAlgoId`. Missing endpoint (old ccxt)
         degrades to a no-op with a warning rather than breaking the sweep.
         """
-        fetch = getattr(self.ex, "fapiPrivateGetOpenAlgoOrders", None)
         cancel = getattr(self.ex, "fapiPrivateDeleteAlgoOrder", None)
-        if fetch is None or cancel is None:
+        if cancel is None:
             log.warning("ccxt build lacks algo-order endpoints — "
                         "conditional brackets cannot be swept")
             return 0
-        try:
-            market_id = self.ex.market(symbol)["id"]
-        except Exception:
-            # "BTC/USDT:USDT" -> "BTCUSDT" (markets not loaded yet, e.g. boot)
-            market_id = symbol.split(":")[0].replace("/", "")
-        try:
-            rows = fetch({"symbol": market_id})
-        except Exception as e:
-            log.warning("openAlgoOrders fetch failed: %s", e)
-            return 0
-        if not isinstance(rows, list):
-            # Unexpected payload shape (or a bare mock in tests) — nothing to do.
-            return 0
+        market_id = self._market_id(symbol)
+        # Sweeping is best-effort: an unreadable book means nothing to cancel
+        # here, and the boot/pre-entry sweeps will retry.
+        rows, _ok = self.fetch_algo_orders(symbol)
         n = 0
         for r in rows:
             if coid_prefix is not None:

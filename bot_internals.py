@@ -552,3 +552,90 @@ def has_bracket_leg(open_orders: list[dict]) -> bool:
     swallows per-order failures, so a partial cancel could otherwise leave a
     surviving leg alongside a freshly-placed pair)."""
     return any(reduce_only_bracket_leg(o) is not None for o in (open_orders or []))
+
+
+def algo_bracket_leg(row: dict, coid_prefix: str) -> str | None:
+    """Classify a RAW /fapi/v1/openAlgoOrders row as 'sl' | 'tp' | None.
+
+    Separate from `reduce_only_bracket_leg` because the algo endpoint returns a
+    different shape, and the difference is not cosmetic. A live row captured off
+    v1 on 2026-08-10, while a healthy bracket rested:
+
+        {"algoId": "2000001347733291",
+         "clientAlgoId": "snap-v1-1786231808674-t",
+         "side": "SELL", "triggerPrice": "66858.5",
+         "strategyType": null, "reduceOnly": true, "algoStatus": "NEW"}
+
+    Versus what `reduce_only_bracket_leg` needs: `info.type`/`origType`
+    containing STOP/TAKE_PROFIT, and `reduceOnly` nested under `info`. Here
+    there is **no type field at all** (`strategyType` was null on BOTH resting
+    legs), `reduceOnly` is a top-level bool, and the id is `clientAlgoId`.
+    Passing algo rows to the plain classifier returns None for every leg — i.e.
+    "bracket missing" — which is the same false negative that produced the
+    2026-07-22 `-4045` re-place spam, reached by a different route. That is why
+    this function exists and why it does not key on type.
+
+    Discriminator is the bot's OWN client-order-id suffix: `_place_brackets`
+    tags the stop `-s` and the take-profit `-t` (binance_client `_coid`). This
+    also scopes detection to our own orders — a bracket placed by hand in the
+    Binance app carries a different prefix and must NOT count as "intact",
+    because reprotect could not re-place it faithfully anyway.
+    """
+    coid = row.get("clientAlgoId")
+    if not isinstance(coid, str) or not coid.startswith(coid_prefix):
+        return None
+    # reduceOnly / closePosition arrive as real bools here, but tolerate the
+    # string form the plain endpoint uses in case Binance ever aligns them.
+    if not (str(row.get("reduceOnly")).lower() == "true"
+            or str(row.get("closePosition")).lower() == "true"):
+        return None
+    leg = coid.rsplit("-", 1)[-1]
+    if leg == "t":
+        return "tp"
+    if leg == "s":
+        return "sl"
+    return None
+
+
+@dataclass(frozen=True)
+class BracketState:
+    """What is actually resting for an open position, across BOTH order books.
+
+    `intact` answers "is this position protected?"; `any_leg` answers "did a
+    cancel really clear everything?" — the pre-re-place guard that stops a
+    partial cancel leaving a stale leg beside a fresh pair.
+    """
+
+    sl: bool
+    tp: bool
+    place_tp: bool
+
+    @property
+    def intact(self) -> bool:
+        return self.sl and (self.tp or not self.place_tp)
+
+    @property
+    def any_leg(self) -> bool:
+        return self.sl or self.tp
+
+    def describe(self) -> str:
+        return (f"SL={'present' if self.sl else 'MISSING'} "
+                f"TP={'present' if self.tp else ('MISSING' if self.place_tp else 'n/a')}")
+
+
+def bracket_state(
+    plain_orders: list[dict] | None,
+    algo_rows: list[dict] | None,
+    coid_prefix: str,
+    place_tp: bool,
+) -> BracketState:
+    """Merge both order books into one answer.
+
+    BOTH sources are required. Plain-only is what broke in July (algo brackets
+    invisible → "missing" → re-place loop). Algo-only would be the mirror bug if
+    Binance ever moves brackets back, or for a leg whose SL rests as a plain
+    order. Reading both is the only shape that cannot silently under-report.
+    """
+    legs: set[str | None] = {reduce_only_bracket_leg(o) for o in (plain_orders or [])}
+    legs |= {algo_bracket_leg(r, coid_prefix) for r in (algo_rows or [])}
+    return BracketState(sl="sl" in legs, tp="tp" in legs, place_tp=place_tp)
