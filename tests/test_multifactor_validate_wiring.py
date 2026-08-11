@@ -18,6 +18,10 @@ keys are surfaced, and that the exit recorder still mirrors the backtest branch.
 
 from __future__ import annotations
 
+import pathlib
+import tempfile
+from unittest import mock
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -72,7 +76,39 @@ class TestParamsProvenance:
         assert LIVE_PARAMS["strategy"]["mf_trend_ema_period"] == DEPLOYED["mf_trend_ema_period"]
 
     def test_reader_is_pure_and_repeatable(self) -> None:
-        assert _deployed_strategy_params() == DEPLOYED
+        params, err = _deployed_strategy_params()
+        assert err is None
+        assert params == DEPLOYED
+
+    def test_malformed_config_is_a_structured_failure_not_a_crash(self) -> None:
+        """DEPLOYED is a MODULE CONSTANT, so a broken params.yaml would take
+        down every importer — including this suite — with a bare traceback,
+        before main() could turn it into the FAIL stage 0 promises."""
+        import tools.multifactor_validate as mv
+        for bad in ("strategy: [unclosed", "- just\n- a\n- list", ""):
+            with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+                f.write(bad)
+                path = pathlib.Path(f.name)
+            with mock.patch.object(mv, "CONFIG_PATH", path):
+                params, err = mv._deployed_strategy_params()
+            path.unlink()
+            assert params == {}, bad
+            assert err, f"no error reported for {bad!r}"
+
+    def test_unreadable_config_is_a_structured_failure(self) -> None:
+        import tools.multifactor_validate as mv
+        missing = pathlib.Path("/nonexistent-dir-xyz/params.yaml")
+        with mock.patch.object(mv, "CONFIG_PATH", missing):
+            params, err = mv._deployed_strategy_params()
+        assert params == {}
+        assert err is not None and "Error" in err
+
+    def test_stage0_reports_fail_instead_of_raising(self) -> None:
+        import tools.multifactor_validate as mv
+        with mock.patch.object(mv, "DEPLOYED_LOAD_ERROR", "ParserError: boom"):
+            out = mv.stage0_params_provenance()
+        assert out["verdict"] == "FAIL"
+        assert out["load_error"] == "ParserError: boom"
 
 
 class TestClassKwargs:
@@ -89,6 +125,17 @@ class TestClassKwargs:
             DayTradeMultiFactorBTC, {**DEPLOYED, "not_a_real_attr": 1})
         assert "not_a_real_attr" not in keep
         assert "not_a_real_attr" in dropped
+
+    def test_multiple_dropped_keys_are_returned_sorted(self) -> None:
+        """Sorted order is part of the contract — the dropped list lands in the
+        JSON report, and an unstable order makes report diffs noisy."""
+        keep, dropped = _class_kwargs(
+            DayTradeMultiFactorBTC, {**DEPLOYED, "zzz": 1, "aaa": 2, "mmm": 3})
+        for k in ("zzz", "aaa", "mmm"):
+            assert k not in keep
+        injected = [k for k in dropped if k in {"aaa", "mmm", "zzz"}]
+        assert injected == ["aaa", "mmm", "zzz"]
+        assert dropped == sorted(dropped)
 
     def test_every_kept_key_is_actually_settable(self) -> None:
         """A key that isn't a class attribute makes bt.run raise; a key that is

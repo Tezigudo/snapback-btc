@@ -109,27 +109,39 @@ LIVE_FETCH_BARS = 1500          # bot.py: fetch_ohlcv(..., limit=1500)
 CONFIG_PATH = ROOT / "config" / "params.yaml"
 
 
-def _deployed_strategy_params() -> dict:
+def _deployed_strategy_params() -> tuple[dict, str | None]:
     """The params the LIVE BOT reads, flattened the way the backtest wants them.
 
-    `bot.py` loads config/params.yaml wholesale; the backtest class takes sizing
-    knobs (`risk_per_trade_pct`, `leverage`) as class attributes, but the YAML
-    keeps them under `sizing:`. Flatten strategy+sizing into one dict so the
-    validated config is literally the deployed one.
+    Returns (params, load_error). `bot.py` loads config/params.yaml wholesale;
+    the backtest class takes sizing knobs (`risk_per_trade_pct`, `leverage`) as
+    class attributes, but the YAML keeps them under `sizing:`. Flatten
+    strategy+sizing into one dict so the validated config is literally the
+    deployed one.
 
     Read as YAML rather than imported from a research module ON PURPOSE — see
     the stage-0 note in the module docstring. Importing a frozen dict is how this
     tool ended up certifying a config that had not been in production since July.
+
+    NEVER RAISES. This runs at module import (DEPLOYED is a module constant), so
+    an unreadable or malformed params.yaml would otherwise take down every
+    importer — including the test suite — with a bare traceback, before `main()`
+    could turn it into the structured FAIL that stage 0 promises. A load failure
+    is returned as an error string and becomes that FAIL instead.
     """
-    cfg = yaml.safe_load(CONFIG_PATH.read_text())
-    merged = dict(cfg.get("strategy", {}))
+    try:
+        cfg = yaml.safe_load(CONFIG_PATH.read_text())
+    except (OSError, yaml.YAMLError) as e:
+        return {}, f"{type(e).__name__}: {e}"
+    if not isinstance(cfg, dict):
+        return {}, f"params.yaml did not parse to a mapping (got {type(cfg).__name__})"
+    merged = dict(cfg.get("strategy") or {})
     for k in ("risk_per_trade_pct", "leverage"):
-        if k in cfg.get("sizing", {}):
+        if k in (cfg.get("sizing") or {}):
             merged[k] = cfg["sizing"][k]
-    return merged
+    return merged, None
 
 
-DEPLOYED = _deployed_strategy_params()
+DEPLOYED, DEPLOYED_LOAD_ERROR = _deployed_strategy_params()
 
 # Locked LIVE params, read from config/params.yaml, PLUS the 4H gate toggle.
 LIVE_PARAMS: dict = {
@@ -185,9 +197,24 @@ def stage0_params_provenance() -> dict:
     as INFO, not FAIL — LOCKED is a frozen research artifact and is SUPPOSED to
     fall behind production; what must never happen again is validating it by
     accident. The verdict fails only if config/params.yaml can't be read or is
-    missing keys the strategy needs.
+    missing keys the strategy needs — and that failure is STRUCTURED (a report
+    plus a non-zero exit), never a bare traceback.
     """
     print("[validate stage 0] params provenance", file=sys.stderr)
+
+    if DEPLOYED_LOAD_ERROR is not None:
+        print(f"  FAIL: could not load {CONFIG_PATH}: {DEPLOYED_LOAD_ERROR}",
+              file=sys.stderr)
+        return {
+            "stage": 0,
+            "source_of_truth": str(CONFIG_PATH.relative_to(ROOT)),
+            "load_error": DEPLOYED_LOAD_ERROR,
+            "params_under_test": {},
+            "drift_vs_research_locked": {},
+            "drift_key_count": 0,
+            "missing_required_keys": [],
+            "verdict": "FAIL",
+        }
 
     drift = {}
     for k in sorted(set(LOCKED) | set(DEPLOYED)):
@@ -586,6 +613,22 @@ def main() -> int:
     out: dict = {"strategy": "multifactor-v1+4h-gate"}
 
     out["stage0_params_provenance"] = stage0_params_provenance()
+    if out["stage0_params_provenance"]["verdict"] != "PASS":
+        # Stages 1-3 would run on empty params and quietly measure the backtest
+        # class DEFAULTS — a green parity number for a config nobody deployed,
+        # which is the precise failure stage 0 was added to prevent. Stop here
+        # and still emit a report.
+        out["overall_verdict"] = "FAIL"
+        out["aborted_after_stage"] = 0
+        OUT.parent.mkdir(parents=True, exist_ok=True)
+        OUT.write_text(json.dumps(out, indent=2, default=str))
+        print()
+        print("stage 0: FAIL — "
+              f"{out['stage0_params_provenance'].get('load_error') or 'missing required keys'}")
+        print("stages 1-3 SKIPPED (would validate class defaults, not production)")
+        print(f"saved   → {OUT}")
+        return 1
+
     out["stage1_impl_cross_check"] = stage1_impl_cross_check()
     out["stage2_entry_parity"] = stage2_live_vs_backtest()
     out["stage3_exit_parity"] = stage3_exit_parity()

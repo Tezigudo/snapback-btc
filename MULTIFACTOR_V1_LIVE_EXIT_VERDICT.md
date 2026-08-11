@@ -198,7 +198,7 @@ the section above asked for:
   the bot reads; `LOCKED` is imported for COMPARISON ONLY and its divergence is reported.
   It found the three keys this verdict flagged: `volume_multiple` 2.0→1.5,
   `funding_extreme_threshold` 0.0005→0.0015, `risk_per_trade_pct` 2.75→3.5. Stages 1–2
-  now run on the deployed config too, and keys a Strategy class can't accept are
+  now run on the deployed config too, and keys that a Strategy class can't accept are
   reported as `deployed_keys_dropped_*` rather than silently filtered.
 
 Overall verdict on the refreshed run: **PASS** (stage 0 PASS / 1 PASS / 2 100% / 3 100%).
