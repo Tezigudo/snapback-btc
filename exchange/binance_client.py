@@ -223,8 +223,10 @@ class BinanceClient:
             # "BTC/USDT:USDT" -> "BTCUSDT" (markets not loaded yet, e.g. boot)
             return symbol.split(":")[0].replace("/", "")
 
-    def fetch_algo_orders(self, symbol: str) -> list[dict[str, Any]]:
+    def fetch_algo_orders(self, symbol: str) -> tuple[list[dict[str, Any]], bool]:
         """Resting algo/conditional trigger orders — READ ONLY.
+
+        Returns ``(rows, ok)``. **`ok` is the whole point of the signature.**
 
         `_place_brackets` lands SL/TP on Binance's algo endpoint, which
         `fetch_open_orders()` (/fapi/v1/openOrders) does NOT return. Anything
@@ -232,32 +234,28 @@ class BinanceClient:
         healthy bracket as missing — the false negative behind the 2026-07-22
         -4045 re-place spam.
 
-        NEVER RAISES: returns [] on a missing endpoint (old ccxt build), a
-        network error, or an unexpected payload shape. Callers must therefore
-        treat [] as "unknown", not as "no bracket" — an empty read is exactly
-        what a transient outage looks like, and acting on it would re-place a
-        bracket that is resting fine.
+        This never raises, so a bare list return would make "there are no algo
+        orders" and "I could not ask" the same value — and a caller that acts on
+        the ambiguity re-places a live bracket on a 5-second network blip, which
+        is that same July bug wearing a different hat. Checking whether the ccxt
+        method *exists* is not sufficient: the endpoint can be present and the
+        CALL still fail. `ok=False` therefore covers all three — missing
+        endpoint, failed call, unexpected payload shape — and callers that would
+        place orders must abstain unless `ok` is True.
         """
         fetch = getattr(self.ex, "fapiPrivateGetOpenAlgoOrders", None)
         if fetch is None:
             log.warning("ccxt build lacks openAlgoOrders — algo brackets invisible")
-            return []
+            return [], False
         try:
             rows = fetch({"symbol": self._market_id(symbol)})
         except Exception as e:
             log.warning("openAlgoOrders fetch failed: %s", e)
-            return []
-        return rows if isinstance(rows, list) else []
-
-    def algo_orders_readable(self) -> bool:
-        """Whether this ccxt build exposes the algo-order read endpoint at all.
-
-        `fetch_algo_orders` returns [] both when there are genuinely no algo
-        orders and when it could not ask. Callers that would ACT on emptiness
-        need to tell those apart; this separates "the endpoint is missing"
-        (never trust []) from "the endpoint answered nothing".
-        """
-        return getattr(self.ex, "fapiPrivateGetOpenAlgoOrders", None) is not None
+            return [], False
+        if not isinstance(rows, list):
+            log.warning("openAlgoOrders returned %s, not a list", type(rows).__name__)
+            return [], False
+        return rows, True
 
     def _cancel_algo_orders(self, symbol: str, coid_prefix: str | None) -> int:
         """Sweep resting algo/conditional trigger orders (raw fapi endpoints).
@@ -272,7 +270,9 @@ class BinanceClient:
                         "conditional brackets cannot be swept")
             return 0
         market_id = self._market_id(symbol)
-        rows = self.fetch_algo_orders(symbol)
+        # Sweeping is best-effort: an unreadable book means nothing to cancel
+        # here, and the boot/pre-entry sweeps will retry.
+        rows, _ok = self.fetch_algo_orders(symbol)
         n = 0
         for r in rows:
             if coid_prefix is not None:

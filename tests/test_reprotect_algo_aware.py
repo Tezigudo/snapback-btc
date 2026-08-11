@@ -163,7 +163,7 @@ class TestBracketStateMergesBothBooks:
         assert bracket_state([], [], PREFIX, place_tp=True).any_leg is False
 
     def test_none_inputs_are_tolerated(self) -> None:
-        st = bracket_state(None, None, PREFIX, place_tp=True)  # type: ignore[arg-type]
+        st = bracket_state(None, None, PREFIX, place_tp=True)
         assert st.intact is False and st.any_leg is False
 
 
@@ -209,8 +209,7 @@ def _bot(reprotect: dict | None = None, algo_rows=(), plain_orders=(),
     mc.cancel_open_orders.return_value = 0
     mc.fetch_position.return_value = _OPEN
     mc.ex.fetch_open_orders.return_value = list(plain_orders)
-    mc.fetch_algo_orders.return_value = list(algo_rows)
-    mc.algo_orders_readable.return_value = readable
+    mc.fetch_algo_orders.return_value = (list(algo_rows), readable)
     with patch("bot.BinanceClient.from_env", return_value=mc):
         b = Bot(params=params, dry_run=False)
     return b, mc
@@ -240,13 +239,36 @@ class TestMaybeReprotectBrakes:
         bot._maybe_reprotect(equity=147.0)
         mc.fetch_position.assert_not_called()
 
-    def test_unreadable_algo_book_never_acts(self) -> None:
-        """An empty algo read and a failed algo read are indistinguishable.
-        Acting on the ambiguity is exactly the July bug, so it must abstain."""
+    def test_failed_algo_read_never_acts(self) -> None:
+        """THE bug Sourcery caught on PR #20, and it is the July bug again.
+
+        fetch_algo_orders never raises, so "no algo orders" and "the call
+        failed" are the same empty list. An earlier version only abstained when
+        the ccxt METHOD was missing — but the endpoint can exist and the CALL
+        still fail (network blip, 5xx, rate limit), and then a healthy bracket
+        reads as missing and gets re-placed. ok=False must stop it dead.
+        """
         bot, mc = _bot({"observe_only": False}, algo_rows=[], readable=False)
-        with patch("bot.state.get_meta", return_value=json.dumps(_BRACKET)):
+        with patch("bot.state.get_meta", return_value=json.dumps(_BRACKET)), \
+             patch("bot.state.set_meta"), patch("bot.state.record_event"), \
+             patch("bot.send_alert"):
             bot._maybe_reprotect(equity=147.0)
         mc._place_brackets.assert_not_called()
+        mc.cancel_open_orders.assert_not_called()
+
+    def test_failed_algo_read_after_cancel_blocks_the_replace(self) -> None:
+        """Same ambiguity on the more dangerous side: if we cannot read the algo
+        book AFTER cancelling, we cannot prove the old bracket is gone, so
+        placing a fresh pair risks duplicates."""
+        bot, mc = _bot({"observe_only": False}, algo_rows=[])
+        # readable for the detection read, unreadable for the post-cancel one
+        mc.fetch_algo_orders.side_effect = [([], True), ([], False)]
+        with patch("bot.state.get_meta", return_value=json.dumps(_BRACKET)), \
+             patch("bot.state.set_meta"), patch("bot.state.record_event"), \
+             patch("bot.send_alert") as alert:
+            bot._maybe_reprotect(equity=147.0)
+        mc._place_brackets.assert_not_called()
+        assert "FAILED" in alert.call_args.args[0]
 
     def test_cap_stops_replacing_and_alerts_once(self) -> None:
         """The brake that makes a detector bug survivable: -4045 needs many

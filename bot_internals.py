@@ -624,8 +624,8 @@ class BracketState:
 
 
 def bracket_state(
-    plain_orders: list[dict],
-    algo_rows: list[dict],
+    plain_orders: list[dict] | None,
+    algo_rows: list[dict] | None,
     coid_prefix: str,
     place_tp: bool,
 ) -> BracketState:

@@ -256,8 +256,7 @@ def _mock_client() -> MagicMock:
     # Algo order book: reprotect reads BOTH books since 2026-08-11. Default to
     # "readable, and empty" so these tests keep describing the PLAIN book only —
     # a bare MagicMock here would be iterated as if it were rows.
-    mc.fetch_algo_orders.return_value = []
-    mc.algo_orders_readable.return_value = True
+    mc.fetch_algo_orders.return_value = ([], True)
     return mc
 
 

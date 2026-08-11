@@ -761,13 +761,12 @@ class Bot:
         except Exception:
             self.log.exception("reprotect: fetch_open_orders failed")
             return
-        # Read BOTH books. fetch_algo_orders never raises and returns [] on any
-        # failure, so an empty result is ambiguous: "no algo bracket" and "the
-        # endpoint just failed" look identical. Only trust emptiness when the
-        # plain book is empty too AND the endpoint is actually available —
-        # otherwise a 5-second network blip re-places a live bracket.
-        algo_rows = self.client.fetch_algo_orders(self.symbol)
-        if not algo_rows and not self.client.algo_orders_readable():
+        # Read BOTH books. fetch_algo_orders never raises, so it reports success
+        # separately: `ok=False` means missing endpoint, failed call, or a bad
+        # payload. Acting on a read we could not make is the July bug wearing a
+        # different hat — a 5-second network blip would re-place a live bracket.
+        algo_rows, algo_ok = self.client.fetch_algo_orders(self.symbol)
+        if not algo_ok:
             self.log.warning("reprotect: algo book unreadable — skipping "
                              "(cannot distinguish 'no bracket' from 'no answer')")
             return
@@ -820,10 +819,14 @@ class Bot:
             # Re-check BOTH books: a plain-only check here would miss a surviving
             # ALGO leg and happily place a duplicate pair beside it — the same
             # blind spot as the detector, on the more dangerous side.
+            post_algo, post_ok = self.client.fetch_algo_orders(self.symbol)
+            if not post_ok:
+                raise RuntimeError(
+                    "algo book unreadable after cancel — cannot prove the old "
+                    "bracket is gone, so skipping re-place to avoid duplicates")
             survivors = bracket_state(
                 self.client.ex.fetch_open_orders(self.symbol),
-                self.client.fetch_algo_orders(self.symbol),
-                self.coid_prefix, place_tp)
+                post_algo, self.coid_prefix, place_tp)
             if survivors.any_leg:
                 raise RuntimeError(
                     "a bracket leg survived cancel — skipping re-place to avoid "
