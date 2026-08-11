@@ -25,6 +25,21 @@ This repo runs a deterministic Binance Futures BTC/USDT perpetual bot. You (Clau
 - No changing `BINANCE_ENV` from testnet to mainnet without the full `/promote-mainnet` checklist.
 - If `data/HALT` exists, do NOT remove it without explicit user ask. Bot polls every 5s and exits.
 - Mainnet requires `confirm_mainnet.lock` to exist. If user asks you to create it, run `verify_identity(action_type="bot_mainnet")` first.
+- **Verify automated review suggestions against the repo before applying them.**
+  Sourcery runs on every PR here and is usually right, but it reasons from the
+  diff and cannot see the rest of the tree. Treating it as a checklist will
+  eventually break something silently. Grep for the real readers of any symbol
+  it calls dead, unused, or safe to remove.
+  Worked example (2026-08-11, PR #17): it advised deleting `time_stop_bars` from
+  `config/params.yaml` as a dead key. An earlier self-review pass in the same
+  session had independently reached the same conclusion. Both wrong — agreement
+  between two reviewers who both worked from the diff is not corroboration. `tools/data_parity_check.py` reads it with a **48-bar fallback**
+  and `tools/build_deployed_strategies_viz.py` indexes it directly, so deleting
+  it would have KeyError'd the viz and quietly dropped the parity tool to a 12h
+  time stop against the deployed 14d. One suggestion in five, applied as
+  written, would have broken production tooling without a test failing.
+  Accept, decline, or accept-and-reverse — but record the reason at the callsite
+  so the next reader doesn't relitigate it.
 
 ## Memory protocol (CogniLayer)
 - BEFORE diagnostics: `memory_search("snapback ...")` for past gotchas.
