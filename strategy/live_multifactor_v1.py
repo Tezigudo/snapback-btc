@@ -240,12 +240,29 @@ def trend_exit_signal_multifactor_v1(
     the gap in the direction of the model that was actually validated.
 
     `require_trend: false` disables the exit, exactly as it disables the branch
-    in the backtest — the two stay in lockstep off one config key.
+    in the backtest — the two stay in lockstep off one config key. The DEFAULT
+    when the key is absent must also match, and it is `True`
+    (`DayTradeMultiFactorBTC.require_trend`). Defaulting to False here would
+    mean a config that lost the key runs the exit in the backtest and NOT live —
+    which is this module's own bug re-created silently, on the same leg.
 
-    KNOWN DIVERGENCE (shared with the donchian channel exit): backtesting.py
-    executes `position.close()` at the NEXT bar's open, while the bot closes at
-    market as soon as it sees the triggering CLOSED bar. Sub-bar timing only;
-    the decision itself is identical.
+    KNOWN DIVERGENCES (both shared with the donchian channel exit, both
+    accepted):
+
+    1. backtesting.py executes `position.close()` at the NEXT bar's open, while
+       the bot closes at market as soon as it sees the triggering CLOSED bar.
+       Sub-bar timing only; the decision itself is identical.
+    2. Same-bar exit -> OPPOSITE entry. `bot.loop` calls `_maybe_channel_exit`
+       and then `_maybe_enter` in the same tick, and `_maybe_enter`'s
+       one-eval-per-bar guard (`_last_signal_ts`) is not yet set for this bar
+       because it early-returns while a position is open. So live CAN close on
+       an adverse cross and open the opposite side on the same bar; `next()`
+       returns straight after `position.close()` and cannot re-enter until T+1.
+       MEASURED 2026-08-11 over 2022-01-01..2026-08-11: 236 trades, 146 of them
+       closed by this exit, and the opposite entry signal was true on the exit
+       bar **0 times**. The entry gates (RSI<35 / RSI>70 plus a volume spike and
+       the 4H regime) simply never coincide with an adverse cross on a held
+       position. Real in principle, never observed in 4.6 years.
 
     CALLER CONTRACT: bars_15m.iloc[-1] MUST be a CLOSED bar (drop Binance's
     forming last row first). Returns (should_exit, debug). Never raises;
@@ -255,7 +272,8 @@ def trend_exit_signal_multifactor_v1(
         return False, {"reason": "not_in_position", "side": position_side}
 
     s = params.get("strategy", {})
-    if not s.get("require_trend", False):
+    # Default True to match DayTradeMultiFactorBTC.require_trend — see docstring.
+    if not s.get("require_trend", True):
         return False, {"reason": "require_trend_off", "side": position_side}
 
     period = int(s.get("mf_trend_ema_period", 200))

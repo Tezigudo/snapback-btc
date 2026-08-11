@@ -21,6 +21,8 @@ So the load-bearing tests here are the two the old harness lacked:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -222,13 +224,32 @@ class TestTrendExitEdges:
         assert should is False
         assert dbg["reason"] == "require_trend_off"
 
-    def test_require_trend_missing_defaults_to_off(self) -> None:
-        """Absent key must not silently start closing positions on a leg that
-        never opted in."""
+    def test_require_trend_missing_defaults_to_the_backtest_default(self) -> None:
+        """An absent key must fall back to the SAME default the backtest class
+        uses (True), not to "off".
+
+        This is the bug this whole module exists to fix, in miniature: a live
+        default of False would mean a config that lost the key runs the adverse
+        exit in the backtest and NOT live — silently, on the same leg, with no
+        test failing. Pinned against the class attribute rather than a literal
+        so the two cannot drift apart.
+        """
+        assert DayTradeMultiFactorBTC.require_trend is True
+        df, level = self._at_ema()
+        close = df["Close"].to_numpy(copy=True)
+        close[-1] = level - 500.0  # deeply adverse — must exit
         should, dbg = trend_exit_signal_multifactor_v1(
-            _wavy(), "long", {"strategy": {"mf_trend_ema_period": PERIOD}})
-        assert should is False
-        assert dbg["reason"] == "require_trend_off"
+            _ohlc(close), "long", {"strategy": {"mf_trend_ema_period": PERIOD}})
+        assert should is True, "absent require_trend silently disabled the exit"
+        assert dbg["reason"] == "trend_exit_long"
+
+    def test_deployed_config_actually_sets_require_trend(self) -> None:
+        """The default above is a safety net, not the plan — production must set
+        the key explicitly."""
+        import yaml
+        cfg = yaml.safe_load(
+            (Path(__file__).resolve().parent.parent / "config" / "params.yaml").read_text())
+        assert cfg["strategy"]["require_trend"] is True
 
     def test_insufficient_bars_is_warmup(self) -> None:
         should, dbg = trend_exit_signal_multifactor_v1(_wavy(50), "long", PARAMS)
