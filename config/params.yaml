@@ -136,6 +136,23 @@ hedge:
   enabled: false
   client_order_id_prefix: "snap-v1-"
 
+# Bracket re-protection (bot._maybe_reprotect). Restores an SL/TP bracket that
+# vanished WITHOUT a fill — a manual cancel, or a leverage change (Binance
+# auto-cancels all open orders on one). Disabled 2026-07-22 -> 08-11 because the
+# old detector read only /fapi/v1/openOrders and could not see the conditional
+# orders _place_brackets creates, so it re-placed until -4045. Detection now
+# merges BOTH order books (bot_internals.bracket_state).
+reprotect:
+  enabled: true
+  # ROLLOUT PHASE 1. Logs "WOULD re-place" and places NOTHING. Flip to false
+  # only after a FULL live position has passed with zero such lines — that is
+  # the direct falsification of the July false-negative, and it cannot be proven
+  # by unit tests because the truth lives on the exchange.
+  observe_only: true
+  # Hard cap per position, persisted in meta.active_bracket so a restart cannot
+  # reset it. The 60s throttle did NOT stop July, it only paced the spam.
+  max_replaces_per_position: 3
+
 execution:
   order_type: limit             # market | limit  (2026-05-19: enabled limit-order entry)
   # Limit-order knobs (used only when order_type=limit):

@@ -52,11 +52,10 @@ import yaml
 from alerts import send_alert
 from bot_internals import (
     SignalDecision,
-    bracket_is_intact,
+    bracket_state,
     channel_exit_signal,  # noqa: F401  (re-exported; tools import it from here)
     evaluate_for_strategy,
     gate_status,
-    has_bracket_leg,
     limit_entry_price,
     order_avg_price,
     resolve_strategy_name,
@@ -303,6 +302,9 @@ class Bot:
         self._principal_reconcile_interval_s: float = 3600.0
         self._principal_retry_interval_s: float = 60.0
         self._last_principal_reconcile_ts: float = 0.0
+        # One alert per process when the per-position re-place cap is hit — the
+        # cap itself is persisted in active_bracket; this only de-dupes the mail.
+        self._reprotect_capped_alerted: bool = False
         if self.dry_run:
             self.log.warning("DRY-RUN MODE: no real orders will be placed")
 
@@ -923,10 +925,36 @@ class Bot:
         leverage change (Binance auto-cancels ALL open orders on a leverage
         change). _detect_bracket_exit only reacts to a bracket FILL (open→flat),
         never a cancel, so a cancelled bracket would leave the position silently
-        unprotected until the time-stop. This guard notices the gap and, from the
-        params stashed at entry, re-places the bracket (cancel-then-replace so it
-        never leaves duplicates), then alerts."""
+        unprotected until the time stop — which, measured 2026-08-11, fires 0
+        times in 4.6 years. This guard notices the gap and, from the params
+        stashed at entry, re-places the bracket (cancel-then-replace so it never
+        leaves duplicates), then alerts.
+
+        RE-ENABLED 2026-08-11 with algo-aware detection. It was disabled
+        2026-07-22 because `bracket_is_intact(fetch_open_orders(...))` cannot see
+        the conditional/algo orders `_place_brackets` actually creates, so it
+        read a healthy bracket as missing and re-placed every cooldown until
+        `-4045 Reach max stop order limit`. Detection now merges BOTH order books
+        via `bracket_state`, and `algo_bracket_leg` classifies the algo shape by
+        client-order-id suffix because those rows carry no type field at all
+        (see its docstring for the live payload).
+
+        Three independent brakes, because the failure mode is a detector that is
+        wrong in the unsafe direction:
+          - `reprotect.observe_only` — log the decision, place nothing. The
+            rollout runs here until a full live position passes with zero
+            "would re-place" lines.
+          - `reprotect.max_replaces_per_position` — hard cap per signal_id,
+            persisted in active_bracket so a restart cannot reset it. The 60s
+            throttle did NOT stop July; it only paced the spam.
+          - an empty algo read is treated as UNKNOWN, not as "no bracket" — a
+            transient endpoint failure looks identical to a cancelled bracket,
+            and acting on it is precisely the July bug.
+        """
         if self.dry_run:
+            return
+        rp = (self.params.get("reprotect") or {})
+        if not rp.get("enabled", False):
             return
         pos = self.client.fetch_position(self.symbol)
         if pos.side == "flat" or pos.qty == 0:
@@ -956,12 +984,52 @@ class Bot:
         except Exception:
             self.log.exception("reprotect: fetch_open_orders failed")
             return
-        if bracket_is_intact(open_orders, place_tp):
+        # Read BOTH books. fetch_algo_orders never raises, so it reports success
+        # separately: `ok=False` means missing endpoint, failed call, or a bad
+        # payload. Acting on a read we could not make is the July bug wearing a
+        # different hat — a 5-second network blip would re-place a live bracket.
+        algo_rows, algo_ok = self.client.fetch_algo_orders(self.symbol)
+        if not algo_ok:
+            self.log.warning("reprotect: algo book unreadable — skipping "
+                             "(cannot distinguish 'no bracket' from 'no answer')")
+            return
+        state_ = bracket_state(open_orders, algo_rows, self.coid_prefix, place_tp)
+        if state_.intact:
             return
         now = time.time()
         if now - self._last_reprotect_ts < 60:
             return
+
+        # Hard cap per position, persisted so a restart cannot reset it. A
+        # detector bug must not be able to walk to -4045 again.
+        cap = int(rp.get("max_replaces_per_position", 3))
+        done = int(ab.get("reprotect_count", 0))
+        if done >= cap:
+            if not self._reprotect_capped_alerted:
+                self._reprotect_capped_alerted = True
+                self.log.error("reprotect: hit cap %d for signal_id=%s — STOPPING. %s",
+                               cap, ab.get("signal_id"), state_.describe())
+                send_alert(
+                    "Bracket re-place CAP reached — position may be unprotected",
+                    f"{pos.side} {pos.qty:.4f} @ {pos.entry_price:.2f}\n"
+                    f"{state_.describe()}\n"
+                    f"Re-placed {done} time(s); cap is {cap}. No further attempts "
+                    f"will be made for this position — check the bracket manually.")
+            return
+
         self._last_reprotect_ts = now  # throttle (relaxed to a 15s retry on failure below)
+
+        if rp.get("observe_only", True):
+            # Rollout phase 1: prove the detector against a real resting bracket
+            # without placing anything. Any line here during a healthy position
+            # is the July false-negative reappearing.
+            self.log.warning(
+                "reprotect OBSERVE: WOULD re-place for %s %.4f @ %.2f — %s "
+                "(plain=%d algo=%d)",
+                pos.side, pos.qty, pos.entry_price, state_.describe(),
+                len(open_orders or []), len(algo_rows or []))
+            return
+
         self.log.warning(
             "Bracket MISSING while holding %s %.4f @ %.2f (equity=$%.2f) — re-placing SL%s.",
             pos.side, pos.qty, pos.entry_price, equity, "/TP" if place_tp else "")
@@ -971,9 +1039,21 @@ class Bot:
             # failures, so a partial cancel + blind re-place could leave a stale
             # leg alongside the new pair.
             self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
-            if has_bracket_leg(self.client.ex.fetch_open_orders(self.symbol)):
+            # Re-check BOTH books: a plain-only check here would miss a surviving
+            # ALGO leg and happily place a duplicate pair beside it — the same
+            # blind spot as the detector, on the more dangerous side.
+            post_algo, post_ok = self.client.fetch_algo_orders(self.symbol)
+            if not post_ok:
                 raise RuntimeError(
-                    "a bracket leg survived cancel — skipping re-place to avoid duplicate orders")
+                    "algo book unreadable after cancel — cannot prove the old "
+                    "bracket is gone, so skipping re-place to avoid duplicates")
+            survivors = bracket_state(
+                self.client.ex.fetch_open_orders(self.symbol),
+                post_algo, self.coid_prefix, place_tp)
+            if survivors.any_leg:
+                raise RuntimeError(
+                    "a bracket leg survived cancel — skipping re-place to avoid "
+                    f"duplicate orders ({survivors.describe()})")
             self.client._place_brackets(
                 self.symbol, pos.side, pos.qty, pos.entry_price,
                 float(ab["sl_distance"]), float(ab["tp_distance"]),
@@ -988,9 +1068,15 @@ class Bot:
                 f"{pos.side} {pos.qty:.4f} @ {pos.entry_price:.2f} — automatic SL/TP "
                 f"re-placement failed (position may be unprotected): {e}")
             return
+        # Persist the attempt count INSIDE active_bracket so the cap survives a
+        # restart — an in-memory counter would reset on every boot and let a
+        # detector bug resume walking toward -4045.
+        ab["reprotect_count"] = done + 1
+        state.set_meta("active_bracket", json.dumps(ab))
         state.record_event("WARN", "bracket_reprotect",
                            {"side": pos.side, "qty": pos.qty,
                             "entry": pos.entry_price, "equity": equity,
+                            "attempt": done + 1, "cap": cap,
                             "signal_id": ab.get("signal_id")},
                            signal_id=ab.get("signal_id"))
         send_alert(
@@ -1278,14 +1364,14 @@ class Bot:
                 self._detect_bracket_exit(equity)
                 self._maybe_time_stop(equity)
                 self._maybe_channel_exit(equity)
-                # DISABLED 2026-07-22: _maybe_reprotect checks fetch_open_orders()
-                # for the bracket, but _place_brackets lands SL/TP on Binance's
-                # conditional/algo-order endpoint, which fetch_open_orders does
-                # NOT return → it saw "bracket missing" every poll on a live
-                # position, re-placed until the -4045 max-stop-order limit, and
-                # spammed failure alerts. Re-enable only once bracket detection
-                # can see conditional orders (fetchOpenOrders alone can't).
-                # self._maybe_reprotect(equity)
+                # RE-ENABLED 2026-08-11 with algo-aware detection (bracket_state
+                # merges /fapi/v1/openOrders AND /fapi/v1/openAlgoOrders). It was
+                # disabled 2026-07-22 because the plain-only check read a healthy
+                # conditional bracket as missing and re-placed to -4045. Gated on
+                # `reprotect.enabled`, and ships `observe_only: true` — it logs
+                # the decision and places nothing until a full live position
+                # passes with zero "WOULD re-place" lines.
+                self._maybe_reprotect(equity)
                 self._maybe_enter(equity)
                 self._maybe_push_consolidate(equity)
                 backoff_s = self.poll_s
