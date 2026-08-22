@@ -45,7 +45,12 @@ strategy:
   # ATR-based stop-loss (no TP — the Donchian channel exit closes the trade)
   atr_period: 20              # ATR(20) on 4h
   atr_sl_multiple: 1.5        # SL distance = 1.5 × ATR
-  atr_tp_multiple: 1.5        # unused by Donchian — entry places NO TP leg
+  # atr_tp_multiple intentionally omitted -- Donchian has no TP (channel exit),
+  # matching params_donchian_v3_var_A..E.yaml. It was dead in every path: the
+  # live evaluator uses its own ATR_TP_K constant for an advisory log/telemetry
+  # number that is never placed, and the backtest class has no such attribute so
+  # _apply_params_to_class filters it out. Keeping a value here only invited the
+  # reading that donchian has a 1.5xATR take-profit. It does not.
   atr_trail_multiple: 0.0     # 0 = no trailing stop (cons params disabled it)
 
   # Time stop — flatten after 48 bars (8 days on 4h) if neither SL nor channel-exit fires
