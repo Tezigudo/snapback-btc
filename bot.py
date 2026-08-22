@@ -961,8 +961,9 @@ class Bot:
             self.log.warning("bracket-exit detection failed: %s", e)
 
     def _maybe_time_stop(self, equity: float) -> None:
-        # Checked BEFORE fetch_position: legs with no time stop (supertrend,
-        # donchian-v3) then cost zero API calls per tick instead of one.
+        # Read the config BEFORE fetch_position so a leg with no time stop
+        # costs zero API calls per tick instead of one. That is supertrend
+        # (max_hold_bars: 0); donchian-v3 sets 48 and DOES pay the fetch.
         max_hold = int((self.params.get("strategy") or {}).get("max_hold_bars", 0))
         if max_hold <= 0:
             return

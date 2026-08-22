@@ -488,9 +488,12 @@ def time_stop_due(max_hold_bars: int, bar_seconds: int, age_s: float) -> bool:
     """True when an open position has outlived its time stop.
 
     max_hold_bars <= 0 means THERE IS NO TIME STOP — not "close after zero
-    bars". Strategies whose exit is a trend flip (supertrend, donchian-v3) set
-    it to 0 on purpose, and config/params_sol_supertrend.yaml even labels the
-    field "Unused by supertrend". Reading 0 as a due time stop made
+    bars". supertrend sets it to 0 on purpose (its exit is the STDir flip) and
+    config/params_sol_supertrend.yaml labels the field "Unused by supertrend".
+    donchian-v3 does NOT: it sets max_hold_bars: 48 (8 days on 4h) as a
+    max-hold safety on top of its channel exit — do not "align" it to 0 to
+    match supertrend, that is precisely the edit this docstring exists to
+    prevent. Reading 0 as a due time stop made
     `age_s >= 0` true for every position the leg could ever open: on
     2026-08-08 the sol_supertrend leg entered LONG 1.2 SOL @ 75.63 and was
     flattened 7 seconds later, and would have been on every subsequent entry.

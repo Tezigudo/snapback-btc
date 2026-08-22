@@ -37,10 +37,17 @@ NO TP: the Donchian entry places entry + SL ONLY (no TP leg — "let the channel
 exit close the trade"). ATR_TP_K below is retained purely as an advisory
 reference level in logs/telemetry; it is NEVER placed as an order.
 
-TIME-STOP: the backtest IGNORES time_stop_bars (pre-existing known divergence).
-The live bot KEEPS the time-stop (bot._maybe_time_stop) as an extra max-hold
-safety ON TOP of the channel exit — it can only ever close EARLIER than the
-channel, never override a channel-exit decision.
+TIME-STOP: both sides honour it, at 48 bars (8 days on 4h). The live bot reads
+`max_hold_bars` (bot._maybe_time_stop); the backtest reads `time_stop_bars` and
+closes on it in DonchianBreakoutBTCv3.next() (strategy/signals_donchian.py
+:139-143), and every donchian backtest entry point passes 48 explicitly
+(tools/full_history_backtest.py, tools/v1_plus_donchian_backtest.py,
+tools/_postfrac_donchian_variants_sweep.py). Earlier revisions of this docstring
+claimed the backtest ignored it — it does not; there is no divergence here.
+CAUTION: the backtest CLASS default is time_stop_bars = 180, so a new backtest
+path that forgets to pass 48 silently runs a 30-day hold instead of an 8-day one.
+Either way the time stop can only close EARLIER than the channel, never override
+a channel-exit decision.
 
 Returns (evaluate_signal_donchian_v3):
   side ∈ {'long', 'short', None}
