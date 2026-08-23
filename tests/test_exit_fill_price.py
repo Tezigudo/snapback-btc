@@ -107,6 +107,16 @@ class TestResolveFillPrice:
         with patch("bot.time.sleep"):
             assert bot._resolve_fill_price(_create_response()) is None
 
+    def test_does_not_retry_a_failed_call(self):
+        """ccxt's timeout is 15s; retrying a hung call would stall the tick
+        loop ~46s for a bookkeeping value. Retries are for the
+        'fetched but not filled yet' case only."""
+        bot, mc = _make_bot(strategy_name="multifactor-v1")
+        mc.ex.fetch_order.side_effect = Exception("timeout")
+        with patch("bot.time.sleep"):
+            bot._resolve_fill_price(_create_response())
+        assert mc.ex.fetch_order.call_count == 1
+
     def test_returns_none_when_order_is_none(self):
         """close_position returns None when already flat."""
         bot, _ = _make_bot(strategy_name="multifactor-v1")
@@ -187,3 +197,29 @@ class TestChannelExitRecordsRealPrice:
         got = self._drive(60000.0)
         assert got["price"] == pytest.approx(60000.0)
         assert got["pnl_usd"] == pytest.approx(-100.0)
+
+
+class TestStaleEntryIsNotAttributed:
+    """A closed trade's entry must never be used to price a later exit."""
+
+    def test_returns_none_when_newest_fill_is_a_close(self):
+        """Mirrors _detect_bracket_exit's guard. Filtering on reason='entry'
+        would skip backwards over this close and return the stale entry."""
+        from exchange import state
+        bot, _ = _make_bot(strategy_name="donchian-v3", entry_tf="4h")
+        state.record_fill(side="long", qty=0.02, price=65000.0, reason="entry",
+                          equity_after=10000.0, client_order_id_root="old")
+        state.record_fill(side="close", qty=0.02, price=70000.0, reason="channel_exit",
+                          equity_after=10100.0, client_order_id_root="old")
+        assert bot._open_entry_fill() is None
+
+    def test_returns_the_entry_when_it_is_newest(self):
+        from exchange import state
+        bot, _ = _make_bot(strategy_name="donchian-v3", entry_tf="4h")
+        state.record_fill(side="long", qty=0.02, price=65000.0, reason="entry",
+                          equity_after=10000.0, client_order_id_root="cur")
+        assert bot._open_entry_fill() == ("long", 0.02, 65000.0)
+
+    def test_returns_none_on_empty_db(self):
+        bot, _ = _make_bot(strategy_name="donchian-v3", entry_tf="4h")
+        assert bot._open_entry_fill() is None

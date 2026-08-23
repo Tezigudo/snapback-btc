@@ -1042,9 +1042,17 @@ class Bot:
                 fetched = self.client.ex.fetch_order(oid or None, self.symbol,
                                                      params=params)
             except Exception:
-                self.log.warning("exit-price: fetch_order failed (%d/%d) for %s",
-                                 i + 1, attempts, coid or oid)
-                continue
+                # Do NOT retry a failed CALL. ccxt's timeout is 15s, so three
+                # attempts would block the tick loop ~46s -- and this path is
+                # pure bookkeeping running AFTER the exchange has already closed
+                # the position. A stalled loop is worse than a missing price,
+                # which is recoverable from order history later. Retries exist
+                # only for the "fetched, but the fill is not attributed yet"
+                # case handled below.
+                self.log.warning("exit-price: fetch_order failed for %s -- "
+                                 "not retrying (bookkeeping must not stall the "
+                                 "loop)", coid or oid)
+                return None
             px = order_avg_price(fetched)
             if px:
                 return px
@@ -1052,20 +1060,32 @@ class Bot:
                          "recording without it", coid or oid)
         return None
 
-    def _last_entry_fill(self) -> tuple[str, float, float] | None:
-        """(side, qty, price) of the most recent entry fill, or None."""
+    def _open_entry_fill(self) -> tuple[str, float, float] | None:
+        """(side, qty, price) of the entry for the position that is OPEN NOW.
+
+        Reads the most recent fill of ANY kind and requires it to be an entry,
+        exactly as _detect_bracket_exit does. Filtering on `reason='entry'`
+        instead would skip BACKWARDS over intervening closes and hand back an
+        entry that is already closed -- attributing a stale entry price to the
+        current position and writing a wrong number into the trade record.
+
+        That is reachable: a position adopted at boot (stale_position_at_boot)
+        or opened manually has no entry row of its own, so the newest fill is
+        the PREVIOUS trade's close. Returning None there is correct -- the
+        caller records the exit without a PnL rather than with a false one.
+        """
         try:
             with sqlite3.connect(state.DB_PATH) as c:
                 row = c.execute(
-                    "SELECT side, qty, price FROM fills WHERE reason='entry' "
+                    "SELECT reason, side, qty, price FROM fills "
                     "ORDER BY id DESC LIMIT 1"
                 ).fetchone()
         except Exception:
             self.log.exception("exit-pnl: entry-fill lookup failed")
             return None
-        if not row:
+        if not row or row[0] != "entry":
             return None
-        return str(row[0]), float(row[1]), float(row[2])
+        return str(row[1]), float(row[2]), float(row[3])
 
     def _maybe_time_stop(self, equity: float) -> None:
         # Read the config BEFORE fetch_position so a leg with no time stop
@@ -1099,7 +1119,7 @@ class Bot:
                 order = self.client.close_position(
                     self.symbol, client_order_id_root=root, close_leg="x")
                 exit_price = self._resolve_fill_price(order)
-                _entry = self._last_entry_fill()
+                _entry = self._open_entry_fill()
                 state.record_fill(side="close", qty=pos.qty,
                                   price=float(exit_price or 0.0),
                                   pnl_usd=_exit_pnl_usd(
@@ -1178,7 +1198,7 @@ class Bot:
             order = self.client.close_position(
                 self.symbol, client_order_id_root=root, close_leg="ce")
             exit_price = self._resolve_fill_price(order)
-            _entry = self._last_entry_fill()
+            _entry = self._open_entry_fill()
             state.record_fill(side="close", qty=pos.qty,
                               price=float(exit_price or 0.0),
                               pnl_usd=_exit_pnl_usd(
