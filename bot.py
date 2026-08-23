@@ -157,6 +157,25 @@ class _LocalTimeFormatter(logging.Formatter):
         return dt.strftime("%Y-%m-%d %H:%M:%S %z")
 
 
+def _rel_to_repo(p: Path) -> str:
+    """Repo-relative form of `p` for the startup banner, absolute if outside.
+
+    The state DB, log file and heartbeat are all env-overridable
+    (SNAPBACK_STATE_DB / LOG_DIR / …) and those overrides accept ABSOLUTE
+    paths pointing anywhere on the box. `Path.relative_to` raises ValueError in
+    that case, which would take down boot() over a cosmetic banner line.
+
+    Found 2026-08-23 by the new tests/conftest.py isolation fixture, which
+    points the state DB at a pytest tmp dir — the first time anything had ever
+    run this code with a DB outside the repo. Latent in production only because
+    both live legs happen to use data/*.db.
+    """
+    try:
+        return str(p.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(p)
+
+
 def _setup_logging(level: str = "INFO") -> logging.Logger:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("snapback")
@@ -463,9 +482,9 @@ class Bot:
             f"  Alert tag      : {os.environ.get('ALERT_TAG', '(default snapback-btc)')}\n"
             f"\n"
             f"Paths\n"
-            f"  State DB       : {state.DB_PATH.relative_to(REPO_ROOT)}\n"
-            f"  Log file       : {LOG_FILE.relative_to(REPO_ROOT)}\n"
-            f"  Heartbeat      : {HEARTBEAT.relative_to(REPO_ROOT)}\n"
+            f"  State DB       : {_rel_to_repo(state.DB_PATH)}\n"
+            f"  Log file       : {_rel_to_repo(LOG_FILE)}\n"
+            f"  Heartbeat      : {_rel_to_repo(HEARTBEAT)}\n"
         )
 
     def _maybe_push_consolidate(self, equity: float | None) -> None:

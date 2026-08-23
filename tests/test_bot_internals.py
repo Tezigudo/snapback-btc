@@ -6,6 +6,8 @@ they're easy to unit-test without mocking the exchange or state.db.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -192,3 +194,31 @@ class TestEvaluateForStrategy:
         bars = _synthetic_bars(n=10)
         d = evaluate_for_strategy("multifactor-v1", bars, 0.0, self._v1_params())
         assert d.price == pytest.approx(float(bars["Close"].iloc[-1]))
+
+
+class TestRelToRepo:
+    """bot._rel_to_repo: the startup banner must never crash on path layout.
+
+    Regression for a latent boot() crash found 2026-08-23: the banner rendered
+    `state.DB_PATH.relative_to(REPO_ROOT)`, which raises ValueError whenever the
+    DB lives outside the repo. SNAPBACK_STATE_DB accepts an absolute path
+    pointing anywhere, so this was reachable by configuration alone — it had
+    simply never been exercised, because both live legs use data/*.db.
+    """
+
+    def test_path_inside_repo_renders_relative(self):
+        import bot
+        p = bot.REPO_ROOT / "data" / "state.db"
+        assert bot._rel_to_repo(p) == "data/state.db"
+
+    def test_path_outside_repo_falls_back_to_absolute(self):
+        import bot
+        p = Path("/tmp/pytest-somewhere-else/state.db")
+        assert bot._rel_to_repo(p) == "/tmp/pytest-somewhere-else/state.db"
+
+    def test_banner_does_not_raise_for_out_of_repo_db(self, tmp_path):
+        """The whole point: an out-of-repo DB must not take down boot()."""
+        import bot
+        outside = tmp_path / "state.db"
+        assert bot._rel_to_repo(outside) == str(outside)
+        assert not str(outside).startswith(str(bot.REPO_ROOT))
