@@ -22,6 +22,24 @@ Also fixes a real footgun in the v1 script: it logged a HARDCODED target commit
 that was not what was on disk. Here the target is read from git at run time.
 
 On anything unexpected: do nothing and leave the bot alone.
+
+EXIT CODES are deliberately distinct, because "I safely did nothing" and "I may
+have just broken a real-money leg" must never share a code:
+    0  restarted and healthy   (or, with --check, the leg IS restartable)
+    1  RESTARTED BUT NOT ACTIVE -- needs a human NOW
+    2  usage error
+    3  refused; the bot was NOT touched (in position, orders resting, or the
+       algo book could not be read).  This is the SAFE outcome.
+
+RACE (accepted, same as the v1 script it replaces): a leg could open a position
+in the moment between the flat check and `systemctl restart`, and boot() would
+then flatten it. The window is a couple of seconds and entry additionally
+requires a fresh signal, so this is left unhandled rather than papered over with
+a lock -- but check the leg is not mid-signal before running it.
+
+Usage:
+    leg_safe_restart.py <instance>            restart if flat
+    leg_safe_restart.py <instance> --check    report only, never restart
 """
 import json
 import subprocess
@@ -50,10 +68,13 @@ def _unit_prop(unit: str, prop: str) -> str:
 
 
 def main() -> int:
-    if len(sys.argv) != 2 or sys.argv[1] not in LEGS:
-        log(f"usage: leg_safe_restart.py <{'|'.join(LEGS)}>")
+    args = sys.argv[1:]
+    check_only = "--check" in args
+    args = [a for a in args if a != "--check"]
+    if len(args) != 1 or args[0] not in LEGS:
+        log(f"usage: leg_safe_restart.py <{'|'.join(LEGS)}> [--check]")
         return 2
-    inst = sys.argv[1]
+    inst = args[0]
     unit, symbol = LEGS[inst]
 
     # Real deployed commit, not a hardcoded string that can rot.
@@ -69,20 +90,24 @@ def main() -> int:
     if pos.side != "flat" or pos.qty:
         log(f"[{inst}] IN POSITION: {pos.side} qty={pos.qty} @ {pos.entry_price} "
             f"-- refusing (boot() would flatten it)")
-        return 1
+        return 3
 
     plain = c.ex.fetch_open_orders(symbol)
     algo, algo_ok = c.fetch_algo_orders(symbol)
     if not algo_ok:
         log(f"[{inst}] algo book UNREADABLE -- refusing "
             f"(cannot prove the book is clean)")
-        return 1
+        return 3
     if plain or algo:
         log(f"[{inst}] flat but {len(plain)} plain + {len(algo)} algo orders "
             f"resting -- refusing")
-        return 1
+        return 3
 
     equity = c.fetch_equity_usdt()
+    if check_only:
+        log(f"[{inst}] FLAT and clean (equity=${equity:.2f}) -- WOULD restart "
+            f"{unit} onto {target}. --check given, doing nothing.")
+        return 0
     log(f"[{inst}] FLAT and clean (equity=${equity:.2f}) -- restarting {unit} "
         f"onto {target}")
 
@@ -102,7 +127,10 @@ def main() -> int:
         "is_active": active, "equity_at_restart": equity,
     }, indent=2))
     log(f"[{inst}] wrote {stamp}")
-    return 0 if active == "active" else 1
+    if active != "active":
+        log(f"[{inst}] *** RESTARTED BUT is-active={active} -- NEEDS ATTENTION ***")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
