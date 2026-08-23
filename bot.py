@@ -157,6 +157,24 @@ class _LocalTimeFormatter(logging.Formatter):
         return dt.strftime("%Y-%m-%d %H:%M:%S %z")
 
 
+def _exit_pnl_usd(side: str, entry_price: float | None,
+                  exit_price: float | None, qty: float) -> float | None:
+    """GROSS realised PnL for a closed position, or None if it cannot be known.
+
+    Deliberately gross (no fees/funding), because that is the convention the
+    bracket-exit path at _detect_bracket_exit already writes into the same
+    `fills.pnl_usd` column, and one column must mean one thing. Expect it to
+    read a few tenths of a percent above the equity ledger: donchian's
+    2026-08-23 trade is +$10.09 here versus +$9.95 by equity_after delta, the
+    difference being round-trip fees. For true net PnL, difference consecutive
+    `equity_after` values instead.
+    """
+    if not entry_price or not exit_price or not qty:
+        return None
+    direction = 1.0 if side == "long" else -1.0
+    return round((float(exit_price) - float(entry_price)) * float(qty) * direction, 4)
+
+
 def _rel_to_repo(p: Path) -> str:
     """Repo-relative form of `p` for the startup banner, absolute if outside.
 
@@ -389,13 +407,17 @@ class Bot:
                 # and no equity, so a boot-flattened WIN showed as $0/loss on the
                 # dashboard (makeTrade fell back to (entry-entry)*qty = 0, which
                 # deriveLegStats then counts as a loss).
-                close_price = order_avg_price(close_order) or pos.entry_price
+                # Refetch: the create response carries avgPrice "0.00", so the
+                # old `or pos.entry_price` fallback always fired and made every
+                # boot-flatten report PnL of exactly 0.
+                close_price = (self._resolve_fill_price(close_order)
+                               or pos.entry_price)
                 try:
                     equity_after = float(self.client.fetch_equity_usdt())
                 except Exception:
                     equity_after = None
-                direction = 1.0 if pos.side == "long" else -1.0
-                pnl_usd = round((close_price - pos.entry_price) * pos.qty * direction, 4)
+                pnl_usd = _exit_pnl_usd(pos.side, pos.entry_price,
+                                        close_price, pos.qty)
                 state.record_event("WARN", "boot_flatten",
                                    {"side": pos.side, "qty": pos.qty,
                                     "entry": pos.entry_price, "exit": close_price,
@@ -979,6 +1001,72 @@ class Bot:
         except Exception as e:
             self.log.warning("bracket-exit detection failed: %s", e)
 
+    def _resolve_fill_price(self, order: dict | None,
+                            attempts: int = 3,
+                            delay_s: float = 0.4) -> float | None:
+        """True average fill price of an order the bot just placed.
+
+        Binance's CREATE response for a reduce-only MARKET order carries
+        avgPrice "0.00" -- the fill is not attributed to the order yet -- so
+        `order_avg_price()` returns None at EVERY bot-initiated close. Measured
+        2026-08-23: every `close` row in all three legs' fills tables since
+        launch has price=0.0, and the boot-flatten path's
+        `order_avg_price(o) or pos.entry_price` fallback therefore always
+        reported PnL of exactly 0.
+
+        Re-fetching the SAME order by clientOrderId returns the real average --
+        verified against both real closes that day (v1
+        snap-v1-1787462070917-ce -> 76003.10, donchian
+        snap-d3-1787256026107-ce -> 76010.00). Keying on the order is
+        authoritative; scanning fetch_my_trades and side-matching (what
+        _detect_bracket_exit does, correctly, a tick later) can pick up an
+        unrelated fill when run immediately after placing.
+
+        Returns None if the price cannot be established, leaving the decision
+        to the caller. NEVER raises: the exchange has already executed the
+        close, and bookkeeping must not turn that into an exception.
+        """
+        px = order_avg_price(order)
+        if px:
+            return px
+        o = order or {}
+        coid = str(o.get("clientOrderId") or "")
+        oid = str(o.get("id") or "")
+        if not coid and not oid:
+            return None
+        params = {"origClientOrderId": coid} if coid else {}
+        for i in range(max(1, attempts)):
+            if i:
+                time.sleep(delay_s)
+            try:
+                fetched = self.client.ex.fetch_order(oid or None, self.symbol,
+                                                     params=params)
+            except Exception:
+                self.log.warning("exit-price: fetch_order failed (%d/%d) for %s",
+                                 i + 1, attempts, coid or oid)
+                continue
+            px = order_avg_price(fetched)
+            if px:
+                return px
+        self.log.warning("exit-price: could not resolve fill price for %s -- "
+                         "recording without it", coid or oid)
+        return None
+
+    def _last_entry_fill(self) -> tuple[str, float, float] | None:
+        """(side, qty, price) of the most recent entry fill, or None."""
+        try:
+            with sqlite3.connect(state.DB_PATH) as c:
+                row = c.execute(
+                    "SELECT side, qty, price FROM fills WHERE reason='entry' "
+                    "ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+        except Exception:
+            self.log.exception("exit-pnl: entry-fill lookup failed")
+            return None
+        if not row:
+            return None
+        return str(row[0]), float(row[1]), float(row[2])
+
     def _maybe_time_stop(self, equity: float) -> None:
         # Read the config BEFORE fetch_position so a leg with no time stop
         # costs zero API calls per tick instead of one. That is supertrend
@@ -1010,9 +1098,13 @@ class Bot:
                               age_s / 3600, root or "—")
                 order = self.client.close_position(
                     self.symbol, client_order_id_root=root, close_leg="x")
-                exit_price = order_avg_price(order)
+                exit_price = self._resolve_fill_price(order)
+                _entry = self._last_entry_fill()
                 state.record_fill(side="close", qty=pos.qty,
                                   price=float(exit_price or 0.0),
+                                  pnl_usd=_exit_pnl_usd(
+                                      pos.side, _entry[2] if _entry else None,
+                                      exit_price, pos.qty),
                                   reason="time_stop", equity_after=equity,
                                   client_order_id_root=root)
                 state.enqueue_bot_event(
@@ -1085,9 +1177,13 @@ class Bot:
                           dbg.get("cur_close", float("nan")), dbg)
             order = self.client.close_position(
                 self.symbol, client_order_id_root=root, close_leg="ce")
-            exit_price = order_avg_price(order)
+            exit_price = self._resolve_fill_price(order)
+            _entry = self._last_entry_fill()
             state.record_fill(side="close", qty=pos.qty,
                               price=float(exit_price or 0.0),
+                              pnl_usd=_exit_pnl_usd(
+                                  pos.side, _entry[2] if _entry else None,
+                                  exit_price, pos.qty),
                               reason=fill_reason, equity_after=equity,
                               client_order_id_root=root)
             state.enqueue_bot_event(

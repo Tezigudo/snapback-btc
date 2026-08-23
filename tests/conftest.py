@@ -28,6 +28,9 @@ gets its own freshly-initialised database in its own tmp dir.
 both `state._conn()` and `bot.py`'s direct read of `state.DB_PATH` follow it —
 the direct read is why an accessor-only fix would not have been enough.
 
+The same file also stops the suite from talking to the real SMTP relay — see
+`no_outbound_alerts` below.
+
 NOTE: this is isolation, not a behaviour change. Tests that patch `state.*` keep
 working untouched; they simply no longer NEED to.
 """
@@ -55,3 +58,38 @@ def isolated_state_db(tmp_path, monkeypatch):
         yield db
     finally:
         state.set_db_path(original)
+
+
+# The SMTP vars alerts.is_configured() requires. Clearing any one of them is
+# enough to make send_alert() short-circuit, but we clear all six so the intent
+# survives a future change to that list.
+_SMTP_ENV = (
+    "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+    "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO",
+)
+
+
+@pytest.fixture(autouse=True)
+def no_outbound_alerts(monkeypatch):
+    """Never let the test suite send a real alert email.
+
+    `alerts.send_alert()` reads SMTP credentials straight from the process
+    environment, and `uv run pytest` loads the repo's real `.env` — so any test
+    that reached an alerting call was opening a live connection to the
+    production relay. Observed 2026-08-23 while exercising the trend-exit path:
+
+        alerts: failed to send 'Bot trend-exit close':
+        (535, b'Too many failed login requests from <ip>. Try again later.')
+
+    That is worse than noise. Repeated failed logins from a developer IP are
+    exactly what gets a sender throttled or blocked, and this relay is the
+    channel the live legs use to report a kill switch. A test run must not be
+    able to degrade production alerting.
+
+    `send_alert()` returns False early when `is_configured()` is False, so
+    clearing the vars disables sending without patching every call site — tests
+    that assert on alerting still patch `send_alert` themselves and are
+    unaffected.
+    """
+    for var in _SMTP_ENV:
+        monkeypatch.delenv(var, raising=False)
