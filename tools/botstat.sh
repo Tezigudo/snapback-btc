@@ -16,21 +16,29 @@ DROPLET="root@152.42.241.43"
 
 # ─── Legs definition — single source of truth ───
 # Parallel arrays: LEGS_NAMES[i] pairs with LEGS_HB[i] / LEGS_DB[i] / LEGS_LOG[i].
-LEGS_NAMES=(v1 donchian cnh_short)
+#
+# Roster must match the LIVE systemd units. cnh_short was retired 2026-07-12
+# (archive/cnh_short_retired_20260712): no service, no .env.cnh_short, and its
+# heartbeat is frozen — it rendered a permanent 🔴 that trained the eye to
+# ignore red. sol_supertrend has been real money since 2026-07-27 and was
+# missing entirely, so the one tool used to eyeball the book at a glance was
+# blind to a funded leg. monitor.py and daily_digest.py were corrected on
+# 2026-08-05; this file was missed in that pass.
+LEGS_NAMES=(v1 donchian sol_supertrend)
 LEGS_HB=(
   /root/snapback-btc/data/heartbeat
   /root/snapback-btc/data/heartbeat_donchian
-  /root/snapback-btc/data/heartbeat_cnh_short
+  /root/snapback-btc/data/heartbeat_sol_supertrend
 )
 LEGS_DB=(
   /root/snapback-btc/data/state.db
   /root/snapback-btc/data/state_donchian.db
-  /root/snapback-btc/data/state_cnh_short.db
+  /root/snapback-btc/data/state_sol_supertrend.db
 )
 LEGS_LOG=(
   /root/snapback-btc/logs/bot.jsonl
   /root/snapback-btc/logs/donchian.jsonl
-  /root/snapback-btc/logs/cnh_short.jsonl
+  /root/snapback-btc/logs/sol_supertrend.jsonl
 )
 
 # Build space-separated "name=path" specs that the remote shell can split.
@@ -167,7 +175,7 @@ if [ -t 1 ]; then
       down) mt="${RED}DOWN${R}" ;;
       *)    mt="${GRAY}?   ${R}" ;;
     esac
-    printf "%s%-9s%s %s · hb %ss · fills %s · outbox %s\n" \
+    printf "%s%-14s%s %s · hb %ss · fills %s · outbox %s\n" \
       "$BLUE" "$n" "$R" "$mt" "${HB[$n]:-?}" "${FILLS[$n]:-?}" "${OB[$n]:-?}"
   done
   echo
@@ -182,7 +190,7 @@ if [ -t 1 ]; then
     long_part="${msg#*long waiting on }"; long_part="${long_part%% \| short*}"
     short_part="${msg#*short waiting on }"
 
-    printf "  %s[%-9s]%s last change %s%s%s\n" "$BLUE" "$name" "$R" "$GRAY" "$ts" "$R"
+    printf "  %s[%-14s]%s last change %s%s%s\n" "$BLUE" "$name" "$R" "$GRAY" "$ts" "$R"
     # LONG = green label, waiting items = yellow
     printf "    %sLONG%s  waiting on: " "$GREEN" "$R"
     IFS=, read -ra items <<<"$long_part"
@@ -232,7 +240,7 @@ echo "---"
 for n in "${LEGS_NAMES[@]}"; do
   icon=$(icon_for_age "${HB[$n]:-9999}")
   c=$(swiftbar_color_for_icon "$icon")
-  printf "%-9s [%s] hb %ss · fills %s · outbox %s pending | color=%s font=Menlo\n" \
+  printf "%-14s [%s] hb %ss · fills %s · outbox %s pending | color=%s font=Menlo\n" \
     "$n" "${MODE[$n]:-?}" "${HB[$n]:-?}" "${FILLS[$n]:-?}" "${OB[$n]:-?}" "$c"
 done
 printf "BTC \$%s | color=#38bdf8 font=Menlo\n" "$BTC"
@@ -245,7 +253,7 @@ while IFS= read -r line; do
       rest=${line#GATE }
       name=${rest%%|*}; rest=${rest#*|}
       ts=${rest%%|*}; msg=${rest#*|}
-      printf "%-9s %s | color=#cfd6e8 font=Menlo size=11\n" "$name" "$ts"
+      printf "%-14s %s | color=#cfd6e8 font=Menlo size=11\n" "$name" "$ts"
       # `|` is SwiftBar's param separator — replace with `/` in the msg.
       printf "  %s | color=#94a3b8 font=Menlo size=10 length=80\n" "${msg//|//}"
       ;;
