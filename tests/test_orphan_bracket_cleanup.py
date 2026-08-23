@@ -372,7 +372,8 @@ class TestPlaceLiveEntry:
         mc.cancel_open_orders.return_value = 0
         mc.market_order_with_bracket.return_value = {"entry": {}, "sl": {}, "tp": {}}
 
-        with patch("bot.trade_events.record_market_entry"):
+        with patch("bot.trade_events.record_market_entry"), \
+             patch("bot.state.set_meta"):
             bot._place_live_entry(self._decision(), qty=0.01,
                                   signal_id="1234567890123", equity=10000.0)
 
@@ -396,7 +397,8 @@ class TestPlaceLiveEntry:
             "filled_as": "limit", "fill_price": 64990.0, "filled_qty": 0.01,
         }
 
-        with patch("bot.trade_events.record_limit_entry"):
+        with patch("bot.trade_events.record_limit_entry"), \
+             patch("bot.state.set_meta"):
             bot._place_live_entry(self._decision(), qty=0.01,
                                   signal_id="1234567890123", equity=10000.0)
 
@@ -417,7 +419,8 @@ class TestPlaceLiveEntry:
         mc.cancel_open_orders.side_effect = Exception("timeout")
         mc.market_order_with_bracket.return_value = {"entry": {}, "sl": {}, "tp": {}}
 
-        with patch("bot.trade_events.record_market_entry"):
+        with patch("bot.trade_events.record_market_entry"), \
+             patch("bot.state.set_meta"):
             bot._place_live_entry(self._decision(), qty=0.01,
                                   signal_id="1234567890123", equity=10000.0)
 

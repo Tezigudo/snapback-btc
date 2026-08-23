@@ -289,7 +289,8 @@ class TestPlaceLiveEntryPlaceTp:
     def test_v1_market_entry_places_tp(self):
         bot, mc = _make_bot(strategy_name="multifactor-v1", order_type="market")
         mc.market_order_with_bracket.return_value = {"entry": {}, "sl": {}, "tp": {}}
-        with patch("bot.trade_events.record_market_entry"):
+        with patch("bot.trade_events.record_market_entry"), \
+             patch("bot.state.set_meta"):
             bot._place_live_entry(self._decision(), qty=0.01,
                                   signal_id="1", equity=10000.0)
         assert mc.market_order_with_bracket.call_args.kwargs["place_tp"] is True
@@ -309,7 +310,8 @@ class TestPlaceLiveEntryPlaceTp:
         bot, mc = _make_bot(strategy_name="donchian-v3", order_type="market",
                             entry_tf="4h")
         mc.market_order_with_bracket.return_value = {"entry": {}, "sl": {}, "tp": None}
-        with patch("bot.trade_events.record_market_entry"):
+        with patch("bot.trade_events.record_market_entry"), \
+             patch("bot.state.set_meta"):
             bot._place_live_entry(self._decision(), qty=0.01,
                                   signal_id="1", equity=10000.0)
         assert mc.market_order_with_bracket.call_args.kwargs["place_tp"] is False
@@ -320,7 +322,8 @@ class TestPlaceLiveEntryPlaceTp:
         mc.limit_order_with_bracket.return_value = {
             "entry": {}, "sl": {}, "tp": None, "filled_as": "limit",
             "fill_price": 64990.0, "filled_qty": 0.01}
-        with patch("bot.trade_events.record_limit_entry"):
+        with patch("bot.trade_events.record_limit_entry"), \
+             patch("bot.state.set_meta"):
             bot._place_live_entry(self._decision(), qty=0.01,
                                   signal_id="1", equity=10000.0)
         assert mc.limit_order_with_bracket.call_args.kwargs["place_tp"] is False
