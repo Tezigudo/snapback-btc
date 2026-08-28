@@ -220,6 +220,36 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
     the last fill's `equity_after`. Granularity is day/trade — this catches
     multi-day bleeds and post-stop-out drops; intraday protection lives
     in-process (daily-loss breaker + kill switch).
+
+    TRANSFER NEUTRALISATION (2026-08-28). `daily_anchor_equity` is a RAW
+    snapshot of equity at UTC midnight and never moves again that day, but
+    `principal_anchor` is refreshed hourly from the income ledger. An intraday
+    deposit therefore raises the DENOMINATOR while the numerator stays at its
+    pre-deposit value, and the leg reads as a drawdown it never took. This
+    fired for real: all three legs were funded at 02:28 UTC on 2026-08-28
+    (+21 / +22 / +20 USDT) and within 32 minutes donchian crossed into `warn`
+    at -6.36% (it was actually UP 6.4%) and sol_supertrend into `alert` at
+    -25.5% (actually -0.5%). A withdrawal produces the mirror-image failure —
+    a false all-clear — which is the more dangerous direction.
+
+    The bot already solves this for its own daily-loss breaker in
+    `bot._daily_book_anchor`: shift the raw anchor by the net principal moved
+    since that anchor was set. We mirror the same computation at READ time —
+
+        current = raw_anchor + (ledger_sum_now - daily_anchor_principal_sum)
+
+    — and deliberately write nothing back. The stored anchor must stay RAW,
+    because `_daily_book_anchor` applies this delta itself on every tick;
+    pre-shifting the stored value would apply it twice and corrupt the live
+    daily-loss breaker.
+
+    Fail-safe, matching the bot: a missing or unparseable baseline, or a
+    pre-Part-C DB with no `principal_ledger` table, yields delta 0 — exactly
+    the previous behaviour. The shift applies only to the daily-anchor
+    readings. `fills.equity_after` is already post-transfer whenever the fill
+    is newer than the deposit; a fill OLDER than the deposit stays uncorrected,
+    which is acceptable because that branch is only reached when today's daily
+    anchor is missing, and it self-heals at the next UTC rollover.
     """
     try:
         import sqlite3
@@ -227,11 +257,22 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
             cur = conn.execute(
                 "SELECT key, value FROM meta WHERE key IN "
                 "('principal_anchor', 'deploy_start_equity', "
-                "'daily_anchor_equity', 'daily_anchor_date')")
+                "'daily_anchor_equity', 'daily_anchor_date', "
+                "'daily_anchor_principal_sum')")
             rows = dict(cur.fetchall())
             fill = conn.execute(
                 "SELECT equity_after FROM fills WHERE equity_after IS NOT NULL "
                 "ORDER BY id DESC LIMIT 1").fetchone()
+            try:
+                # Must match bot's state.principal_ledger_sum(PRINCIPAL_ASSET):
+                # USDT rows ONLY. Non-USDT transfers are excluded from P as
+                # well, so excluding them here keeps numerator and denominator
+                # measured in the same units.
+                ledger_sum: float | None = conn.execute(
+                    "SELECT COALESCE(SUM(income_usd), 0.0) FROM principal_ledger "
+                    "WHERE asset = 'USDT'").fetchone()[0]
+            except sqlite3.Error:
+                ledger_sum = None   # pre-Part-C DB → no neutralisation possible
         def _pos_float(key: str) -> float | None:
             """Parse one meta key defensively — a malformed value in one key
             must not invalidate the whole equity read (Sourcery, PR #6)."""
@@ -241,20 +282,37 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
                 return None
             return v if v > 0 else None
 
+        def _adjusted(raw: float | None) -> float | None:
+            """Raw daily anchor shifted by principal moved since it was set.
+
+            Returns `raw` unchanged whenever the delta cannot be established,
+            so this can only ever restore the pre-fix reading, never invent a
+            correction from an unknown baseline.
+            """
+            if raw is None or ledger_sum is None:
+                return raw
+            try:
+                baseline = float(rows.get("daily_anchor_principal_sum"))
+            except (TypeError, ValueError):
+                # Anchor predates the baseline key; the bot seeds it lazily on
+                # its next tick. No baseline → no defensible delta → don't guess.
+                return raw
+            return raw + (float(ledger_sum) - baseline)
+
         anchor = _pos_float("principal_anchor") or _pos_float("deploy_start_equity")
         today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
         daily = _pos_float("daily_anchor_equity")
         if rows.get("daily_anchor_date") == today and daily is not None:
-            current: float | None = daily
+            current: float | None = _adjusted(daily)
         elif fill is not None and fill[0] is not None:
             # equity_after of 0.0 is a VALID (and alarming) reading — do not
-            # truthiness-filter it away.
+            # truthiness-filter it away. Not transfer-adjusted: see docstring.
             try:
                 current = float(fill[0])
             except (TypeError, ValueError):
-                current = daily
+                current = _adjusted(daily)
         else:
-            current = daily
+            current = _adjusted(daily)
         return current, anchor
     except Exception as e:
         log.warning("monitor: db read failed for %s: %s", db_path, e)
