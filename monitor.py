@@ -28,6 +28,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -243,9 +244,22 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
     pre-shifting the stored value would apply it twice and corrupt the live
     daily-loss breaker.
 
-    Fail-safe, matching the bot: a missing or unparseable baseline, or a
-    pre-Part-C DB with no `principal_ledger` table, yields delta 0 — exactly
-    the previous behaviour. The shift applies only to the daily-anchor
+    Both sides come from ONE read of ONE table on ONE connection. The
+    denominator is `principal_base + Σledger` — P exactly as
+    `principal.get_principal()` derives it for the kill switch — rather than
+    the cached `principal_anchor` copy, so the numerator and denominator can
+    never be observed a reconcile apart from each other.
+
+    Neither the shift nor the derived P is applied until `principal_source` is
+    set, mirroring `principal.is_initialized()` and the bot's matching guard in
+    `_daily_loss_blocks_entry`. During a first-run income backfill the ledger
+    sum climbs from 0 to the entire deposit history while the seed is still
+    unrecorded; treating that as an intraday transfer would shift the numerator
+    by the whole principal.
+
+    Fail-safe, matching the bot: a missing, unparseable or non-finite baseline,
+    or a pre-Part-C DB with no `principal_ledger` table, yields delta 0 —
+    exactly the previous behaviour. The shift applies only to the daily-anchor
     readings. `fills.equity_after` is already post-transfer whenever the fill
     is newer than the deposit; a fill OLDER than the deposit stays uncorrected,
     which is acceptable because that branch is only reached when today's daily
@@ -258,7 +272,8 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
                 "SELECT key, value FROM meta WHERE key IN "
                 "('principal_anchor', 'deploy_start_equity', "
                 "'daily_anchor_equity', 'daily_anchor_date', "
-                "'daily_anchor_principal_sum')")
+                "'daily_anchor_principal_sum', 'principal_base', "
+                "'principal_source')")
             rows = dict(cur.fetchall())
             fill = conn.execute(
                 "SELECT equity_after FROM fills WHERE equity_after IS NOT NULL "
@@ -273,14 +288,28 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
                     "WHERE asset = 'USDT'").fetchone()[0]
             except sqlite3.Error:
                 ledger_sum = None   # pre-Part-C DB → no neutralisation possible
+        # Mirror `principal.is_initialized()` / the bot's own guard in
+        # `_daily_loss_blocks_entry`: until the ledger has been marked
+        # initialised, a full-history backfill is still in flight and the sum
+        # climbs from 0 to the whole deposit history. Treating that as an
+        # intraday transfer would shift the numerator by the ENTIRE principal.
+        # No neutralisation and no derived P until the seed is recorded.
+        ledger_ready = rows.get("principal_source") is not None
+
         def _pos_float(key: str) -> float | None:
             """Parse one meta key defensively — a malformed value in one key
-            must not invalidate the whole equity read (Sourcery, PR #6)."""
+            must not invalidate the whole equity read (Sourcery, PR #6).
+
+            `inf` must be rejected as well as unparseable text: it survives the
+            `> 0` test, and an infinite reading propagates into `drop_pct` as
+            NaN, which `_equity_band` classifies as `ok` — silently suppressing
+            an alert rather than failing loudly (Sourcery, PR #25).
+            """
             try:
                 v = float(rows.get(key))
             except (TypeError, ValueError):
                 return None
-            return v if v > 0 else None
+            return v if math.isfinite(v) and v > 0 else None
 
         def _adjusted(raw: float | None) -> float | None:
             """Raw daily anchor shifted by principal moved since it was set.
@@ -289,7 +318,7 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
             so this can only ever restore the pre-fix reading, never invent a
             correction from an unknown baseline.
             """
-            if raw is None or ledger_sum is None:
+            if raw is None or ledger_sum is None or not ledger_ready:
                 return raw
             try:
                 baseline = float(rows.get("daily_anchor_principal_sum"))
@@ -297,9 +326,34 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
                 # Anchor predates the baseline key; the bot seeds it lazily on
                 # its next tick. No baseline → no defensible delta → don't guess.
                 return raw
-            return raw + (float(ledger_sum) - baseline)
+            if not math.isfinite(baseline) or not math.isfinite(ledger_sum):
+                # A non-finite delta yields NaN equity, and _equity_band scores
+                # NaN as `ok`. Refuse to compute rather than go quiet.
+                return raw
+            return raw + (ledger_sum - baseline)
 
-        anchor = _pos_float("principal_anchor") or _pos_float("deploy_start_equity")
+        # P as the KILL SWITCH computes it. `bot._check_kill_switch` calls
+        # `principal.get_principal()`, which derives `principal_base + Σledger`
+        # LIVE; the cached `principal_anchor` meta key is a convenience copy for
+        # dashboards. Deriving it here from the SAME connection and the SAME
+        # ledger read as the numerator means the two can never be measured a
+        # reconcile apart from each other (Sourcery, PR #25), and makes the
+        # monitor agree with the ceiling it is reporting against. `principal_base`
+        # is legitimately 0.0 in income_backfill mode, so it cannot go through
+        # `_pos_float`, which rejects non-positive values.
+        derived_principal: float | None = None
+        if ledger_ready and ledger_sum is not None and math.isfinite(ledger_sum):
+            try:
+                base = float(rows.get("principal_base", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                base = None
+            if base is not None and math.isfinite(base):
+                candidate = base + ledger_sum
+                if candidate > 0:
+                    derived_principal = candidate
+
+        anchor = (derived_principal or _pos_float("principal_anchor")
+                  or _pos_float("deploy_start_equity"))
         today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
         daily = _pos_float("daily_anchor_equity")
         if rows.get("daily_anchor_date") == today and daily is not None:

@@ -19,6 +19,7 @@ reader, so the daily mail carried the same phantom numbers.
 from __future__ import annotations
 
 import datetime as dt
+import math
 import sqlite3
 import sys
 from pathlib import Path
@@ -51,6 +52,8 @@ def make_db(tmp_path: Path):
         anchor_date: str | None = None,
         with_ledger_table: bool = True,
         fill_equity: float | None = None,
+        principal_source: str | None = "income_backfill",
+        principal_base: float | None = 0.0,
     ) -> Path:
         path = tmp_path / f"state_{next(counter)}.db"
         conn = sqlite3.connect(path)
@@ -66,6 +69,10 @@ def make_db(tmp_path: Path):
         ]
         if baseline is not None:
             meta.append(("daily_anchor_principal_sum", str(baseline)))
+        if principal_source is not None:
+            meta.append(("principal_source", principal_source))
+        if principal_base is not None:
+            meta.append(("principal_base", str(principal_base)))
         conn.executemany("INSERT INTO meta VALUES (?, ?)", meta)
         if with_ledger_table:
             conn.execute(
@@ -188,3 +195,80 @@ def test_fill_branch_is_not_shifted(make_db):
                  anchor_date="2020-01-01", fill_equity=118.0)
     cur, _ = monitor._equity_from_db(db)
     assert cur == pytest.approx(118.0)
+
+
+# --- denominator provenance (Sourcery PR #25, comment 1) ---------------------
+
+def test_anchor_is_derived_from_the_same_ledger_read(make_db):
+    """P must be `principal_base + Sum(ledger)` — what the kill switch actually
+    computes — not the cached `principal_anchor` copy. Here the cache is stale
+    on purpose: numerator and denominator must still agree."""
+    db = make_db(raw_equity=100.0, principal=100.0, baseline=100.0,
+                 ledger=[(100.0, "USDT"), (20.0, "USDT")])
+    cur, anchor = monitor._equity_from_db(db)
+    assert anchor == pytest.approx(120.0), "stale principal_anchor was used"
+    assert cur == pytest.approx(120.0)
+    assert monitor._equity_band(_drop_pct(db), CFG) == "ok"
+
+
+def test_manual_principal_base_is_included(make_db):
+    """`manual_principal_usdt` mode seeds a non-zero base; P is base + ledger."""
+    db = make_db(raw_equity=150.0, principal=1.0, baseline=50.0,
+                 ledger=[(50.0, "USDT")], principal_base=100.0)
+    _, anchor = monitor._equity_from_db(db)
+    assert anchor == pytest.approx(150.0)
+
+
+def test_zero_principal_base_is_not_treated_as_missing(make_db):
+    """income_backfill mode stores base 0.0. A `> 0` filter would discard it and
+    silently fall back to the cached anchor."""
+    db = make_db(raw_equity=100.0, principal=999.0, baseline=100.0,
+                 ledger=[(120.0, "USDT")], principal_base=0.0)
+    _, anchor = monitor._equity_from_db(db)
+    assert anchor == pytest.approx(120.0)
+
+
+def test_uninitialised_ledger_disables_both_shift_and_derived_p(make_db):
+    """Mirrors `principal.is_initialized()`. Mid-backfill the ledger holds the
+    whole deposit history while the seed is unrecorded — shifting by that would
+    move the numerator by the ENTIRE principal."""
+    db = make_db(raw_equity=100.0, principal=120.0, baseline=0.0,
+                 ledger=[(120.0, "USDT")], principal_source=None)
+    cur, anchor = monitor._equity_from_db(db)
+    assert cur == pytest.approx(100.0), "shifted while backfill was in flight"
+    assert anchor == pytest.approx(120.0), "derived P used before initialisation"
+
+
+# --- non-finite values must never go quiet (Sourcery PR #25, comment 2) ------
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf"])
+def test_non_finite_baseline_falls_back_to_raw(make_db, bad):
+    """A NaN/inf delta yields NaN equity, and `_equity_band` scores NaN as `ok`
+    — a real drawdown would be silently suppressed."""
+    db = make_db(raw_equity=100.0, principal=120.0, baseline=None,
+                 ledger=[(120.0, "USDT")])
+    conn = sqlite3.connect(db)
+    conn.execute("INSERT INTO meta VALUES ('daily_anchor_principal_sum', ?)", (bad,))
+    conn.commit()
+    conn.close()
+    cur, _ = monitor._equity_from_db(db)
+    assert cur == pytest.approx(100.0)
+    assert math.isfinite(cur)
+
+
+def test_infinite_meta_value_is_rejected_by_pos_float(make_db):
+    """`inf` survives a bare `> 0` test. Left in, it propagates to a NaN band."""
+    db = make_db(raw_equity=100.0, principal=120.0, baseline=100.0,
+                 ledger=None, with_ledger_table=False, principal_source=None)
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE meta SET value = 'inf' WHERE key = 'principal_anchor'")
+    conn.commit()
+    conn.close()
+    _, anchor = monitor._equity_from_db(db)
+    assert anchor == pytest.approx(120.0), "inf anchor leaked past _pos_float"
+
+
+def test_equity_band_scores_nan_as_ok_which_is_why_we_guard():
+    """Pins the reason the guards above exist."""
+    assert monitor._equity_band(float("nan"), CFG) == "ok"
+    assert monitor._equity_band(float("-inf"), CFG) == "ok"
