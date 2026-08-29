@@ -323,6 +323,9 @@ class Bot:
         # Captured when we first observe it open, because by the next tick
         # state.latest_entry_coid_root() already names the REPLACEMENT entry.
         self._last_entry_root: str | None = None
+        # Consecutive ticks a detected exit has failed to be RECORDED (see
+        # _hold_unrecorded_exit). Reset on success and on giving up.
+        self._exit_retry_n: int = 0
         # Throttle bracket re-placement (see _maybe_reprotect) so a persistent
         # placement failure can't spam orders/alerts every 5s poll.
         self._last_reprotect_ts: float = 0.0
@@ -920,6 +923,50 @@ class Bot:
             f"SL/TP for {pos.side} {pos.qty:.4f} @ {pos.entry_price:.2f} went missing "
             f"(external cancel?) and was automatically restored.")
 
+    # ~5 min at a 5 s poll. Bounded on purpose: fetch_my_trades only returns the
+    # last 10 trades, so a retry that ran for hours would eventually be matching
+    # against a window that no longer contains the close at all.
+    EXIT_RETRY_LIMIT = 60
+
+    def _hold_unrecorded_exit(self, side: str, entry: float | None,
+                              qty: float | None, root: str | None) -> None:
+        """Keep a DETECTED but UNRECORDED replacement exit alive for a retry.
+
+        The in-memory snapshot is the only record that the closed position ever
+        existed — `fills` already names the replacement entry. So if the exit is
+        detected but cannot be written (fetch_my_trades down, the closing trade
+        not yet visible on the account), advancing the snapshot past that failure
+        loses the exit *permanently*, which is precisely the bug this detector
+        was written to end. Putting the OLD identity back makes the next tick
+        re-detect the same replacement and try again.
+
+        Known limitation, left deliberately: if the REPLACEMENT position also
+        closes while a retry is outstanding, the next tick takes the flat path
+        and prices the exit off the replacement's `fills` row. That mis-prices a
+        double failure rather than losing it, which is the better of the two.
+        """
+        self._exit_retry_n += 1
+        if self._exit_retry_n > self.EXIT_RETRY_LIMIT:
+            attempts = self._exit_retry_n - 1
+            self._exit_retry_n = 0
+            self.log.error(
+                "bracket-exit: GAVE UP recording the exit of %s %.4f @ %.2f "
+                "(root=%s) after %d attempts — the ledger is missing this close",
+                side, qty or 0.0, entry or 0.0, root, attempts)
+            send_alert(
+                "Bot exit NOT recorded",
+                f"A {side.upper()} {qty or 0.0:.4f} {self.base_asset} position "
+                f"closed and its exit could not be recorded after {attempts} "
+                f"attempts.\n"
+                f"Entry: {entry or 0.0:,.2f}  signal_id: {root or '(untagged)'}\n"
+                f"The ledger is missing this close — it needs a manual backfill.",
+            )
+            return
+        self._last_position_side = side
+        self._last_position_entry = entry
+        self._last_position_qty = qty
+        self._last_entry_root = root
+
     def _detect_bracket_exit(self, equity: float) -> None:
         """Bracket SL/TP fills close the position on Binance's side without
         a bot-initiated close. Detect that the tracked position has ENDED and
@@ -947,6 +994,10 @@ class Bot:
         """
         if self.dry_run:
             return
+        # Set once a replacement exit is DETECTED; cleared the moment it is
+        # written. Anything still holding it at `finally` is an exit we found and
+        # failed to record — see _hold_unrecorded_exit.
+        retain: tuple[str, float | None, float | None, str | None] | None = None
         try:
             pos = self.client.fetch_position(self.symbol)
             current = pos.side
@@ -1063,6 +1114,7 @@ class Bot:
                         "already has a recorded close — not double-writing",
                         prev_side, current)
                     return
+                retain = (prev_side, prev_entry, prev_qty, prev_root)
             else:
                 # Sweep the surviving bracket leg (the sibling that Binance did NOT
                 # fill).  Do this before the PnL lookup so even if the fill-lookup
@@ -1122,6 +1174,9 @@ class Bot:
                 pnl_usd=pnl, reason="bracket_exit",
                 equity_after=equity, client_order_id_root=signal_id,
             )
+            # Durable now — stop holding the old snapshot open for a retry.
+            retain = None
+            self._exit_retry_n = 0
             state.enqueue_bot_event(
                 "exit", signal_id=signal_id, side=entry_side,
                 qty=float(entry_qty), price_usd=float(exit_price),
@@ -1144,6 +1199,9 @@ class Bot:
             )
         except Exception as e:
             self.log.warning("bracket-exit detection failed: %s", e)
+        finally:
+            if retain is not None:
+                self._hold_unrecorded_exit(*retain)
 
     def _resolve_fill_price(self, order: dict | None,
                             attempts: int = 3,

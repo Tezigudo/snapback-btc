@@ -696,6 +696,92 @@ class TestSamePollReplacement:
         assert len(calls) == 1
         mc.cancel_open_orders.assert_not_called()
 
+    # --- a detected exit must survive a failed lookup ----------------------
+
+    def test_failed_trade_lookup_keeps_the_old_snapshot_for_a_retry(self):
+        """fills already names the REPLACEMENT entry, so the snapshot is the only
+        record the closed position existed. Advancing past a failed lookup would
+        lose the exit permanently -- the very bug this detector exists to end."""
+        bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _open("long", self.NEW_ENTRY, self.QTY)
+        mc.ex.fetch_my_trades.side_effect = RuntimeError("ccxt: request timed out")
+        calls = []
+        self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        assert calls == []
+        assert bot._last_position_entry == pytest.approx(self.OLD_ENTRY), (
+            "snapshot advanced past a failure; the exit is now unrecoverable"
+        )
+        assert bot._last_entry_root == self.OLD_ROOT
+        assert bot._exit_retry_n == 1
+
+    def test_the_retry_then_succeeds_on_the_next_tick(self):
+        bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _open("long", self.NEW_ENTRY, self.QTY)
+        mc.ex.fetch_my_trades.side_effect = RuntimeError("ccxt: request timed out")
+        calls = []
+        self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        # ...the venue comes back
+        mc.ex.fetch_my_trades.side_effect = None
+        mc.ex.fetch_my_trades.return_value = [{"side": "sell", "price": self.EXIT_PX}]
+        self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        assert len(calls) == 1, "the retry did not recover the exit"
+        assert calls[0]["pnl_usd"] == pytest.approx(
+            (self.EXIT_PX - self.OLD_ENTRY) * self.QTY)
+        assert bot._exit_retry_n == 0, "retry counter not reset after success"
+
+    def test_no_matching_trade_also_retries(self):
+        """An empty/unmatched trade list is the same failure as an exception."""
+        bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _open("long", self.NEW_ENTRY, self.QTY)
+        mc.ex.fetch_my_trades.return_value = [{"side": "buy", "price": self.NEW_ENTRY}]
+        self._run(bot)
+        assert bot._last_position_entry == pytest.approx(self.OLD_ENTRY)
+        assert bot._exit_retry_n == 1
+
+    def test_retry_is_bounded_and_alerts_instead_of_looping_forever(self):
+        """fetch_my_trades only returns 10 trades, so an unbounded retry would
+        end up matching a window that no longer holds the close."""
+        bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _open("long", self.NEW_ENTRY, self.QTY)
+        mc.ex.fetch_my_trades.side_effect = RuntimeError("still down")
+        bot._exit_retry_n = bot.EXIT_RETRY_LIMIT      # one short of giving up
+        alerts = []
+        with patch("bot.state.record_fill"), \
+             patch("bot.state.enqueue_bot_event"), \
+             patch("bot.state.latest_entry_coid_root", return_value="9999"), \
+             patch("bot.send_alert", side_effect=lambda *a, **kw: alerts.append(a)):
+            bot._detect_bracket_exit(equity=141.87)
+        assert len(alerts) == 1, "gave up silently"
+        assert "NOT recorded" in alerts[0][0]
+        assert bot._exit_retry_n == 0
+        # snapshot released, so it stops re-detecting the same replacement
+        assert bot._last_position_entry == pytest.approx(self.NEW_ENTRY)
+
+    def test_a_deliberate_skip_is_not_retried(self):
+        """An already-recorded close is a correct skip, not a failure -- it must
+        not hold the snapshot open."""
+        bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_close(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        self._replacement(mc)
+        self._run(bot)
+        assert bot._exit_retry_n == 0
+        assert bot._last_position_entry == pytest.approx(self.NEW_ENTRY)
+
     # --- the classic path must be untouched --------------------------------
 
     def test_flat_edge_still_sweeps_and_still_reads_fills(self):
