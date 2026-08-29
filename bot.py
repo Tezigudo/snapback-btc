@@ -306,6 +306,23 @@ class Bot:
         # open→flat transitions. "unknown" until the first loop call so we
         # don't emit a spurious exit alert for a historical entry in state.db.
         self._last_position_side: str = "unknown"
+        # ...and the rest of that position's IDENTITY, because the side alone
+        # cannot see a same-poll replacement. Live on 2026-08-23: v1's bracket
+        # SL filled at 05:14:30.039 and _maybe_enter re-entered at 05:14:31.290
+        # — 1.25 s later, inside one 5 s poll. The loop therefore never observed
+        # `flat`, the open→flat edge never fired, and the exit was dropped on
+        # the floor: no `close` row in fills, no `exit` bot_event, no alert, and
+        # −$5.37 missing from the ledger until it was backfilled by hand weeks
+        # later. `entry_price` is the discriminator — side and qty are usually
+        # identical across a re-entry, and it can ONLY move when the position is
+        # replaced, because _maybe_enter returns early unless flat (there is no
+        # scale-in or averaging anywhere in this bot).
+        self._last_position_entry: float | None = None
+        self._last_position_qty: float | None = None
+        # The coid root of the entry that opened the position we are tracking.
+        # Captured when we first observe it open, because by the next tick
+        # state.latest_entry_coid_root() already names the REPLACEMENT entry.
+        self._last_entry_root: str | None = None
         # Throttle bracket re-placement (see _maybe_reprotect) so a persistent
         # placement failure can't spam orders/alerts every 5s poll.
         self._last_reprotect_ts: float = 0.0
@@ -741,7 +758,8 @@ class Bot:
         The bot places a reduce-only bracket at entry, but an EXTERNAL event can
         remove it without the bot knowing — a manual cancel on Binance, or a
         leverage change (Binance auto-cancels ALL open orders on a leverage
-        change). _detect_bracket_exit only reacts to a bracket FILL (open→flat),
+        change). _detect_bracket_exit only reacts to a bracket FILL (whether it
+        leaves the book flat or is replaced inside one poll by a re-entry),
         never a cancel, so a cancelled bracket would leave the position silently
         unprotected until the time stop — which, measured 2026-08-11, fires 0
         times in 4.6 years. This guard notices the gap and, from the params
@@ -904,15 +922,25 @@ class Bot:
 
     def _detect_bracket_exit(self, equity: float) -> None:
         """Bracket SL/TP fills close the position on Binance's side without
-        a bot-initiated close. Detect open→flat transitions and emit an
-        exit alert with PnL.
+        a bot-initiated close. Detect that the tracked position has ENDED and
+        emit an exit alert with PnL.
 
-        Conditions for an alert:
-          - Not dry-run (no real brackets in dry-run mode).
-          - Current position is flat.
-          - Latest fill row is `reason='entry'` — i.e., no bot-initiated
-            close (time_stop, kill, halt) has been recorded since the entry.
-          - We can find the matching opposite-side trade on Binance.
+        Two ways it can end, and they are priced from different sources:
+
+          - FLAT EDGE (open→flat). Sweeps the surviving bracket sibling, then
+            prices the exit from the latest `fills` row, which must be
+            `reason='entry'` — i.e. no bot-initiated close (time_stop, kill,
+            halt) has been recorded since the entry.
+
+          - REPLACED (open→open, different position). The bracket filled and
+            _maybe_enter re-entered inside one poll, so the loop never sees
+            `flat`. Detected by a change in `entry_price`, priced from the
+            in-memory snapshot, and it must NOT sweep — see the branch comment.
+            Before this existed the exit was dropped entirely: no `close` row,
+            no `exit` event, no alert (live 2026-08-23, −$5.37).
+
+        Also required either way: not dry-run (no real brackets in dry-run
+        mode), and a matching opposite-side trade on Binance.
 
         Skipped silently (with warning log) on any ccxt error so an outage
         in fetch_my_trades doesn't crash the loop.
@@ -922,37 +950,113 @@ class Bot:
         try:
             pos = self.client.fetch_position(self.symbol)
             current = pos.side
-            # First observation since boot — initialise state without
-            # emitting. A historical "entry" row in state.db whose position
-            # already closed on the exchange must not trigger an alert.
-            if self._last_position_side == "unknown":
-                self._last_position_side = current
-                return
-            had_open = self._last_position_side != "flat"
-            self._last_position_side = current
-            if not had_open or current != "flat":
-                return
-            # Sweep the surviving bracket leg (the sibling that Binance did NOT
-            # fill).  Do this before the PnL lookup so even if the fill-lookup
-            # errors out, the orphan is still cancelled.
-            try:
-                self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
-            except Exception:
-                self.log.exception("bracket-exit: cancel_open_orders failed")
 
-            with sqlite3.connect(state.DB_PATH) as c:
-                row = c.execute(
-                    "SELECT reason, side, qty, price, client_order_id_root "
-                    "FROM fills ORDER BY id DESC LIMIT 1"
-                ).fetchone()
-            if not row or row[0] != "entry":
+            prev_side = self._last_position_side
+            prev_entry = self._last_position_entry
+            prev_qty = self._last_position_qty
+            prev_root = self._last_entry_root
+            had_open = prev_side not in ("flat", "unknown")
+
+            # A position we were tracking can disappear two ways:
+            #   flat      — the classic open→flat edge.
+            #   REPLACED  — still open, but it is not the same position: the
+            #               bracket filled and _maybe_enter re-entered inside a
+            #               single poll (live 2026-08-23, 1.25 s apart).
+            # entry_price is the discriminator, compared at float-noise
+            # tolerance: Binance echoes the identical number for an untouched
+            # position, while a re-entry seconds later can be only a few dollars
+            # away — so a percentage threshold would miss exactly the case this
+            # branch exists to catch. Both prices must be non-zero, or a missing
+            # `entryPrice` field would fabricate an exit out of nothing.
+            replaced = (
+                had_open
+                and current != "flat"
+                and prev_entry is not None
+                and prev_entry > 0.0
+                and pos.entry_price > 0.0
+                and (current != prev_side
+                     or abs(pos.entry_price - prev_entry)
+                     > 1e-9 * max(prev_entry, pos.entry_price))
+            )
+
+            # Refresh the snapshot BEFORE any early return, so every path leaves
+            # it agreeing with what the exchange just said.
+            self._last_position_side = current
+            if current == "flat":
+                self._last_position_entry = None
+                self._last_position_qty = None
+                self._last_entry_root = None
+            else:
+                self._last_position_entry = pos.entry_price
+                self._last_position_qty = pos.qty
+                if replaced or not had_open:
+                    # Only correct at the moment the position opens; one tick
+                    # later this already names the replacement entry.
+                    self._last_entry_root = state.latest_entry_coid_root()
+
+            # First observation since boot — initialise state without emitting.
+            # A historical "entry" row in state.db whose position already closed
+            # on the exchange must not trigger an alert.
+            if prev_side == "unknown" or not had_open:
                 return
-            _, entry_side, entry_qty, entry_price, signal_id = row
-            entry_qty = float(entry_qty)
-            entry_price = float(entry_price)
+            if current != "flat" and not replaced:
+                return
+
+            if replaced:
+                # ⚠️ NO SWEEP ON THIS PATH, AND DO NOT "UNIFY" IT WITH THE ONE
+                # BELOW. _maybe_enter → _place_live_entry has already placed a
+                # fresh bracket for the position that is open RIGHT NOW, and
+                # cancel_open_orders is scoped to the whole leg by coid prefix —
+                # calling it here would strip the SL and TP off a live
+                # real-money position, which is strictly worse than the dropped
+                # exit this branch fixes.
+                #
+                # The fills table cannot price this exit either: _maybe_enter
+                # runs last in the tick, so its `entry` row is already the most
+                # recent one by the time we get here. The in-memory snapshot is
+                # the only record of the position that just closed.
+                entry_side = prev_side
+                entry_qty = float(prev_qty or 0.0)
+                entry_price = float(prev_entry)
+                signal_id = prev_root
+                if entry_qty <= 0.0:
+                    self.log.warning(
+                        "bracket-exit: replacement %s→%s but no tracked qty; "
+                        "cannot price the exit", prev_side, current)
+                    return
+            else:
+                # Sweep the surviving bracket leg (the sibling that Binance did NOT
+                # fill).  Do this before the PnL lookup so even if the fill-lookup
+                # errors out, the orphan is still cancelled.
+                try:
+                    self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
+                except Exception:
+                    self.log.exception("bracket-exit: cancel_open_orders failed")
+
+                with sqlite3.connect(state.DB_PATH) as c:
+                    row = c.execute(
+                        "SELECT reason, side, qty, price, client_order_id_root "
+                        "FROM fills ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                if not row or row[0] != "entry":
+                    return
+                _, entry_side, entry_qty, entry_price, signal_id = row
+                entry_qty = float(entry_qty)
+                entry_price = float(entry_price)
 
             opposite = "sell" if entry_side == "long" else "buy"
             trades = self.client.ex.fetch_my_trades(self.symbol, limit=10)
+            if replaced and current != prev_side:
+                # A flip closes a long with a SELL and opens the short with a
+                # SELL too, so the newest opposite-side trade may be the new
+                # ENTRY rather than our close. Both land inside one poll, so any
+                # mispricing is bounded by a second or two of movement — worth
+                # logging loudly and recording, not worth guessing at.
+                self.log.warning(
+                    "bracket-exit: side-flip replacement %s→%s; exit price may "
+                    "name the new entry (prev %.4f @ %.2f, now %.4f @ %.2f)",
+                    prev_side, current, entry_qty, entry_price,
+                    pos.qty, pos.entry_price)
             exit_trade = next(
                 (t for t in reversed(trades) if t.get("side") == opposite),
                 None,
@@ -984,6 +1088,7 @@ class Bot:
                 qty=float(entry_qty), price_usd=float(exit_price),
                 equity_usd=float(equity),
                 payload={"reason": "bracket_exit",
+                         "detected_by": "replacement" if replaced else "flat_edge",
                          "entry_price": float(entry_price),
                          "exit_price": float(exit_price),
                          "pnl_usd": float(pnl),
