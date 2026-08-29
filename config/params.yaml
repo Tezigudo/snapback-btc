@@ -129,11 +129,52 @@ hedge:
 # merges BOTH order books (bot_internals.bracket_state).
 reprotect:
   enabled: true
-  # ROLLOUT PHASE 1. Logs "WOULD re-place" and places NOTHING. Flip to false
-  # only after a FULL live position has passed with zero such lines — that is
-  # the direct falsification of the July false-negative, and it cannot be proven
-  # by unit tests because the truth lives on the exchange.
-  observe_only: true
+  # ROLLOUT PHASE 2 — ARMED 2026-08-29. It now re-places a missing bracket for
+  # real. Phase 1 (observe_only: true) was satisfied on 2026-08-23 by one full
+  # live v1 position; this is the evidence chain, recorded here because it cannot
+  # be proven by unit tests — the truth lives on the exchange:
+  #   1. The bracket really existed as ALGO orders. The events row's order_ids
+  #      were {entry: 1111177029564, sl: 2000001378159811, tp: 2000001378159821};
+  #      the 16-digit ids are algo-book ids, exactly the shape the plain-only
+  #      July detector was blind to.
+  #   2. _maybe_reprotect actually RAN, every tick of the position. Proof is the
+  #      call site — self._maybe_reprotect(equity) is unconditional in the tick
+  #      loop, beside _detect_bracket_exit. It is NOT proven by meta.active_bracket
+  #      being '', which is written in the flat branch before the meta read and so
+  #      only shows the function ran while flat.
+  #   3. It read both order books successfully every time. "algo book unreadable"
+  #      — the abstain path — appears 0 times all-time in logs/bot.jsonl, so no
+  #      read ever failed (not merely that it never looked).
+  #   4. ZERO "WOULD re-place" lines across all four leg journals for the whole
+  #      ~23h59m position. Combined with (2) and (3), silence means state_.intact
+  #      returned true every tick — the algo-aware detector correctly saw a healthy
+  #      bracket. That is the direct falsification of the July false negative.
+  # ⚠️ SCOPE, AND READ THIS PRECISELY — it is THIS FILE, not "whatever v1 means".
+  # Other config files are safe by construction: params_donchian.yaml and
+  # params_sol_supertrend.yaml have no reprotect: key at all, and
+  # rp.get("enabled", False) (bot.py) is fail-closed, so _maybe_reprotect never
+  # runs on those legs. Do NOT copy this block to them without their own
+  # observe-only pass — that would arm an unvalidated detector on real money.
+  #
+  # But this file is NOT pinned to one strategy. `strategy_name` above selects
+  # the live signal logic, and bot_internals.evaluate_for_strategy has THREE
+  # live dispatch paths — "multifactor-v1" (what Phase 1 ran on),
+  # "v3-all-wider-4", and "donchian-v3" — so changing that line while this stays
+  # false runs a strategy Phase 1 never covered, with re-placement ARMED.
+  # ⚠️ "donchian-v3" is the sharpest edge of the three: it places NO TP leg, so
+  # the bracket stashed at entry carries an SL only, and a re-place restores only
+  # that. Nothing here has been exercised against a half-bracket.
+  # ⚠️ If you change `strategy_name` in this file, set observe_only back to TRUE
+  # and re-run Phase 1 for that strategy before flipping it again.
+  #
+  # Why this is a comment and not a code gate on strategy_name: reprotect is
+  # mechanically strategy-AGNOSTIC — it re-places the bracket that
+  # _place_live_entry stashed in meta.active_bracket at entry, whatever geometry
+  # produced it. A hard gate would therefore silently DISABLE protection on a
+  # legitimate strategy switch, which is the failure direction that actually
+  # hurts. The evidence above is what is strategy-specific, so the warning
+  # belongs next to the evidence.
+  observe_only: false
   # Hard cap per position, persisted in meta.active_bracket so a restart cannot
   # reset it. The 60s throttle did NOT stop July, it only paced the spam.
   max_replaces_per_position: 3
