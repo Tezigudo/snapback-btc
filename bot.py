@@ -1024,6 +1024,45 @@ class Bot:
                         "bracket-exit: replacement %s→%s but no tracked qty; "
                         "cannot price the exit", prev_side, current)
                     return
+                # ⚠️ A BOT-INITIATED close can share a tick with a re-entry too,
+                # and without this guard that would be written TWICE. The tick
+                # order is _detect_bracket_exit → _maybe_time_stop →
+                # _maybe_channel_exit → _maybe_enter, so on one tick the channel
+                # or trend exit can record its own close and _maybe_enter can
+                # then open at a new price (it never advanced _last_signal_ts
+                # while the position was open, so the bar guard lets it through).
+                # The next tick sees a changed entry_price and would emit a
+                # SECOND exit for a position already closed in the ledger —
+                # corrupting it in the opposite direction from the dropped exit
+                # this branch fixes. The classic path gets this for free from its
+                # `reason='entry'` check on the newest row; the replacement path
+                # has to ask explicitly, because the newest row is the re-entry.
+                with sqlite3.connect(state.DB_PATH) as c:
+                    anchor = c.execute(
+                        "SELECT id FROM fills WHERE reason = 'entry' "
+                        "AND client_order_id_root IS ? ORDER BY id DESC LIMIT 1",
+                        (signal_id,),
+                    ).fetchone()
+                    if anchor:
+                        already_closed = c.execute(
+                            "SELECT 1 FROM fills WHERE id > ? AND reason <> 'entry' "
+                            "LIMIT 1", (anchor[0],),
+                        ).fetchone() is not None
+                    else:
+                        # Untagged entry, so there is nothing to anchor on. Fall
+                        # back to the row just BEFORE the newest one (the newest
+                        # being the re-entry): if that is a close, it is ours.
+                        prior = c.execute(
+                            "SELECT reason FROM fills WHERE id < "
+                            "(SELECT MAX(id) FROM fills) ORDER BY id DESC LIMIT 1"
+                        ).fetchone()
+                        already_closed = bool(prior) and prior[0] != "entry"
+                if already_closed:
+                    self.log.info(
+                        "bracket-exit: replacement %s→%s, but this position "
+                        "already has a recorded close — not double-writing",
+                        prev_side, current)
+                    return
             else:
                 # Sweep the surviving bracket leg (the sibling that Binance did NOT
                 # fill).  Do this before the PnL lookup so even if the fill-lookup

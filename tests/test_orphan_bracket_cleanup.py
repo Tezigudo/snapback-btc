@@ -506,26 +506,44 @@ class TestSamePollReplacement:
     NEW_ENTRY = 76_122.80
     EXIT_PX = 76_126.30
     QTY = 0.004
+    OLD_ROOT = "1787375710921"
+    NEW_ROOT = "1787462070039"
 
-    def _tracking(self, bot, side="long", entry=None, qty=None):
+    # The conftest `isolated_state_db` fixture gives every test a real, empty
+    # sqlite DB, so these seed genuine `fills` rows rather than mocking the
+    # cursor. That matters: the double-write guard runs its own queries, and a
+    # blanket sqlite mock would answer all of them with the same row.
+    def _seed_entry(self, root, side="long", qty=None, price=None):
+        from exchange import state as st
+        st.record_fill(side=side, qty=self.QTY if qty is None else qty,
+                       price=self.OLD_ENTRY if price is None else price,
+                       reason="entry", client_order_id_root=root)
+
+    def _seed_close(self, root, reason="trend_exit"):
+        from exchange import state as st
+        st.record_fill(side="close", qty=self.QTY, price=self.EXIT_PX,
+                       reason=reason, pnl_usd=-5.37, client_order_id_root=root)
+
+    def _tracking(self, bot, side="long", entry=None, qty=None, root=None):
         """Put the bot in the state of already tracking an open position."""
         bot._last_position_side = side
         bot._last_position_entry = self.OLD_ENTRY if entry is None else entry
         bot._last_position_qty = self.QTY if qty is None else qty
-        bot._last_entry_root = "1787375710921"
+        bot._last_entry_root = self.OLD_ROOT if root is None else root
 
     def _run(self, bot, record_fill_spy=None, event_spy=None):
-        with patch("bot.sqlite3.connect") as mock_db, \
-             patch("bot.state.record_fill", side_effect=record_fill_spy), \
+        with patch("bot.state.record_fill", side_effect=record_fill_spy), \
              patch("bot.state.enqueue_bot_event", side_effect=event_spy), \
              patch("bot.state.latest_entry_coid_root", return_value="9999"), \
              patch("bot.send_alert"):
-            # If the replacement path ever reads fills, it would find the NEW
-            # entry — which is exactly the mis-pricing this must not do.
-            (mock_db.return_value.__enter__.return_value
-             .execute.return_value.fetchone.return_value) = (
-                "entry", "long", self.QTY, self.NEW_ENTRY, "9999")
             bot._detect_bracket_exit(equity=141.87)
+
+    def _replacement(self, mc, side="long"):
+        mc.fetch_position.return_value = _open(side, self.NEW_ENTRY, self.QTY)
+        mc.ex.fetch_my_trades.return_value = [
+            {"side": "sell", "price": self.EXIT_PX},
+            {"side": "buy", "price": self.NEW_ENTRY},
+        ]
 
     # --- the safety property -----------------------------------------------
 
@@ -533,12 +551,10 @@ class TestSamePollReplacement:
         """_place_live_entry has already bracketed the position that is open
         right now; a prefix-scoped sweep here would strip its SL and TP."""
         bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
         self._tracking(bot)
-        mc.fetch_position.return_value = _open("long", self.NEW_ENTRY, self.QTY)
-        mc.ex.fetch_my_trades.return_value = [
-            {"side": "sell", "price": self.EXIT_PX},
-            {"side": "buy", "price": self.NEW_ENTRY},
-        ]
+        self._replacement(mc)
         self._run(bot)
         mc.cancel_open_orders.assert_not_called()
 
@@ -546,12 +562,10 @@ class TestSamePollReplacement:
 
     def test_replacement_records_the_dropped_exit(self):
         bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
         self._tracking(bot)
-        mc.fetch_position.return_value = _open("long", self.NEW_ENTRY, self.QTY)
-        mc.ex.fetch_my_trades.return_value = [
-            {"side": "sell", "price": self.EXIT_PX},
-            {"side": "buy", "price": self.NEW_ENTRY},
-        ]
+        self._replacement(mc)
         calls = []
         self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
         assert len(calls) == 1, "the replacement exit was dropped again"
@@ -562,9 +576,10 @@ class TestSamePollReplacement:
         """The fills table already names the REPLACEMENT entry by the time this
         runs (_maybe_enter is last in the tick), so it cannot price this exit."""
         bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
         self._tracking(bot)
-        mc.fetch_position.return_value = _open("long", self.NEW_ENTRY, self.QTY)
-        mc.ex.fetch_my_trades.return_value = [{"side": "sell", "price": self.EXIT_PX}]
+        self._replacement(mc)
         calls = []
         self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
         expected = (self.EXIT_PX - self.OLD_ENTRY) * self.QTY
@@ -572,24 +587,55 @@ class TestSamePollReplacement:
             "PnL was computed off the new entry price, not the closed position's"
         )
         assert calls[0]["pnl_usd"] < 0, "the 08-23 trade was a loss"
-        assert calls[0]["client_order_id_root"] == "1787375710921", (
+        assert calls[0]["client_order_id_root"] == self.OLD_ROOT, (
             "the exit was attributed to the replacement entry's root"
         )
 
     def test_replacement_event_is_tagged_as_such(self):
         bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
         self._tracking(bot)
-        mc.fetch_position.return_value = _open("long", self.NEW_ENTRY, self.QTY)
-        mc.ex.fetch_my_trades.return_value = [{"side": "sell", "price": self.EXIT_PX}]
+        self._replacement(mc)
         events = []
         self._run(bot, event_spy=lambda *a, **kw: events.append(kw))
         assert events[0]["payload"]["detected_by"] == "replacement"
+
+    # --- and it must not DOUBLE-write one the bot already closed ------------
+
+    def test_bot_initiated_close_plus_reentry_is_not_written_twice(self):
+        """_maybe_channel_exit / _maybe_time_stop can close AND _maybe_enter can
+        re-open inside one tick (both run after _detect_bracket_exit). The next
+        tick sees a changed entry_price -- and must not emit a second exit for a
+        position whose close is already in the ledger."""
+        bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_close(self.OLD_ROOT)              # the bot's own exit
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        self._replacement(mc)
+        calls = []
+        self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        assert calls == [], "wrote a duplicate exit over the bot's own close"
+
+    def test_untagged_entry_still_blocks_a_double_write(self):
+        """No coid root to anchor on -- fall back to the row before the newest."""
+        bot, mc = _make_bot()
+        self._seed_entry(None)
+        self._seed_close(None)
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot, root=None)
+        self._replacement(mc)
+        calls = []
+        self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        assert calls == []
 
     # --- and it stays quiet when nothing changed ---------------------------
 
     def test_same_position_still_open_does_not_trigger(self):
         """The identical position, tick after tick, must stay silent."""
         bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
         self._tracking(bot)
         mc.fetch_position.return_value = _open("long", self.OLD_ENTRY, self.QTY)
         calls = []
@@ -598,9 +644,10 @@ class TestSamePollReplacement:
         mc.cancel_open_orders.assert_not_called()
 
     def test_zero_entry_price_does_not_fabricate_an_exit(self):
-        """fetch_position defaults a missing entryPrice to 0.0 — that must not
+        """fetch_position defaults a missing entryPrice to 0.0 -- that must not
         read as a replacement."""
         bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
         self._tracking(bot)
         mc.fetch_position.return_value = _open("long", 0.0, self.QTY)
         calls = []
@@ -610,8 +657,9 @@ class TestSamePollReplacement:
     def test_no_snapshot_yet_does_not_trigger(self):
         """Pre-existing state (side only, no snapshot) must not fire."""
         bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
         bot._last_position_side = "long"
-        mc.fetch_position.return_value = _open("long", self.NEW_ENTRY, self.QTY)
+        self._replacement(mc)
         calls = []
         self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
         assert calls == []
@@ -628,6 +676,7 @@ class TestSamePollReplacement:
 
     def test_going_flat_clears_the_snapshot(self):
         bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
         self._tracking(bot)
         mc.fetch_position.return_value = _flat()
         mc.ex.fetch_my_trades.return_value = [{"side": "sell", "price": self.EXIT_PX}]
@@ -638,9 +687,10 @@ class TestSamePollReplacement:
 
     def test_side_flip_replacement_is_still_recorded(self):
         bot, mc = _make_bot()
+        self._seed_entry(self.OLD_ROOT)
+        self._seed_entry(self.NEW_ROOT, side="short", price=self.NEW_ENTRY)
         self._tracking(bot, side="long")
-        mc.fetch_position.return_value = _open("short", self.NEW_ENTRY, self.QTY)
-        mc.ex.fetch_my_trades.return_value = [{"side": "sell", "price": self.EXIT_PX}]
+        self._replacement(mc, side="short")
         calls = []
         self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
         assert len(calls) == 1
@@ -650,6 +700,7 @@ class TestSamePollReplacement:
 
     def test_flat_edge_still_sweeps_and_still_reads_fills(self):
         bot, mc = _make_bot()
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
         self._tracking(bot)
         mc.fetch_position.return_value = _flat()
         mc.ex.fetch_my_trades.return_value = [{"side": "sell", "price": self.EXIT_PX}]
@@ -657,6 +708,6 @@ class TestSamePollReplacement:
         self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
         mc.cancel_open_orders.assert_called_once_with(
             "BTC/USDT:USDT", coid_prefix="snap-v1-")
-        # priced from the fills row (NEW_ENTRY in this fixture), not the snapshot
+        # priced from the fills row (NEW_ENTRY here), not the snapshot
         assert calls[0]["pnl_usd"] == pytest.approx(
             (self.EXIT_PX - self.NEW_ENTRY) * self.QTY)
