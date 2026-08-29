@@ -157,9 +157,13 @@ reprotect:
   # observe-only pass — that would arm an unvalidated detector on real money.
   #
   # But this file is NOT pinned to one strategy. `strategy_name` above selects
-  # the live signal logic, and "v3-all-wider-4" is a real dispatch path in
-  # bot_internals.evaluate_for_strategy — so changing that line while this stays
+  # the live signal logic, and bot_internals.evaluate_for_strategy has THREE
+  # live dispatch paths — "multifactor-v1" (what Phase 1 ran on),
+  # "v3-all-wider-4", and "donchian-v3" — so changing that line while this stays
   # false runs a strategy Phase 1 never covered, with re-placement ARMED.
+  # ⚠️ "donchian-v3" is the sharpest edge of the three: it places NO TP leg, so
+  # the bracket stashed at entry carries an SL only, and a re-place restores only
+  # that. Nothing here has been exercised against a half-bracket.
   # ⚠️ If you change `strategy_name` in this file, set observe_only back to TRUE
   # and re-run Phase 1 for that strategy before flipping it again.
   #
