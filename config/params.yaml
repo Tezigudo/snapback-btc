@@ -149,11 +149,27 @@ reprotect:
   #      ~23h59m position. Combined with (2) and (3), silence means state_.intact
   #      returned true every tick — the algo-aware detector correctly saw a healthy
   #      bracket. That is the direct falsification of the July false negative.
-  # ⚠️ SCOPE — v1 ONLY. This block exists nowhere else: params_donchian.yaml and
-  # params_sol_supertrend.yaml have no reprotect: key, and rp.get("enabled", False)
-  # is fail-closed, so _maybe_reprotect never runs on those legs. Phase 1 was
-  # cleared on v1 alone. Do NOT copy this block to them without their own
+  # ⚠️ SCOPE, AND READ THIS PRECISELY — it is THIS FILE, not "whatever v1 means".
+  # Other config files are safe by construction: params_donchian.yaml and
+  # params_sol_supertrend.yaml have no reprotect: key at all, and
+  # rp.get("enabled", False) (bot.py) is fail-closed, so _maybe_reprotect never
+  # runs on those legs. Do NOT copy this block to them without their own
   # observe-only pass — that would arm an unvalidated detector on real money.
+  #
+  # But this file is NOT pinned to one strategy. `strategy_name` above selects
+  # the live signal logic, and "v3-all-wider-4" is a real dispatch path in
+  # bot_internals.evaluate_for_strategy — so changing that line while this stays
+  # false runs a strategy Phase 1 never covered, with re-placement ARMED.
+  # ⚠️ If you change `strategy_name` in this file, set observe_only back to TRUE
+  # and re-run Phase 1 for that strategy before flipping it again.
+  #
+  # Why this is a comment and not a code gate on strategy_name: reprotect is
+  # mechanically strategy-AGNOSTIC — it re-places the bracket that
+  # _place_live_entry stashed in meta.active_bracket at entry, whatever geometry
+  # produced it. A hard gate would therefore silently DISABLE protection on a
+  # legitimate strategy switch, which is the failure direction that actually
+  # hurts. The evidence above is what is strategy-specific, so the warning
+  # belongs next to the evidence.
   observe_only: false
   # Hard cap per position, persisted in meta.active_bracket so a restart cannot
   # reset it. The 60s throttle did NOT stop July, it only paced the spam.
