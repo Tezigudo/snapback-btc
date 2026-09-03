@@ -23,6 +23,7 @@ import math
 import sqlite3
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -36,6 +37,13 @@ CFG = {
     "equity_drop_alert_pct": 10.0,
     "equity_alert_reminder_hours": 24,
 }
+
+# Pinned clocks. `_equity_from_db` now branches on how long the UTC day has been
+# running, so any test using a deliberately stale anchor must say WHEN it reads
+# or it fails only when the suite happens to run in the first ten minutes of a
+# UTC day — the worst kind of flake to chase.
+MIDDAY = dt.datetime(2026, 9, 3, 12, 0, 0, tzinfo=dt.timezone.utc)
+ROLLOVER = dt.datetime(2026, 9, 3, 0, 0, 4, tzinfo=dt.timezone.utc)
 
 
 @pytest.fixture
@@ -188,13 +196,97 @@ def test_pre_part_c_db_without_ledger_table_still_reads(make_db):
 
 def test_fill_branch_is_not_shifted(make_db):
     """`fills.equity_after` is already post-transfer when the fill is newer than
-    the deposit; shifting it would double-count. Reached only when today's daily
-    anchor is absent (here: a stale anchor date)."""
+    the deposit; shifting it would double-count. Reached when today's daily
+    anchor is absent (here: a stale anchor date) and the rollover grace has
+    passed — `now` is pinned to midday so this cannot depend on the wall clock
+    the suite happens to run at."""
     db = make_db(raw_equity=100.0, principal=120.0, baseline=100.0,
                  ledger=[(100.0, "USDT"), (20.0, "USDT")],
                  anchor_date="2020-01-01", fill_equity=118.0)
-    cur, _ = monitor._equity_from_db(db)
+    cur, _ = monitor._equity_from_db(db, now=MIDDAY)
     assert cur == pytest.approx(118.0)
+
+
+# --- the rollover false alarm (2026-09-03) -----------------------------------
+#
+# The 2026-08-28 fix above left a door open: it corrected the daily-anchor
+# branch, and the fill branch it deliberately left raw turned out to be reached
+# for a few seconds at every UTC midnight. donchian then mailed a warn at 00:00
+# and a recovery at 00:05 for six consecutive days, with identical numbers.
+
+def test_stale_anchor_at_the_rollover_reports_nothing(make_db):
+    """donchian's real 00:00:04 UTC read. The date has turned over, the bot's
+    60s poll has not re-anchored yet, and the newest fill predates the
+    2026-08-28 deposit — so the only available reading is $160.46 against a
+    $172.53 anchor: -7.00% mailed while the leg was actually UP 6.39%.
+    """
+    db = make_db(raw_equity=160.46, principal=172.53, baseline=150.53,
+                 ledger=[(150.53, "USDT"), (22.0, "USDT")],
+                 anchor_date="2026-09-02", fill_equity=160.46)
+    cur, anchor = monitor._equity_from_db(db, now=ROLLOVER)
+    assert cur is None, "a rollover-stale anchor must not fall through to a fill"
+    assert anchor == pytest.approx(172.53), "the anchor is still knowable"
+
+
+def test_grace_zero_restores_the_old_stale_fill_reading(make_db):
+    """The gate is the ONLY thing silencing this. With the grace disabled the
+    pre-fix reading comes back verbatim, which pins the blame on the window
+    rather than on some other change to the branch.
+    """
+    db = make_db(raw_equity=160.46, principal=172.53, baseline=150.53,
+                 ledger=[(150.53, "USDT"), (22.0, "USDT")],
+                 anchor_date="2026-09-02", fill_equity=160.46)
+    cur, anchor = monitor._equity_from_db(db, grace_min=0.0, now=ROLLOVER)
+    assert cur == pytest.approx(160.46)
+    assert monitor._equity_band((1 - cur / anchor) * 100, CFG) == "warn"
+
+
+def test_a_leg_stuck_in_a_position_is_still_read_after_the_grace(make_db):
+    """The fill fallback is load-bearing, so the fix must not delete it.
+    `_maybe_enter` short-circuits on a non-flat position, so a leg in a
+    multi-day trade never re-anchors at all — the stale fill is the only reading
+    there is, and that is exactly when a real bleed matters most.
+    """
+    db = make_db(raw_equity=200.0, principal=200.0, baseline=200.0,
+                 ledger=[(200.0, "USDT")],
+                 anchor_date="2026-08-30", fill_equity=120.0)
+    cur, anchor = monitor._equity_from_db(db, now=MIDDAY)
+    assert cur == pytest.approx(120.0)
+    assert monitor._equity_band((1 - cur / anchor) * 100, CFG) == "alert"
+
+
+def test_a_fresh_anchor_is_never_gated(make_db):
+    """The grace keys off the anchor being stale, not off the hour. A leg that
+    re-anchored on time reads normally at 00:00:04 like any other minute.
+    """
+    db = make_db(raw_equity=100.0, principal=120.0, baseline=100.0,
+                 ledger=[(100.0, "USDT"), (20.0, "USDT")],
+                 anchor_date="2026-09-03", fill_equity=1.0)
+    cur, _ = monitor._equity_from_db(db, now=ROLLOVER)
+    assert cur == pytest.approx(120.0)
+
+
+def test_check_equity_sends_nothing_and_keeps_its_band_through_the_rollover(
+        make_db):
+    """End to end: no mail, and the band state machine is left untouched so the
+    next genuine reading is still judged against the band it actually left.
+    A grace of a full day makes this independent of when the suite runs.
+    """
+    db = make_db(raw_equity=59.87, principal=80.0, baseline=60.0,
+                 ledger=[(60.0, "USDT"), (20.0, "USDT")],
+                 anchor_date="2026-09-02", fill_equity=59.87)
+    sent: list[tuple[str, str]] = []
+    state = {"alerts": {}, "equity_bands": {"sol_supertrend": "ok"}}
+    cfg = dict(CFG, equity_anchor_grace_min=24 * 60)
+
+    def _fake_send(subject, body, tag=None):
+        sent.append((subject, body))
+        return True
+
+    with patch.object(monitor, "send_alert", _fake_send):
+        monitor._check_equity("sol_supertrend", db, cfg, state)
+    assert sent == [], f"expected silence through the rollover, got {sent}"
+    assert state["equity_bands"] == {"sol_supertrend": "ok"}
 
 
 # --- denominator provenance (Sourcery PR #25, comment 1) ---------------------

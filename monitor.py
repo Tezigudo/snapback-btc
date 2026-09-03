@@ -66,6 +66,11 @@ DEFAULTS: dict[str, Any] = {
     # _check_equity). The severe band still repeats this often so a sustained
     # drawdown can't go silent.
     "equity_alert_reminder_hours": 24,
+    # Minutes after UTC midnight during which a stale daily anchor means "the
+    # bot has not re-anchored yet", not "here is a reading worth alerting on".
+    # See the ROLLOVER GRACE section of _equity_from_db. Must comfortably clear
+    # the slowest leg's poll interval (60s for donchian/sol_supertrend).
+    "equity_anchor_grace_min":    10,
 }
 
 LEGS: list[dict[str, str]] = [
@@ -86,6 +91,18 @@ LEGS: list[dict[str, str]] = [
 
 def _now_ict() -> str:
     return dt.datetime.now(tz=ICT).strftime("%Y-%m-%d %H:%M:%S ICT")
+
+
+def _mins_since_utc_midnight(now: dt.datetime) -> float:
+    """Minutes elapsed since the most recent UTC midnight.
+
+    How long the bot has HAD to re-anchor `daily_anchor_date` for the new UTC
+    day. Deliberately measured from the rollover rather than from the anchor's
+    own date: a leg that has held a position for three days has an anchor three
+    days old, but right after midnight it is no more overdue than any other leg.
+    """
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return (now - midnight).total_seconds() / 60.0
 
 
 def _load_state() -> dict[str, Any]:
@@ -208,7 +225,11 @@ def _systemd_active(unit: str) -> bool:
         return True  # transient failure — don't alert
 
 
-def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
+def _equity_from_db(
+    db_path: Path,
+    grace_min: float = DEFAULTS["equity_anchor_grace_min"],
+    now: dt.datetime | None = None,
+) -> tuple[float | None, float | None]:
     """Return (current_equity, anchor_equity) or (None, None) on any failure.
 
     Anchor: `principal_anchor` (net deposited principal, what the bot's kill
@@ -261,9 +282,39 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
     or a pre-Part-C DB with no `principal_ledger` table, yields delta 0 —
     exactly the previous behaviour. The shift applies only to the daily-anchor
     readings. `fills.equity_after` is already post-transfer whenever the fill
-    is newer than the deposit; a fill OLDER than the deposit stays uncorrected,
-    which is acceptable because that branch is only reached when today's daily
-    anchor is missing, and it self-heals at the next UTC rollover.
+    is newer than the deposit; a fill OLDER than the deposit stays uncorrected.
+
+    ROLLOVER GRACE (2026-09-03). The paragraph above used to end "...which is
+    acceptable because that branch is only reached when today's daily anchor is
+    missing, and it self-heals at the next UTC rollover." Both halves were
+    wrong, and they cost a daily false alarm for six days.
+
+    The fill branch is reached AT every rollover, not only when the anchor is
+    absent: at 00:00 UTC `today` becomes the new date while `daily_anchor_date`
+    still holds the old one, because only the bot writes that key
+    (`bot._daily_anchor_equity`, reached via `_maybe_enter` on a 60s poll for
+    donchian/sol_supertrend). The monitor's `*/5` cron fires inside that gap,
+    reads a stale pre-deposit fill, and alerts. The bot re-anchors seconds later
+    and the next tick "recovers" — so the rollover is the CAUSE, not the cure.
+
+    Observed 2026-08-29..09-03: donchian warned at -7.00% ($160.46 vs $172.53)
+    at 00:00 and recovered at +6.39% ($183.56) at 00:05, every day, with
+    byte-identical numbers; sol_supertrend did the same at -25.2% -> -0.52% on
+    the days its own poll happened to lose the race. Each leg's error equalled
+    ITS OWN 2026-08-28 deposit — donchian 23.10 (+22), sol 19.71 (+20), v1
+    21.00 (+21) — which is the signature of this branch specifically, the only
+    one that skips the transfer shift. `daily_digest.py` imports this reader and
+    ran an hour later on the same data: it saw the correct figures throughout.
+
+    So for `grace_min` after midnight, a stale anchor yields (None, anchor) and
+    `_check_equity` returns without alerting. Past that window the fill is used
+    exactly as before — a leg holding a position for days never re-anchors
+    (`_maybe_enter` short-circuits on a non-flat position), and a stale fill is
+    then the only reading there is, which is precisely when a real bleed matters
+    most. The gate is on how long the anchor has been overdue, not on the
+    branch: deleting the fallback would blind the check to the case it exists
+    for. One tick of silence costs nothing — this is a day/trade-granularity
+    check, and intraday protection lives in-process.
     """
     try:
         import sqlite3
@@ -354,10 +405,18 @@ def _equity_from_db(db_path: Path) -> tuple[float | None, float | None]:
 
         anchor = (derived_principal or _pos_float("principal_anchor")
                   or _pos_float("deploy_start_equity"))
-        today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+        if now is None:
+            now = dt.datetime.now(dt.timezone.utc)
+        today = now.strftime("%Y-%m-%d")
         daily = _pos_float("daily_anchor_equity")
         if rows.get("daily_anchor_date") == today and daily is not None:
             current: float | None = _adjusted(daily)
+        elif _mins_since_utc_midnight(now) < grace_min:
+            # ROLLOVER GRACE — see docstring. The UTC day just turned over and
+            # the bot has not re-anchored yet. Every fallback below is stale by
+            # at least a day here, and the fill is not transfer-adjusted, so
+            # report nothing rather than something wrong.
+            current = None
         elif fill is not None and fill[0] is not None:
             # equity_after of 0.0 is a VALID (and alarming) reading — do not
             # truthiness-filter it away. Not transfer-adjusted: see docstring.
@@ -480,14 +539,22 @@ def _check_equity(name: str, db_path: Path, cfg: dict[str, Any],
     The band is committed only after a successful send, so an SMTP failure is
     retried on the next tick instead of being lost.
     """
-    cur, anchor = _equity_from_db(db_path)
+    cur, anchor = _equity_from_db(
+        db_path,
+        float(cfg.get("equity_anchor_grace_min",
+                      DEFAULTS["equity_anchor_grace_min"])),
+    )
     if cur is None or anchor is None or anchor <= 0:
         return
     drop_pct = (1 - cur / anchor) * 100
     band = _equity_band(drop_pct, cfg)
     bands = state.setdefault("equity_bands", {})
     prev = bands.get(name)
-    position = f"Equity ${cur:.2f} vs anchor ${anchor:.2f} = -{drop_pct:.2f}%."
+    # Signed DELTA, not the drop. A hardcoded "-" printed the recovery notice as
+    # "= --6.39%" whenever equity was above anchor — a double minus reporting a
+    # 6.4% GAIN, on the very mail meant to reassure. Matches daily_digest's
+    # "{delta_pct:+.2f}%".
+    position = f"Equity ${cur:.2f} vs anchor ${anchor:.2f} = {-drop_pct:+.2f}%."
 
     if band == prev:
         if band == "alert":
