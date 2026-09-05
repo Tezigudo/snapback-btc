@@ -844,6 +844,32 @@ class TestSamePollReplacement:
             (self.EXIT_PX - self.NEW_ENTRY) * self.QTY)
         assert bot._exit_retry_n == 0, "retry counter not reset after success"
 
+    def test_flat_edge_retry_gives_up_and_leaves_the_snapshot_flat(self):
+        """Arming a retry also means it has to let go. On this path the release
+        is implicit -- _hold_unrecorded_exit returns WITHOUT restoring, leaving
+        the flat snapshot the top of the method already wrote -- so pin it: if
+        it ever re-armed instead, the detector would re-fire every tick forever.
+        """
+        bot, mc = _make_bot()
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _flat()
+        mc.ex.fetch_my_trades.return_value = [{"side": "buy", "price": self.NEW_ENTRY}]
+        bot._exit_retry_n = bot.EXIT_RETRY_LIMIT      # one short of giving up
+        alerts = []
+        with patch("bot.state.record_fill"), \
+             patch("bot.state.enqueue_bot_event"), \
+             patch("bot.state.latest_entry_coid_root", return_value="9999"), \
+             patch("bot.send_alert", side_effect=lambda *a, **kw: alerts.append(a)):
+            bot._detect_bracket_exit(equity=141.87)
+        assert len(alerts) == 1, "gave up silently"
+        assert "NOT recorded" in alerts[0][0]
+        assert bot._exit_retry_n == 0
+        assert bot._last_position_side == "flat", (
+            "snapshot re-armed after giving up — the detector will re-fire "
+            "on every tick from here"
+        )
+
     def test_flat_edge_deliberate_skip_is_still_not_retried(self):
         """Pins the arming point BELOW the `reason='entry'` guard: a position
         whose close is already in the ledger is a correct skip, not a failed
