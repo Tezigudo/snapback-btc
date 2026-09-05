@@ -1134,6 +1134,19 @@ class Bot:
                 _, entry_side, entry_qty, entry_price, signal_id = row
                 entry_qty = float(entry_qty)
                 entry_price = float(entry_price)
+                # Arm the SAME retry the replacement path gets. From here on the
+                # exit is DETECTED, and every failure below is a bare `return`
+                # that would drop it for good: the snapshot advanced to flat at
+                # the top of this method, so once we return without retaining,
+                # the next tick sees no edge left to re-detect. The replacement
+                # path has been retried since #26; the flat edge — the older and
+                # far more common one — never was.
+                # Live 2026-09-04: donchian's algo SL filled at 12:31:49 and
+                # fetch_my_trades still did not list the closing trade at
+                # 12:32:04, so the single lookup missed, this branch returned,
+                # and the ledger lost a −$4.78 close (no fills row, no exit
+                # event, no alert) until it was backfilled by hand.
+                retain = (entry_side, entry_price, entry_qty, signal_id)
 
             opposite = "sell" if entry_side == "long" else "buy"
             trades = self.client.ex.fetch_my_trades(self.symbol, limit=10)
