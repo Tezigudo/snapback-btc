@@ -844,6 +844,32 @@ class TestSamePollReplacement:
             (self.EXIT_PX - self.NEW_ENTRY) * self.QTY)
         assert bot._exit_retry_n == 0, "retry counter not reset after success"
 
+    def test_flat_edge_sqlite_failure_still_arms_a_retry(self):
+        """Sourcery caught this on #28. The `fills` read sits between "the
+        position ended" and "the exit is written", so a locked or unavailable DB
+        raised straight past the arming point into the outer handler with
+        `retain` unset -- the same permanent loss, a different trigger. Arming
+        now happens off the exchange snapshot, before anything that can raise.
+        """
+        import sqlite3
+
+        bot, mc = _make_bot()
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _flat()
+        # The trade IS visible -- the DB is what fails, so nothing else excuses
+        # the loss.
+        mc.ex.fetch_my_trades.return_value = [{"side": "sell", "price": self.EXIT_PX}]
+        calls = []
+        with patch("bot.sqlite3.connect",
+                   side_effect=sqlite3.OperationalError("database is locked")):
+            self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        assert calls == []
+        assert bot._exit_retry_n == 1
+        assert bot._last_position_side == "long", (
+            "a raising fills read left the snapshot flat — the exit is gone"
+        )
+
     def test_flat_edge_retry_gives_up_and_leaves_the_snapshot_flat(self):
         """Arming a retry also means it has to let go. On this path the release
         is implicit -- _hold_unrecorded_exit returns WITHOUT restoring, leaving

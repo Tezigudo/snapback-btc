@@ -930,15 +930,21 @@ class Bot:
 
     def _hold_unrecorded_exit(self, side: str, entry: float | None,
                               qty: float | None, root: str | None) -> None:
-        """Keep a DETECTED but UNRECORDED replacement exit alive for a retry.
+        """Keep a DETECTED but UNRECORDED exit alive for a retry — either path.
 
-        The in-memory snapshot is the only record that the closed position ever
-        existed — `fills` already names the replacement entry. So if the exit is
-        detected but cannot be written (fetch_my_trades down, the closing trade
-        not yet visible on the account), advancing the snapshot past that failure
-        loses the exit *permanently*, which is precisely the bug this detector
-        was written to end. Putting the OLD identity back makes the next tick
-        re-detect the same replacement and try again.
+        If the exit is detected but cannot be written (fetch_my_trades down, the
+        closing trade not yet visible on the account, the `fills` read raising),
+        advancing the snapshot past that failure loses the exit *permanently*,
+        which is precisely the bug this detector was written to end. Putting the
+        OLD identity back makes the next tick re-detect the same edge and try
+        again.
+
+        Why the snapshot and not the ledger, on each path:
+          - REPLACED: the snapshot is the ONLY record the closed position ever
+            existed, because `fills` already names the replacement entry.
+          - FLAT EDGE: `fills` still names the closed position, so the restored
+            snapshot only has to be non-flat — it re-creates the open→flat edge,
+            and the retry re-reads `fills` for pricing.
 
         Known limitation, left deliberately: if the REPLACEMENT position also
         closes while a retry is outstanding, the next tick takes the flat path
@@ -989,14 +995,21 @@ class Bot:
         Also required either way: not dry-run (no real brackets in dry-run
         mode), and a matching opposite-side trade on Binance.
 
-        Skipped silently (with warning log) on any ccxt error so an outage
-        in fetch_my_trades doesn't crash the loop.
+        BOTH paths are retried. Once either has decided the position ended, the
+        exit is owed, and every failure before it is written — a raising sqlite
+        read, an unmatched or empty trade list, a zero fill price, any ccxt
+        error — re-arms `retain` so the next tick re-detects instead of losing
+        the close. A branch that decides no exit is owed (a bot-initiated close
+        already in the ledger) disarms explicitly. Bounded by EXIT_RETRY_LIMIT
+        ticks, then it alerts rather than giving up silently.
         """
         if self.dry_run:
             return
-        # Set once a replacement exit is DETECTED; cleared the moment it is
-        # written. Anything still holding it at `finally` is an exit we found and
-        # failed to record — see _hold_unrecorded_exit.
+        # Set once an exit is DETECTED on EITHER path — replacement since #26,
+        # flat edge since the 2026-09-04 donchian loss — and cleared the moment
+        # it is written, or when a branch decides no exit is owed at all.
+        # Anything still holding it at `finally` is an exit we found and failed
+        # to record — see _hold_unrecorded_exit.
         retain: tuple[str, float | None, float | None, str | None] | None = None
         try:
             pos = self.client.fetch_position(self.symbol)
@@ -1116,6 +1129,27 @@ class Bot:
                     return
                 retain = (prev_side, prev_entry, prev_qty, prev_root)
             else:
+                # Arm the retry BEFORE anything that can fail. The flat edge is
+                # already confirmed, so the position HAS ended and an exit is
+                # owed; from here every early exit — a raising sqlite read, the
+                # trade lookup below, a zero fill price — is a failure to record
+                # something real. The snapshot advanced to flat at the top of
+                # this method, so returning without retaining loses it for good.
+                # The replacement path has been retried since #26; the flat edge
+                # — the older and far more common one — never was.
+                # Live 2026-09-04: donchian's algo SL filled at 12:31:49 and
+                # fetch_my_trades still did not list the closing trade at
+                # 12:32:04, so the single lookup missed, this branch returned,
+                # and the ledger lost a −$4.78 close (no fills row, no exit
+                # event, no alert) until it was backfilled by hand.
+                #
+                # prev_* (the exchange snapshot of the position that just
+                # closed) rather than the `fills` row, precisely so the arming
+                # happens before the read that can raise. It is also all the
+                # next tick needs: restoring a non-flat side re-creates this
+                # same edge, and the retry re-reads `fills` for pricing.
+                retain = (prev_side, prev_entry, prev_qty, prev_root)
+
                 # Sweep the surviving bracket leg (the sibling that Binance did NOT
                 # fill).  Do this before the PnL lookup so even if the fill-lookup
                 # errors out, the orphan is still cancelled.
@@ -1130,23 +1164,15 @@ class Bot:
                         "FROM fills ORDER BY id DESC LIMIT 1"
                     ).fetchone()
                 if not row or row[0] != "entry":
+                    # DELIBERATE skip, not a failure: a bot-initiated close
+                    # (time_stop, kill, halt) is already in the ledger, so no
+                    # exit is owed. Disarm, or this holds the snapshot open for
+                    # EXIT_RETRY_LIMIT ticks over nothing and then alerts.
+                    retain = None
                     return
                 _, entry_side, entry_qty, entry_price, signal_id = row
                 entry_qty = float(entry_qty)
                 entry_price = float(entry_price)
-                # Arm the SAME retry the replacement path gets. From here on the
-                # exit is DETECTED, and every failure below is a bare `return`
-                # that would drop it for good: the snapshot advanced to flat at
-                # the top of this method, so once we return without retaining,
-                # the next tick sees no edge left to re-detect. The replacement
-                # path has been retried since #26; the flat edge — the older and
-                # far more common one — never was.
-                # Live 2026-09-04: donchian's algo SL filled at 12:31:49 and
-                # fetch_my_trades still did not list the closing trade at
-                # 12:32:04, so the single lookup missed, this branch returned,
-                # and the ledger lost a −$4.78 close (no fills row, no exit
-                # event, no alert) until it was backfilled by hand.
-                retain = (entry_side, entry_price, entry_qty, signal_id)
 
             opposite = "sell" if entry_side == "long" else "buy"
             trades = self.client.ex.fetch_my_trades(self.symbol, limit=10)
