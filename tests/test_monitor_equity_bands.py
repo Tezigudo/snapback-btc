@@ -117,6 +117,31 @@ def test_recovery_emits_once(db):
     assert state["equity_bands"]["v1"] == "ok"
 
 
+def test_recovery_body_reports_a_gain_as_a_gain(db):
+    """The body hardcoded a minus in front of drop_pct, so a leg ABOVE its
+    anchor recovered with "= --6.39%" — a double minus announcing a 6.4% gain as
+    a loss, on the one mail whose job is to say the problem is over. donchian
+    sent exactly that every morning for six days.
+    """
+    state, sent = {"alerts": {}}, []
+    _run(db(equity=93.0), state, sent)        # warn, to have something to leave
+    _run(db(equity=110.0), state, sent)       # +10% — above anchor
+    subject, body = sent[-1]
+    assert subject == "EQUITY RECOVERED: v1"
+    # "--" alone would match the "\n--\n" signature rule _emit appends.
+    assert "= --" not in body, f"double minus is back: {body}"
+    assert "= +10.00%." in body
+
+
+def test_loss_body_still_carries_one_minus(db):
+    """Guard the other direction: the sign fix must not drop the minus from a
+    genuine drawdown, which is v1's real -13.73% case.
+    """
+    state, sent = {"alerts": {}}, []
+    _run(db(equity=85.0), state, sent)        # -15% → alert
+    assert "= -15.00%." in sent[-1][1]
+
+
 def test_alert_to_warn_is_reported_as_improving(db):
     state, sent = {"alerts": {}}, []
     _run(db(equity=85.0), state, sent)       # alert
