@@ -797,3 +797,114 @@ class TestSamePollReplacement:
         # priced from the fills row (NEW_ENTRY here), not the snapshot
         assert calls[0]["pnl_usd"] == pytest.approx(
             (self.EXIT_PX - self.NEW_ENTRY) * self.QTY)
+
+    # --- ...and it must retry too (live 2026-09-04, donchian) --------------
+
+    def test_flat_edge_failed_lookup_keeps_the_snapshot_for_a_retry(self):
+        """The replacement path has retried since #26; the flat edge never did.
+
+        donchian's algo SL filled at 12:31:49 and fetch_my_trades still did not
+        list the closing trade at 12:32:04. One lookup, one warning, a bare
+        return -- and because the snapshot had already advanced to flat there
+        was no edge left for the next tick to re-detect, so the -$4.78 close was
+        gone from the ledger for good.
+        """
+        bot, mc = _make_bot()
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _flat()
+        # The close is real on the venue but not yet visible on the account.
+        mc.ex.fetch_my_trades.return_value = [{"side": "buy", "price": self.NEW_ENTRY}]
+        calls = []
+        self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        assert calls == []
+        assert bot._exit_retry_n == 1
+        assert bot._last_position_side == "long", (
+            "snapshot left flat after a failed lookup — the next tick sees no "
+            "edge to re-detect and the exit is unrecoverable"
+        )
+
+    def test_flat_edge_retry_records_the_exit_on_the_next_tick(self):
+        bot, mc = _make_bot()
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _flat()
+        mc.ex.fetch_my_trades.return_value = [{"side": "buy", "price": self.NEW_ENTRY}]
+        calls = []
+        self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        assert calls == []
+        # ...the algo fill surfaces a tick later, exactly as it did on 09-04.
+        mc.ex.fetch_my_trades.return_value = [
+            {"side": "buy", "price": self.NEW_ENTRY},
+            {"side": "sell", "price": self.EXIT_PX},
+        ]
+        self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        assert len(calls) == 1, "the retry did not recover the exit"
+        assert calls[0]["pnl_usd"] == pytest.approx(
+            (self.EXIT_PX - self.NEW_ENTRY) * self.QTY)
+        assert bot._exit_retry_n == 0, "retry counter not reset after success"
+
+    def test_flat_edge_sqlite_failure_still_arms_a_retry(self):
+        """Sourcery caught this on #28. The `fills` read sits between "the
+        position ended" and "the exit is written", so a locked or unavailable DB
+        raised straight past the arming point into the outer handler with
+        `retain` unset -- the same permanent loss, a different trigger. Arming
+        now happens off the exchange snapshot, before anything that can raise.
+        """
+        import sqlite3
+
+        bot, mc = _make_bot()
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _flat()
+        # The trade IS visible -- the DB is what fails, so nothing else excuses
+        # the loss.
+        mc.ex.fetch_my_trades.return_value = [{"side": "sell", "price": self.EXIT_PX}]
+        calls = []
+        with patch("bot.sqlite3.connect",
+                   side_effect=sqlite3.OperationalError("database is locked")):
+            self._run(bot, record_fill_spy=lambda *a, **kw: calls.append(kw))
+        assert calls == []
+        assert bot._exit_retry_n == 1
+        assert bot._last_position_side == "long", (
+            "a raising fills read left the snapshot flat — the exit is gone"
+        )
+
+    def test_flat_edge_retry_gives_up_and_leaves_the_snapshot_flat(self):
+        """Arming a retry also means it has to let go. On this path the release
+        is implicit -- _hold_unrecorded_exit returns WITHOUT restoring, leaving
+        the flat snapshot the top of the method already wrote -- so pin it: if
+        it ever re-armed instead, the detector would re-fire every tick forever.
+        """
+        bot, mc = _make_bot()
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _flat()
+        mc.ex.fetch_my_trades.return_value = [{"side": "buy", "price": self.NEW_ENTRY}]
+        bot._exit_retry_n = bot.EXIT_RETRY_LIMIT      # one short of giving up
+        alerts = []
+        with patch("bot.state.record_fill"), \
+             patch("bot.state.enqueue_bot_event"), \
+             patch("bot.state.latest_entry_coid_root", return_value="9999"), \
+             patch("bot.send_alert", side_effect=lambda *a, **kw: alerts.append(a)):
+            bot._detect_bracket_exit(equity=141.87)
+        assert len(alerts) == 1, "gave up silently"
+        assert "NOT recorded" in alerts[0][0]
+        assert bot._exit_retry_n == 0
+        assert bot._last_position_side == "flat", (
+            "snapshot re-armed after giving up — the detector will re-fire "
+            "on every tick from here"
+        )
+
+    def test_flat_edge_deliberate_skip_is_still_not_retried(self):
+        """Pins the arming point BELOW the `reason='entry'` guard: a position
+        whose close is already in the ledger is a correct skip, not a failed
+        lookup, and must not hold the snapshot open for 60 ticks."""
+        bot, mc = _make_bot()
+        self._seed_entry(self.NEW_ROOT, price=self.NEW_ENTRY)
+        self._seed_close(self.NEW_ROOT)
+        self._tracking(bot)
+        mc.fetch_position.return_value = _flat()
+        self._run(bot)
+        assert bot._exit_retry_n == 0
+        assert bot._last_position_side == "flat"
