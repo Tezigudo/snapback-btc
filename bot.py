@@ -427,8 +427,34 @@ class Bot:
             )
             start_eq = equity
         else:
-            self.log.info("Resuming deploy. start=%.2f current=%.2f (%+.2f%%)",
-                          start_eq, equity, (equity/start_eq - 1) * 100)
+            # Report against PRINCIPAL, not against deploy_start_equity.
+            # start_eq is a raw equity snapshot frozen at deploy time, so every
+            # later deposit or withdrawal moves the numerator and leaves the
+            # denominator behind -- the same two-clocks defect PR #25 fixed in
+            # the monitor, and it flatters in the dangerous direction.
+            # Live 2026-09-09: sol_supertrend booted announcing
+            # "start=60.00 current=73.71 (+22.85%)" for a leg that was DOWN
+            # 7.9% -- $60 deployed on 25 Jul, another $20 funded on 28 Aug.
+            # P is the denominator the kill switch already names (see
+            # _check_kill_switch), so reporting against it also stops the boot
+            # line and the kill-switch line describing the same leg
+            # differently. start_eq stays RAW and is still printed: do NOT
+            # re-baseline it, _daily_book_anchor applies its own delta and
+            # pre-shifting the stored value would double-count.
+            P = principal.get_principal()
+            if P is not None and P > 0:
+                self.log.info(
+                    "Resuming deploy. start=%.2f current=%.2f principal=%.2f "
+                    "(%+.2f%% vs principal)",
+                    start_eq, equity, P, (equity / P - 1) * 100)
+            else:
+                # None until the income backfill lands, and breached() treats a
+                # non-positive P as unknown. Say the number is unadjusted
+                # rather than print a transfer-contaminated percentage bare.
+                self.log.info(
+                    "Resuming deploy. start=%.2f current=%.2f (%+.2f%% vs "
+                    "start; principal pending, NOT transfer-adjusted)",
+                    start_eq, equity, (equity / start_eq - 1) * 100)
 
         # Push a boot event to consolidate so the dashboard knows the bot
         # is alive and which strategy/env it's running. The deploy-start
