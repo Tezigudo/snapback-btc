@@ -135,12 +135,16 @@ class TestResumingDeployPercentage:
         line = _boot_and_capture(caplog, start_equity=60.00, equity=73.71,
                                  principal=None)
         assert "+22.85%" in line
+        assert "principal pending" in line
         assert "NOT transfer-adjusted" in line
 
-    def test_non_positive_principal_takes_the_pending_branch(self, caplog):
-        """breached() treats P <= 0 as unknown rather than as a real anchor;
-        this branch must agree with it, or a fully-withdrawn leg would divide
-        by zero."""
+    def test_non_positive_principal_is_not_called_pending(self, caplog):
+        """breached() treats P <= 0 as unknown rather than as a real anchor, so
+        this branch must agree with it -- but a fully withdrawn leg has a
+        ledger that was read fine and nets to nothing. Calling that "pending"
+        sends an operator looking for a backfill that already finished."""
         line = _boot_and_capture(caplog, start_equity=60.00, equity=10.00,
                                  principal=0.0)
+        assert "principal non-positive (0.00)" in line
+        assert "pending" not in line
         assert "NOT transfer-adjusted" in line

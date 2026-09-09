@@ -448,13 +448,20 @@ class Bot:
                     "(%+.2f%% vs principal)",
                     start_eq, equity, P, (equity / P - 1) * 100)
             else:
-                # None until the income backfill lands, and breached() treats a
-                # non-positive P as unknown. Say the number is unadjusted
-                # rather than print a transfer-contaminated percentage bare.
+                # Two distinct reasons land here and an operator has to tell
+                # them apart: P is None until the income backfill lands,
+                # whereas a P that is present but <= 0 means the ledger HAS
+                # been read and nets to nothing -- a fully withdrawn leg, which
+                # is not "pending" and will never resolve on its own.
+                # breached() treats both as unknown; only the first is waiting
+                # on anything. Either way, say the number is unadjusted rather
+                # than print a transfer-contaminated percentage bare.
+                why = ("principal pending" if P is None
+                       else f"principal non-positive ({P:.2f})")
                 self.log.info(
                     "Resuming deploy. start=%.2f current=%.2f (%+.2f%% vs "
-                    "start; principal pending, NOT transfer-adjusted)",
-                    start_eq, equity, (equity / start_eq - 1) * 100)
+                    "start; %s, NOT transfer-adjusted)",
+                    start_eq, equity, (equity / start_eq - 1) * 100, why)
 
         # Push a boot event to consolidate so the dashboard knows the bot
         # is alive and which strategy/env it's running. The deploy-start
