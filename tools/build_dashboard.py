@@ -8,8 +8,10 @@ A leg that self-halts writes data/HALT_<instance> (not the shared data/HALT), so
 the dashboard reports THAT leg as HALTED via exchange.env.halt_source. Default
 instance is v1 (unchanged output path reports/dashboard.html).
 
-Only third-party touch is exchange.env (local module) for the HALT semantics;
-everything else is stdlib. Auto-refreshes in browser every 30s.
+Third-party touches are exchange.env (local module) for the HALT semantics and
+PyYAML, used only to read the leg's configured kill-switch fraction rather than
+hardcode a risk constant here. Everything else is stdlib. Auto-refreshes in
+browser every 30s.
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import yaml
+
 from exchange.env import halt_source, is_halted  # per-leg HALT semantics
 
 LOCAL_TZ = ZoneInfo("Asia/Bangkok")
@@ -33,10 +37,10 @@ LOCK_FLAG = REPO_ROOT / "confirm_mainnet.lock"
 # dashboard stays lightweight (no bot/ccxt import). Default v1 preserves the
 # legacy output path exactly.
 INSTANCE_FILES: dict[str, dict[str, str]] = {
-    "v1":            {"state": "state.db",              "hb": "heartbeat",              "log": "bot.jsonl",           "out": "dashboard.html"},
-    "donchian":      {"state": "state_donchian.db",     "hb": "heartbeat_donchian",     "log": "donchian.jsonl",      "out": "dashboard_donchian.html"},
-    "cnh_short":     {"state": "state_cnh_short.db",     "hb": "heartbeat_cnh_short",     "log": "cnh_short.jsonl",     "out": "dashboard_cnh_short.html"},
-    "cnh_short_sol": {"state": "state_cnh_short_sol.db", "hb": "heartbeat_cnh_short_sol", "log": "cnh_short_sol.jsonl", "out": "dashboard_cnh_short_sol.html"},
+    "v1":            {"state": "state.db",              "hb": "heartbeat",              "log": "bot.jsonl",           "out": "dashboard.html",               "cfg": "params.yaml"},
+    "donchian":      {"state": "state_donchian.db",     "hb": "heartbeat_donchian",     "log": "donchian.jsonl",      "out": "dashboard_donchian.html",      "cfg": "params_donchian.yaml"},
+    "cnh_short":     {"state": "state_cnh_short.db",     "hb": "heartbeat_cnh_short",     "log": "cnh_short.jsonl",     "out": "dashboard_cnh_short.html",     "cfg": "params_cnh_hybrid_short.yaml"},
+    "cnh_short_sol": {"state": "state_cnh_short_sol.db", "hb": "heartbeat_cnh_short_sol", "log": "cnh_short_sol.jsonl", "out": "dashboard_cnh_short_sol.html", "cfg": "params_cnh_hybrid_short_sol.yaml"},
 }
 
 # Module-level path handles; reassigned per --instance in main().
@@ -54,6 +58,30 @@ def _apply_instance(instance: str) -> None:
     HEARTBEAT = REPO_ROOT / "data" / f["hb"]
     JSONL = REPO_ROOT / "logs" / f["log"]
     OUT = REPO_ROOT / "reports" / f["out"]
+
+
+def read_kill_fraction(instance: str) -> float | None:
+    """The leg's CONFIGURED kill-switch fraction, or None if it can't be read.
+
+    Read, never hardcoded. This dashboard used to compute its kill line as
+    `deploy_start_equity * 0.82`, which was the deploy-era rule; the live switch
+    moved to `principal * 0.645` and the page kept printing the old one for
+    months. A dashboard that carries its own copy of a risk constant will
+    eventually disagree with the bot that enforces it, and it disagrees
+    silently.
+
+    None (rather than a default) on any failure, so the page renders an honest
+    dash instead of a made-up floor -- an invented kill level is worse than no
+    kill level, because you would plan around it.
+    """
+    cfg = REPO_ROOT / "config" / INSTANCE_FILES[instance]["cfg"]
+    try:
+        with cfg.open(encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        frac = float(data["deploy"]["kill_switch_equity_fraction"])
+    except Exception:
+        return None
+    return frac if 0.0 < frac < 1.0 else None
 
 
 def to_local(iso_ts: str) -> str:
@@ -138,6 +166,9 @@ def render_html(db: dict, logs: list[dict], instance: str = "v1") -> str:
     meta = db["meta"]
     deploy_start_eq = float(meta.get("deploy_start_equity", 0) or 0)
     deploy_start_ts = meta.get("deploy_start_ts", "")
+    # P = net deposited principal, maintained from the Binance income ledger.
+    # This is the denominator the LIVE kill switch uses (bot._check_kill_switch).
+    principal_anchor = float(meta.get("principal_anchor", 0) or 0)
 
     last_eq_after = None
     last_fill_side = None
@@ -149,9 +180,34 @@ def render_html(db: dict, logs: list[dict], instance: str = "v1") -> str:
                 break
 
     cur_equity = last_eq_after if last_eq_after is not None else deploy_start_eq
-    pnl_pct = ((cur_equity / deploy_start_eq) - 1) * 100 if deploy_start_eq else 0.0
-    pnl_usd = cur_equity - deploy_start_eq if deploy_start_eq else 0.0
-    kill_threshold = deploy_start_eq * 0.82 if deploy_start_eq else 0.0
+
+    # Measure P&L against PRINCIPAL, not against deploy-start equity.
+    # deploy_start_equity is a RAW snapshot frozen at first boot, so every later
+    # deposit moves the numerator and leaves the basis behind. On 2026-09-09 this
+    # page showed v1 at "+10.46% / +$14.96" while quoting the bot's own log line
+    # saying "-14.25%" further down the SAME page -- $142.93 at deploy, $183.93
+    # actually funded. donchian is worse: start 50.50 vs principal 172.53 renders
+    # +253.96% for a leg that is up 3.60%.
+    # Same defect as PR #25 (monitor.py) and PR #30 (bot.py boot line); this was
+    # the fourth reader of the pair.
+    if principal_anchor > 0:
+        pnl_basis, pnl_basis_label = principal_anchor, "principal"
+    else:
+        # Pre-Part-C legs have no ledger. Fall back, but SAY SO -- printing an
+        # unadjusted number bare is exactly what made this bug invisible.
+        pnl_basis, pnl_basis_label = deploy_start_eq, "deploy start (NOT transfer-adjusted)"
+    pnl_pct = ((cur_equity / pnl_basis) - 1) * 100 if pnl_basis else 0.0
+    pnl_usd = cur_equity - pnl_basis if pnl_basis else 0.0
+
+    # Kill line from the leg's CONFIGURED fraction against the SAME basis, so
+    # this card and the bot can no longer name different floors.
+    kill_fraction = read_kill_fraction(instance)
+    if kill_fraction is not None and pnl_basis:
+        kill_threshold = pnl_basis * kill_fraction
+        kill_note = f"{(kill_fraction - 1) * 100:.1f}% from {pnl_basis_label}"
+    else:
+        kill_threshold = None
+        kill_note = "config unreadable"
 
     if alive:
         status_label, status_class = "ALIVE", "ok"
@@ -212,6 +268,11 @@ def render_html(db: dict, logs: list[dict], instance: str = "v1") -> str:
 
     pnl_class = "ok" if pnl_pct >= 0 else "bad"
     pnl_sign = "+" if pnl_pct >= 0 else ""
+    # An em dash beats a fabricated number on both of these: a made-up kill
+    # level is something you would plan around.
+    principal_text = f"${principal_anchor:,.2f}" if principal_anchor > 0 else "—"
+    kill_threshold_text = (f"${kill_threshold:,.2f}" if kill_threshold is not None
+                           else "—")
     generated_at = epoch_to_local(now_utc)
     hb_text = fmt_age(hb_age) if hb_age is not None else "never"
     status_sub = f"HALT: {halt_note}" if halted else f"Heartbeat {hb_text}"
@@ -291,17 +352,17 @@ def render_html(db: dict, logs: list[dict], instance: str = "v1") -> str:
   <div class="card">
     <div class="lbl">Equity</div>
     <div class="val">${cur_equity:,.2f}</div>
-    <div class="sub" style="margin:6px 0 0">Start: ${deploy_start_eq:,.2f}</div>
+    <div class="sub" style="margin:6px 0 0">Start: ${deploy_start_eq:,.2f} · Principal: {principal_text}</div>
   </div>
   <div class="card">
     <div class="lbl">P&amp;L</div>
     <div class="val {pnl_class}">{pnl_sign}{pnl_pct:.2f}%</div>
-    <div class="sub" style="margin:6px 0 0">{pnl_sign}${pnl_usd:.2f} USDT</div>
+    <div class="sub" style="margin:6px 0 0">{pnl_sign}${pnl_usd:.2f} USDT vs {html.escape(pnl_basis_label)}</div>
   </div>
   <div class="card">
     <div class="lbl">Kill switch at</div>
-    <div class="val">${kill_threshold:,.2f}</div>
-    <div class="sub" style="margin:6px 0 0">-18% from start</div>
+    <div class="val">{kill_threshold_text}</div>
+    <div class="sub" style="margin:6px 0 0">{html.escape(kill_note)}</div>
   </div>
   <div class="card">
     <div class="lbl">Deploy started</div>
