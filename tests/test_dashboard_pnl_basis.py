@@ -31,18 +31,25 @@ sys.path.insert(0, str(ROOT))
 from tools import build_dashboard as bd  # noqa: E402
 
 
-def _db(*, deploy_start: str, principal: str | None, equity_after: float) -> dict:
-    """A minimal read_db() payload. meta values are TEXT, as sqlite returns."""
+def _db(*, deploy_start: str, principal: str | None, equity_after: float,
+        stale_cached_anchor: str | None = None) -> dict:
+    """A minimal read_db() payload. meta values are TEXT, as sqlite returns.
+
+    `principal` is the LIVE ledger derivation (read_db's "principal" key).
+    `stale_cached_anchor` seeds meta['principal_anchor'] with a different value
+    so a test can prove the renderer ignores the cache.
+    """
     meta = {"deploy_start_equity": deploy_start,
             "deploy_start_ts": "2026-07-25T05:45:27+00:00"}
-    if principal is not None:
-        meta["principal_anchor"] = principal
+    if stale_cached_anchor is not None:
+        meta["principal_anchor"] = stale_cached_anchor
     return {
         "meta": meta,
         # (ts, side, qty, price, pnl_usd, reason, equity_after)
         "fills": [("2026-09-09T03:00:00+00:00", "long", 0.01, 100.0,
                    None, "entry", equity_after)],
         "events": [],
+        "principal": None if principal is None else float(principal),
     }
 
 
@@ -107,6 +114,87 @@ class TestKillLine:
             html = _render(_db(deploy_start="100.00", principal="100.00",
                                equity_after=110.00))
         assert "config unreadable" in html
+
+    def test_no_principal_says_the_kill_switch_is_disabled(self):
+        """principal.breached() returns False when principal is None or <= 0,
+        so the bot enforces NO floor. Printing one off deploy-start equity
+        would repeat this bug's own mistake: naming a level nothing enforces."""
+        html = _render(_db(deploy_start="100.00", principal=None,
+                           equity_after=110.00))
+        assert "kill switch DISABLED: no principal anchor" in html
+        assert "$82.00" not in html   # 100.00 * 0.82, the old rule
+        assert "$64.50" not in html   # 100.00 * 0.645, the plausible-but-wrong one
+
+
+class TestPrincipalIsDerivedNotCached:
+    """meta.principal_anchor is documented (principal.py:52) as a CACHE of
+    base + sum(ledger), refreshed hourly. A transfer hits the ledger first, so
+    rendering from the cache reports against a different quantity than the kill
+    switch enforces -- the defect PR #25's review round found in monitor.py."""
+
+    def test_renderer_ignores_a_stale_cached_anchor(self):
+        """Live ledger says 100.00; the cache still says 80.00. 110/100 =
+        +10.00%, whereas the stale cache would give +37.50%."""
+        html = _render(_db(deploy_start="60.00", principal="100.00",
+                           equity_after=110.00, stale_cached_anchor="80.00"))
+        assert "+10.00%" in html
+        assert "37.5" not in html
+        assert "$64.50" in html        # 100.00 * 0.645, off the LIVE value
+        assert "$51.60" not in html    # 80.00 * 0.645, off the stale cache
+
+    def _leg_db(self, tmp_path, *, source: str | None,
+                base: str, ledger: list[tuple[float, str]]):
+        import sqlite3 as sq
+        p = tmp_path / "state_x.db"
+        c = sq.connect(p)
+        c.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+        c.execute("CREATE TABLE principal_ledger (tran_id INTEGER PRIMARY KEY, "
+                  "income_type TEXT, income_usd REAL, asset TEXT, ts_ms INTEGER, "
+                  "applied_at TEXT)")
+        if source is not None:
+            c.execute("INSERT INTO meta VALUES ('principal_source', ?)", (source,))
+        c.execute("INSERT INTO meta VALUES ('principal_base', ?)", (base,))
+        for i, (amt, asset) in enumerate(ledger):
+            c.execute("INSERT INTO principal_ledger VALUES (?,?,?,?,?,?)",
+                      (i, "TRANSFER", amt, asset, 0, ""))
+        c.commit()
+        meta = dict(c.execute("SELECT key, value FROM meta").fetchall())
+        return c, meta
+
+    def test_sums_usdt_ledger_onto_base(self, tmp_path):
+        """sol's real shape: base 0.0, deposits of 60 then 20 -> P = 80."""
+        c, meta = self._leg_db(tmp_path, source="income_backfill", base="0.0",
+                               ledger=[(60.0, "USDT"), (20.0, "USDT")])
+        assert bd._live_principal(c, meta) == 80.0
+
+    def test_base_of_zero_is_not_treated_as_missing(self, tmp_path):
+        """principal_base is legitimately 0.0 on every live leg."""
+        c, meta = self._leg_db(tmp_path, source="income_backfill", base="0.0",
+                               ledger=[(42.0, "USDT")])
+        assert bd._live_principal(c, meta) == 42.0
+
+    def test_non_usdt_rows_are_excluded(self, tmp_path):
+        """Each leg carries a small BNB fee transfer that is not principal."""
+        c, meta = self._leg_db(tmp_path, source="income_backfill", base="0.0",
+                               ledger=[(60.0, "USDT"), (0.0035, "BNB")])
+        assert bd._live_principal(c, meta) == 60.0
+
+    def test_uninitialised_leg_returns_none(self, tmp_path):
+        """Mirrors principal.is_initialized(): META_SOURCE unset -> None, which
+        keeps the kill card fail-safe rather than inventing a floor."""
+        c, meta = self._leg_db(tmp_path, source=None, base="0.0",
+                               ledger=[(60.0, "USDT")])
+        assert bd._live_principal(c, meta) is None
+
+    def test_missing_ledger_table_returns_none(self, tmp_path):
+        """A pre-Part-C leg DB has no principal_ledger at all."""
+        import sqlite3 as sq
+        p = tmp_path / "old.db"
+        c = sq.connect(p)
+        c.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+        c.execute("INSERT INTO meta VALUES ('principal_source', 'manual')")
+        c.commit()
+        assert bd._live_principal(c, {"principal_source": "manual"}) is None
 
     def test_read_kill_fraction_reads_every_configured_leg(self):
         """Reads the real YAML on disk, so a config rename breaks the test
