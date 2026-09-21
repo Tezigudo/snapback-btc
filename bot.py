@@ -489,6 +489,28 @@ class Bot:
                 self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
                                  "DRY-RUN: leaving it alone.",
                                  pos.side, pos.qty, pos.entry_price)
+            elif self._boot_resume_verdict(pos)[0]:
+                # RESUME. The tick loop owns this position from here exactly as
+                # if no restart had happened: its age still reads from the fills
+                # table, the daily anchor still reads from state.meta, and the
+                # first _maybe_reprotect will restore the bracket if it is gone.
+                root = state.latest_entry_coid_root()
+                self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
+                                 "RESUMING it (root=%s).",
+                                 pos.side, pos.qty, pos.entry_price, root or "—")
+                state.record_event("WARN", "boot_adopt",
+                                   {"side": pos.side, "qty": pos.qty,
+                                    "entry": pos.entry_price, "signal_id": root},
+                                   signal_id=root)
+                state.enqueue_bot_event(
+                    "boot_adopt",
+                    signal_id=root,
+                    side=pos.side,
+                    qty=float(pos.qty),
+                    price_usd=float(pos.entry_price),
+                    payload={"reason": "resumed_at_boot",
+                             "entry_price": float(pos.entry_price)},
+                )
             else:
                 root = state.latest_entry_coid_root()
                 self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
@@ -963,9 +985,15 @@ class Bot:
         # Remember this trade's bracket params so _maybe_reprotect can restore
         # the SL/TP if they later go missing while the position is still open
         # (external cancel, or a leverage change → Binance auto-cancels orders).
+        # `qty` is recorded for _can_adopt, NOT for reprotect — reprotect always
+        # re-places against the live pos.qty, deliberately. Adoption is the only
+        # caller that needs to notice a partially-closed position, and without
+        # this field its size check has nothing to compare against. Records
+        # written before this field existed simply skip that check.
         state.set_meta("active_bracket", json.dumps({
             "signal_id": signal_id, "side": decision.side,
             "entry_price": float(decision.price),
+            "qty": float(qty),
             "sl_distance": float(decision.sl_distance),
             "tp_distance": float(decision.tp_distance),
             "place_tp": bool(place_tp),
@@ -1010,6 +1038,143 @@ class Bot:
             strategy_name=self.strategy_name,
             orders=orders, dbg=decision.debug,
         )
+
+    def _can_adopt(self, pos) -> tuple[bool, str]:
+        """Decide whether boot() may RESUME an open position instead of closing it.
+
+        boot() flattens whatever it finds, because a fresh process cannot assume
+        a position it did not open still has a live bracket behind it. That is a
+        real cost, not a theoretical one: it has killed four live positions
+        (sol 08-10 and 09-11, donchian 08-26, v1 07-21), and for sol it accounts
+        for two of the three infrastructure deaths in a five-entry record.
+
+        Arming reprotect is what makes resuming defensible — the bot can now see
+        a missing bracket across BOTH order books and restore it. So this gate is
+        deliberately not new machinery: it is the SAME identity + readability
+        checks `_maybe_reprotect` already applies, asked once at boot.
+
+        Returns (verdict, reason). The reason is the whole point during the
+        observe-only phase: this event is far too rare to prove anything by
+        silence, so the log line IS the evidence.
+
+        FAIL-CLOSED. Every unknown, every exception, every missing record returns
+        False, and the caller flattens exactly as it does today. The bar to
+        resume is affirmative proof; the bar to flatten is anything less.
+        """
+        rp = (self.params.get("reprotect") or {})
+        # Without an ARMED re-placer, adopting a possibly-unprotected position is
+        # strictly worse than closing it — nothing would ever restore the bracket.
+        # This is also what keeps donchian and sol fail-closed by construction:
+        # neither config has a `reprotect:` key at all.
+        if not rp.get("enabled", False):
+            return False, "reprotect not enabled for this leg"
+        if rp.get("observe_only", True):
+            return False, "reprotect still observe-only — no armed re-placer"
+
+        raw = state.get_meta("active_bracket")
+        if not raw:
+            # REACHABLE, and it must flatten. _maybe_reprotect clears this to ''
+            # on the first flat tick, and a dropped exit leaves the same shape
+            # (donchian 2026-09-04 wrote no fill and no event). An open position
+            # with no stashed bracket is one we cannot identify as ours.
+            return False, "no active_bracket record (cleared, or never ours)"
+        try:
+            ab = json.loads(raw)
+        except (ValueError, TypeError):
+            return False, "active_bracket unparseable"
+
+        if ab.get("side") != pos.side:
+            return False, f"side mismatch: stashed {ab.get('side')} vs live {pos.side}"
+        ep = float(ab.get("entry_price") or 0.0)
+        if ep <= 0 or pos.entry_price <= 0:
+            return False, "entry price missing on one side"
+        if abs(ep - pos.entry_price) / pos.entry_price > 0.02:
+            return False, (f"entry price drift {ep:.2f} vs {pos.entry_price:.2f} "
+                           f"exceeds 2%")
+
+        # Quantity is NOT checked by _maybe_reprotect, and that is safe there
+        # because it re-places against the live pos.qty whatever the stash says.
+        # Adoption inherits more than a bracket, so a partially-closed position
+        # must not be resumed against a stale size. One qty_step of tolerance,
+        # because the stash records the requested qty and the fill is rounded.
+        stashed_qty = float(ab.get("qty") or 0.0)
+        if stashed_qty > 0:
+            step = float(getattr(self.constraints, "qty_step", 0.0) or 0.0)
+            if abs(stashed_qty - float(pos.qty)) > max(step, 1e-12):
+                return False, (f"qty mismatch: stashed {stashed_qty} vs live "
+                               f"{pos.qty} (step {step})")
+
+        place_tp = bool(ab.get("place_tp", True))
+        # A channel-exit strategy (donchian-v3) places an SL and no TP, so
+        # `bracket_state` would be asked whether a HALF bracket is intact —
+        # a shape nothing has been exercised against. Refuse it in code, not
+        # in a comment.
+        #
+        # Note this is the OPPOSITE safety direction from reprotect's decision
+        # not to gate on strategy. There, a hard gate would silently DISABLE
+        # protection on a legitimate switch. Here, refusing simply falls through
+        # to flatten — today's behaviour — so the gate costs a resumed trade,
+        # never an unprotected one. Lift it once the half-bracket path is tested.
+        if not place_tp:
+            return False, "SL-only bracket (channel-exit strategy) — half-bracket path untested"
+        try:
+            open_orders = self.client.ex.fetch_open_orders(self.symbol)
+        except Exception:
+            self.log.exception("boot-resume: fetch_open_orders failed")
+            return False, "plain order book unreadable"
+        # An UNREADABLE algo book is the one state we must never round down to
+        # "no bracket" — that is the July -4045 bug, and at boot it would be
+        # worse, because we would resume rather than merely re-place.
+        algo_rows, algo_ok = self.client.fetch_algo_orders(self.symbol)
+        if not algo_ok:
+            return False, "algo book unreadable — cannot distinguish 'no bracket' from 'no answer'"
+
+        state_ = bracket_state(open_orders, algo_rows, self.coid_prefix, place_tp)
+        if state_.intact:
+            return True, f"bracket intact ({state_.describe()})"
+
+        # Not intact is still adoptable IF the armed re-placer is allowed to act
+        # on the very next tick. If it has already spent its cap, nothing will
+        # restore the bracket and resuming would leave it unprotected.
+        cap = int(rp.get("max_replaces_per_position", 3))
+        done = int(ab.get("reprotect_count", 0))
+        if done >= cap:
+            return False, (f"bracket missing ({state_.describe()}) and reprotect "
+                           f"cap spent ({done}/{cap})")
+        return True, (f"bracket missing ({state_.describe()}) but reprotect can "
+                      f"restore it ({done}/{cap} used)")
+
+    def _boot_resume_verdict(self, pos) -> tuple[bool, str]:
+        """Config + rollout wrapper around `_can_adopt`. Never raises.
+
+        Split out from boot() so the ROLLOUT can be tested without standing up a
+        boot, and split from `_can_adopt` so the gate logic stays pure.
+
+        PHASE A (`observe_only: true`, what ships): evaluate, log the verdict and
+        its reason, then return False so boot() flattens exactly as it always
+        has. Zero behaviour change, and the log line is the evidence for arming.
+
+        Silence proves nothing here — unlike reprotect's Phase 1, where a clean
+        position produced a checkable "zero WOULD re-place lines". A restart that
+        happens to hold a position is rare, so an empty log means "it never came
+        up", not "it works". The gate must be driven by DELIBERATE restarts.
+        """
+        br = (self.params.get("boot_resume") or {})
+        if not br.get("enabled", False):
+            return False, "boot_resume disabled"
+        try:
+            adopt, why = self._can_adopt(pos)
+        except Exception:
+            # A gate that raises must not take the position with it.
+            self.log.exception("boot-resume: gate raised — flattening")
+            return False, "gate raised"
+        if br.get("observe_only", True):
+            self.log.warning(
+                "boot-resume OBSERVE: WOULD %s %s %.4f @ %.2f — %s",
+                "ADOPT" if adopt else "FLATTEN",
+                pos.side, pos.qty, pos.entry_price, why)
+            return False, why
+        return adopt, why
 
     def _maybe_reprotect(self, equity: float) -> None:
         """Restore a missing SL/TP bracket while a position is still open.

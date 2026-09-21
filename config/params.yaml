@@ -194,6 +194,42 @@ reprotect:
   # reset it. The 60s throttle did NOT stop July, it only paced the spam.
   max_replaces_per_position: 3
 
+# Resume an open position at boot instead of closing it at market.
+#
+# WHY: boot() flattens whatever it finds, because a fresh process cannot assume
+# a position it did not open still has a bracket behind it. That has killed four
+# live positions — sol 2026-08-10 and 2026-09-11, donchian 2026-08-26, v1
+# 2026-07-21 — and for sol it is two of the three infrastructure deaths in a
+# five-entry record. The needrestart fix (2026-09-16) removed the apt class of
+# restart only; a crash, an OOM kill and a REBOOT still flatten, and
+# tools/leg_safe_restart.py already covers the operator case by refusing unless
+# flat. What is left is precisely the restarts nobody chose.
+#
+# ROLLOUT PHASE A. Logs "boot-resume OBSERVE: WOULD ADOPT/FLATTEN ..." and then
+# flattens anyway. Behaviour is identical to having no boot_resume block at all.
+#
+# The Phase 1 trick does NOT work here. reprotect could be proven by silence
+# ("zero WOULD re-place lines across a full position") because a healthy
+# position ticks constantly. A restart that happens to hold a position is RARE,
+# so an empty log means "never came up", not "works". Drive this with DELIBERATE
+# restarts on a dry-run leg and read every verdict.
+# Gate to flip observe_only: >=5 deliberate restarts while holding a position,
+# every verdict inspected, zero disagreements.
+#
+# It is gated on reprotect being ARMED (enabled AND not observe_only), and that
+# is load-bearing: without a re-placer nothing would ever restore a missing
+# bracket, so resuming would be strictly worse than closing. This also keeps
+# donchian and sol fail-closed by construction — neither config has a reprotect
+# block at all.
+#
+# DO NOT enable this on a config whose strategy places NO TP leg ("donchian-v3"
+# — see the reprotect note above) until the half-bracket path has been
+# exercised. bracket_state() would be asked about an SL-only bracket, and
+# nothing here has been tested against that shape.
+boot_resume:
+  enabled: true
+  observe_only: true
+
 execution:
   order_type: limit             # market | limit  (2026-05-19: enabled limit-order entry)
   # Limit-order knobs (used only when order_type=limit):
