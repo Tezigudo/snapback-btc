@@ -183,8 +183,8 @@ def _v1_setup():
     if "v1" in _CACHE:
         return _CACHE["v1"]
     import tools.multifactor_v1_live_exit_revalidation as rv
-    from tools.run_mf_deepening import PARQ, _load_slice
     from strategy.signals_multifactor import DayTradeMultiFactorBTC
+    from tools.run_mf_deepening import PARQ, _load_slice
 
     df = _load_slice(PARQ["BTC"], rv.FULL_START, rv.FULL_END, attach_funding=True)
     fund = pd.read_parquet(rv.FUND_PARQ)
@@ -206,10 +206,15 @@ def _v1_setup():
 def _don_setup():
     if "don" in _CACHE:
         return _CACHE["don"]
-    from tools._postfrac_donchian_variants_sweep import (
-        CASH, COMMISSION, MARGIN, _load_full_scaled_4h, _prep_slice)
-    from tools.donchian_exit_period_sweep import DEPLOYED_ATTRS
     from strategy.signals_donchian import DonchianBreakoutBTCv3
+    from tools._postfrac_donchian_variants_sweep import (
+        CASH,
+        COMMISSION,
+        MARGIN,
+        _load_full_scaled_4h,
+        _prep_slice,
+    )
+    from tools.donchian_exit_period_sweep import DEPLOYED_ATTRS
 
     full = _load_full_scaled_4h()
     df = _prep_slice(full, full.index[0], full.index[-1], period_entry=80, period_exit=10)
@@ -447,7 +452,7 @@ def neighbours(leg: str, key: str, keys: list[str]) -> list[str]:
     m = re.match(r"^(.*?)(\d+(?:\.\d+)?)(R?)(.*)$", key)
     if not m:
         return []
-    pre, num, unit, post = m.groups()
+    pre, _num, unit, post = m.groups()
     fam = [k for k in keys if re.match(rf"^{re.escape(pre)}(\d+(?:\.\d+)?){re.escape(unit)}{re.escape(post)}$", k)]
     vals = sorted(fam, key=lambda k: float(re.match(rf"^{re.escape(pre)}(\d+(?:\.\d+)?)", k).group(1)))
     i = vals.index(key)
@@ -482,8 +487,8 @@ def walk_forward(arms: dict[str, dict], baseline: str, start: str, end: str,
             score = ret / abs(dd) if dd < 0 else ret * 100
             if score > best_score:
                 best, best_score = k, score
-        def test_ret(k):
-            s = _seg(arms[k]["daily_equity"], str(t.date()), str(te_b.date()))
+        def test_ret(k, a=t, b=te_b):
+            s = _seg(arms[k]["daily_equity"], str(a.date()), str(b.date()))
             return float(s.iloc[-1] / s.iloc[0] - 1) if len(s) > 1 else 0.0
         folds.append({"test": f"{t.date()}..{te_b.date()}", "chosen": best,
                       "chosen_ret_pct": round(test_ret(best) * 100, 2),
@@ -618,8 +623,8 @@ def main() -> int:
     if parity and not all(p["ok"] for p in parity.values()):
         print("PARITY FAILED — not trusting any arm; stopping.", file=sys.stderr)
         OUT.with_suffix(".parity_fail.json").write_text(json.dumps(
-            {"parity": parity, "metrics": {l: {k: r["metrics"] for k, r in v.items()}
-                                           for l, v in results.items()}}, indent=1, default=str))
+            {"parity": parity, "metrics": {lg: {k: r["metrics"] for k, r in v.items()}
+                                           for lg, v in results.items()}}, indent=1, default=str))
         return 2
     if a.parity_only:
         return 0
