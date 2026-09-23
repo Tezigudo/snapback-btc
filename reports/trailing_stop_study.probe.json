@@ -1,0 +1,978 @@
+{
+ "sol": {
+  "baseline": {
+   "x1": {
+    "metrics": {
+     "return_pct": 527.14,
+     "return_net_funding_pct": 515.05,
+     "cagr_net_pct": 52.35,
+     "max_dd_pct": -26.64,
+     "mar": 1.965,
+     "sharpe_daily": 1.353,
+     "worst_start_anchored_dd_pct": -26.64,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 119,
+     "win_rate_pct": 37.0,
+     "profit_factor": 1.632,
+     "profit_factor_usd": 1.616,
+     "median_hold_days": 4.0,
+     "funding_cost_pct_of_cash": 12.09,
+     "by_year": {
+      "2022": 44.62,
+      "2023": 35.02,
+      "2024": 95.13,
+      "2025": 27.17,
+      "2026": 30.3
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 24.0,
+     "hold_bars_p90": 73.0,
+     "hold_bars_max": 224.0,
+     "trades_held_ge_48_bars": 34,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 147.3,
+     "top5_trades_pnl_share_pct": 90.2
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 478.3,
+     "return_net_funding_pct": 466.87,
+     "cagr_net_pct": 49.49,
+     "max_dd_pct": -27.17,
+     "mar": 1.822,
+     "sharpe_daily": 1.299,
+     "worst_start_anchored_dd_pct": -27.17,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 119,
+     "win_rate_pct": 35.3,
+     "profit_factor": 1.591,
+     "profit_factor_usd": 1.576,
+     "median_hold_days": 4.0,
+     "funding_cost_pct_of_cash": 11.43,
+     "by_year": {
+      "2022": 43.24,
+      "2023": 32.94,
+      "2024": 91.77,
+      "2025": 24.69,
+      "2026": 27.87
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 24.0,
+     "hold_bars_p90": 73.0,
+     "hold_bars_max": 224.0,
+     "trades_held_ge_48_bars": 34,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 153.4,
+     "top5_trades_pnl_share_pct": 92.7
+    }
+   }
+  },
+  "be_1R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 430.08,
+     "return_net_funding_pct": 417.72,
+     "cagr_net_pct": 46.38,
+     "max_dd_pct": -29.05,
+     "mar": 1.597,
+     "sharpe_daily": 1.318,
+     "worst_start_anchored_dd_pct": -29.05,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 137,
+     "win_rate_pct": 42.3,
+     "profit_factor": 1.613,
+     "profit_factor_usd": 1.637,
+     "median_hold_days": 3.167,
+     "funding_cost_pct_of_cash": 12.36,
+     "by_year": {
+      "2022": 76.77,
+      "2023": 29.38,
+      "2024": 48.64,
+      "2025": 31.93,
+      "2026": 18.71
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 19.0,
+     "hold_bars_p90": 67.0,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 25,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 153.7,
+     "top5_trades_pnl_share_pct": 90.6
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 382.92,
+     "return_net_funding_pct": 371.28,
+     "cagr_net_pct": 43.23,
+     "max_dd_pct": -29.79,
+     "mar": 1.451,
+     "sharpe_daily": 1.252,
+     "worst_start_anchored_dd_pct": -29.79,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 137,
+     "win_rate_pct": 27.0,
+     "profit_factor": 1.556,
+     "profit_factor_usd": 1.582,
+     "median_hold_days": 3.167,
+     "funding_cost_pct_of_cash": 11.64,
+     "by_year": {
+      "2022": 74.45,
+      "2023": 26.94,
+      "2024": 45.93,
+      "2025": 29.08,
+      "2026": 16.28
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 19.0,
+     "hold_bars_p90": 67.0,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 25,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 161.9,
+     "top5_trades_pnl_share_pct": 94.3
+    }
+   }
+  },
+  "be_1.5R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 794.48,
+     "return_net_funding_pct": 778.16,
+     "cagr_net_pct": 65.46,
+     "max_dd_pct": -28.41,
+     "mar": 2.304,
+     "sharpe_daily": 1.598,
+     "worst_start_anchored_dd_pct": -28.41,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 129,
+     "win_rate_pct": 41.9,
+     "profit_factor": 1.842,
+     "profit_factor_usd": 1.76,
+     "median_hold_days": 3.833,
+     "funding_cost_pct_of_cash": 16.31,
+     "by_year": {
+      "2022": 103.16,
+      "2023": 27.06,
+      "2024": 65.86,
+      "2025": 49.41,
+      "2026": 40.45
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 23.0,
+     "hold_bars_p90": 75.80000000000001,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 34,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 136.2,
+     "top5_trades_pnl_share_pct": 79.3
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 720.11,
+     "return_net_funding_pct": 704.77,
+     "cagr_net_pct": 62.14,
+     "max_dd_pct": -28.99,
+     "mar": 2.143,
+     "sharpe_daily": 1.539,
+     "worst_start_anchored_dd_pct": -28.99,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 129,
+     "win_rate_pct": 34.1,
+     "profit_factor": 1.788,
+     "profit_factor_usd": 1.709,
+     "median_hold_days": 3.833,
+     "funding_cost_pct_of_cash": 15.35,
+     "by_year": {
+      "2022": 100.93,
+      "2023": 24.94,
+      "2024": 62.95,
+      "2025": 46.22,
+      "2026": 37.71
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 23.0,
+     "hold_bars_p90": 75.80000000000001,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 34,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 141.5,
+     "top5_trades_pnl_share_pct": 81.1
+    }
+   }
+  },
+  "be_1.75R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 780.42,
+     "return_net_funding_pct": 761.61,
+     "cagr_net_pct": 64.73,
+     "max_dd_pct": -26.49,
+     "mar": 2.443,
+     "sharpe_daily": 1.565,
+     "worst_start_anchored_dd_pct": -26.49,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 126,
+     "win_rate_pct": 39.7,
+     "profit_factor": 1.852,
+     "profit_factor_usd": 1.704,
+     "median_hold_days": 4.083,
+     "funding_cost_pct_of_cash": 18.81,
+     "by_year": {
+      "2022": 73.66,
+      "2023": 49.2,
+      "2024": 59.91,
+      "2025": 63.47,
+      "2026": 30.56
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 24.5,
+     "hold_bars_p90": 77.0,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 36,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 142.0,
+     "top5_trades_pnl_share_pct": 85.5
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 708.73,
+     "return_net_funding_pct": 690.96,
+     "cagr_net_pct": 61.49,
+     "max_dd_pct": -27.09,
+     "mar": 2.27,
+     "sharpe_daily": 1.509,
+     "worst_start_anchored_dd_pct": -27.09,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 126,
+     "win_rate_pct": 35.7,
+     "profit_factor": 1.799,
+     "profit_factor_usd": 1.659,
+     "median_hold_days": 4.083,
+     "funding_cost_pct_of_cash": 17.76,
+     "by_year": {
+      "2022": 71.98,
+      "2023": 46.72,
+      "2024": 57.1,
+      "2025": 60.07,
+      "2026": 28.01
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 24.5,
+     "hold_bars_p90": 77.0,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 36,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 147.3,
+     "top5_trades_pnl_share_pct": 87.4
+    }
+   }
+  },
+  "be_2R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 859.28,
+     "return_net_funding_pct": 838.42,
+     "cagr_net_pct": 68.02,
+     "max_dd_pct": -26.49,
+     "mar": 2.567,
+     "sharpe_daily": 1.61,
+     "worst_start_anchored_dd_pct": -26.49,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 125,
+     "win_rate_pct": 37.6,
+     "profit_factor": 1.857,
+     "profit_factor_usd": 1.722,
+     "median_hold_days": 4.167,
+     "funding_cost_pct_of_cash": 20.86,
+     "by_year": {
+      "2022": 47.61,
+      "2023": 80.21,
+      "2024": 50.17,
+      "2025": 84.73,
+      "2026": 30.56
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 25.0,
+     "hold_bars_p90": 77.40000000000003,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 37,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 138.1,
+     "top5_trades_pnl_share_pct": 84.6
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 781.47,
+     "return_net_funding_pct": 761.78,
+     "cagr_net_pct": 64.73,
+     "max_dd_pct": -27.09,
+     "mar": 2.39,
+     "sharpe_daily": 1.555,
+     "worst_start_anchored_dd_pct": -27.09,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 125,
+     "win_rate_pct": 35.2,
+     "profit_factor": 1.806,
+     "profit_factor_usd": 1.678,
+     "median_hold_days": 4.167,
+     "funding_cost_pct_of_cash": 19.7,
+     "by_year": {
+      "2022": 46.13,
+      "2023": 77.33,
+      "2024": 47.53,
+      "2025": 80.91,
+      "2026": 28.01
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 25.0,
+     "hold_bars_p90": 77.40000000000003,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 37,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 143.0,
+     "top5_trades_pnl_share_pct": 86.4
+    }
+   }
+  },
+  "be_2.25R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 851.55,
+     "return_net_funding_pct": 830.88,
+     "cagr_net_pct": 67.71,
+     "max_dd_pct": -26.49,
+     "mar": 2.555,
+     "sharpe_daily": 1.604,
+     "worst_start_anchored_dd_pct": -26.49,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 123,
+     "win_rate_pct": 38.2,
+     "profit_factor": 1.873,
+     "profit_factor_usd": 1.728,
+     "median_hold_days": 4.167,
+     "funding_cost_pct_of_cash": 20.68,
+     "by_year": {
+      "2022": 44.62,
+      "2023": 80.21,
+      "2024": 50.17,
+      "2025": 87.02,
+      "2026": 30.56
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 25.0,
+     "hold_bars_p90": 78.19999999999999,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 37,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 137.3,
+     "top5_trades_pnl_share_pct": 84.7
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 775.28,
+     "return_net_funding_pct": 755.74,
+     "cagr_net_pct": 64.47,
+     "max_dd_pct": -27.09,
+     "mar": 2.38,
+     "sharpe_daily": 1.55,
+     "worst_start_anchored_dd_pct": -27.09,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 123,
+     "win_rate_pct": 35.8,
+     "profit_factor": 1.823,
+     "profit_factor_usd": 1.684,
+     "median_hold_days": 4.167,
+     "funding_cost_pct_of_cash": 19.54,
+     "by_year": {
+      "2022": 43.24,
+      "2023": 77.33,
+      "2024": 47.53,
+      "2025": 83.27,
+      "2026": 28.01
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 25.0,
+     "hold_bars_p90": 78.19999999999999,
+     "hold_bars_max": 172.0,
+     "trades_held_ge_48_bars": 37,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 142.2,
+     "top5_trades_pnl_share_pct": 86.5
+    }
+   }
+  },
+  "be_2.5R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 796.8,
+     "return_net_funding_pct": 778.23,
+     "cagr_net_pct": 65.46,
+     "max_dd_pct": -26.64,
+     "mar": 2.457,
+     "sharpe_daily": 1.566,
+     "worst_start_anchored_dd_pct": -26.64,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 121,
+     "win_rate_pct": 38.0,
+     "profit_factor": 1.851,
+     "profit_factor_usd": 1.712,
+     "median_hold_days": 4.167,
+     "funding_cost_pct_of_cash": 18.56,
+     "by_year": {
+      "2022": 44.62,
+      "2023": 80.21,
+      "2024": 66.24,
+      "2025": 59.92,
+      "2026": 30.3
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 25.0,
+     "hold_bars_p90": 79.0,
+     "hold_bars_max": 224.0,
+     "trades_held_ge_48_bars": 37,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 144.0,
+     "top5_trades_pnl_share_pct": 85.4
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 726.19,
+     "return_net_funding_pct": 708.64,
+     "cagr_net_pct": 62.32,
+     "max_dd_pct": -27.17,
+     "mar": 2.294,
+     "sharpe_daily": 1.513,
+     "worst_start_anchored_dd_pct": -27.17,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 121,
+     "win_rate_pct": 37.2,
+     "profit_factor": 1.802,
+     "profit_factor_usd": 1.67,
+     "median_hold_days": 4.167,
+     "funding_cost_pct_of_cash": 17.55,
+     "by_year": {
+      "2022": 43.24,
+      "2023": 77.33,
+      "2024": 63.36,
+      "2025": 56.77,
+      "2026": 27.87
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 25.0,
+     "hold_bars_p90": 79.0,
+     "hold_bars_max": 224.0,
+     "trades_held_ge_48_bars": 37,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 149.1,
+     "top5_trades_pnl_share_pct": 87.2
+    }
+   }
+  },
+  "be_3R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 737.1,
+     "return_net_funding_pct": 720.51,
+     "cagr_net_pct": 62.87,
+     "max_dd_pct": -26.64,
+     "mar": 2.36,
+     "sharpe_daily": 1.525,
+     "worst_start_anchored_dd_pct": -26.64,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 120,
+     "win_rate_pct": 37.5,
+     "profit_factor": 1.76,
+     "profit_factor_usd": 1.663,
+     "median_hold_days": 4.167,
+     "funding_cost_pct_of_cash": 16.58,
+     "by_year": {
+      "2022": 44.62,
+      "2023": 80.21,
+      "2024": 95.13,
+      "2025": 27.17,
+      "2026": 30.3
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 25.0,
+     "hold_bars_p90": 73.20000000000002,
+     "hold_bars_max": 224.0,
+     "trades_held_ge_48_bars": 35,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 140.9,
+     "top5_trades_pnl_share_pct": 86.1
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 671.44,
+     "return_net_funding_pct": 655.75,
+     "cagr_net_pct": 59.8,
+     "max_dd_pct": -27.17,
+     "mar": 2.201,
+     "sharpe_daily": 1.472,
+     "worst_start_anchored_dd_pct": -27.17,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 120,
+     "win_rate_pct": 36.7,
+     "profit_factor": 1.714,
+     "profit_factor_usd": 1.623,
+     "median_hold_days": 4.167,
+     "funding_cost_pct_of_cash": 15.69,
+     "by_year": {
+      "2022": 43.24,
+      "2023": 77.33,
+      "2024": 91.77,
+      "2025": 24.69,
+      "2026": 27.87
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 25.0,
+     "hold_bars_p90": 73.20000000000002,
+     "hold_bars_max": 224.0,
+     "trades_held_ge_48_bars": 35,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 146.1,
+     "top5_trades_pnl_share_pct": 88.1
+    }
+   }
+  },
+  "be_4R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 527.14,
+     "return_net_funding_pct": 515.05,
+     "cagr_net_pct": 52.35,
+     "max_dd_pct": -26.64,
+     "mar": 1.965,
+     "sharpe_daily": 1.353,
+     "worst_start_anchored_dd_pct": -26.64,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 119,
+     "win_rate_pct": 37.0,
+     "profit_factor": 1.632,
+     "profit_factor_usd": 1.616,
+     "median_hold_days": 4.0,
+     "funding_cost_pct_of_cash": 12.09,
+     "by_year": {
+      "2022": 44.62,
+      "2023": 35.02,
+      "2024": 95.13,
+      "2025": 27.17,
+      "2026": 30.3
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 24.0,
+     "hold_bars_p90": 73.0,
+     "hold_bars_max": 224.0,
+     "trades_held_ge_48_bars": 34,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 147.3,
+     "top5_trades_pnl_share_pct": 90.2
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 478.3,
+     "return_net_funding_pct": 466.87,
+     "cagr_net_pct": 49.49,
+     "max_dd_pct": -27.17,
+     "mar": 1.822,
+     "sharpe_daily": 1.299,
+     "worst_start_anchored_dd_pct": -27.17,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 119,
+     "win_rate_pct": 35.3,
+     "profit_factor": 1.591,
+     "profit_factor_usd": 1.576,
+     "median_hold_days": 4.0,
+     "funding_cost_pct_of_cash": 11.43,
+     "by_year": {
+      "2022": 43.24,
+      "2023": 32.94,
+      "2024": 91.77,
+      "2025": 24.69,
+      "2026": 27.87
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 24.0,
+     "hold_bars_p90": 73.0,
+     "hold_bars_max": 224.0,
+     "trades_held_ge_48_bars": 34,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 153.4,
+     "top5_trades_pnl_share_pct": 92.7
+    }
+   }
+  }
+ },
+ "v1": {
+  "baseline": {
+   "x1": {
+    "metrics": {
+     "return_pct": 373.2,
+     "return_net_funding_pct": 346.37,
+     "cagr_net_pct": 25.4,
+     "max_dd_pct": -24.84,
+     "mar": 1.023,
+     "sharpe_daily": 0.98,
+     "worst_start_anchored_dd_pct": -24.84,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 370,
+     "win_rate_pct": 30.0,
+     "profit_factor": 1.392,
+     "profit_factor_usd": 1.309,
+     "median_hold_days": 0.182,
+     "funding_cost_pct_of_cash": 26.83,
+     "by_year": {
+      "2020": 34.39,
+      "2021": 43.67,
+      "2022": 11.85,
+      "2023": 31.3,
+      "2024": 46.75,
+      "2025": 16.45,
+      "2026": -1.06
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 17.5,
+     "hold_bars_p90": 99.0,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 98,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 177.5,
+     "top5_trades_pnl_share_pct": 43.5
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 100.99,
+     "return_net_funding_pct": 83.22,
+     "cagr_net_pct": 9.59,
+     "max_dd_pct": -29.93,
+     "mar": 0.321,
+     "sharpe_daily": 0.516,
+     "worst_start_anchored_dd_pct": -29.93,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 370,
+     "win_rate_pct": 29.5,
+     "profit_factor": 1.183,
+     "profit_factor_usd": 1.12,
+     "median_hold_days": 0.182,
+     "funding_cost_pct_of_cash": 17.77,
+     "by_year": {
+      "2020": 13.26,
+      "2021": 25.24,
+      "2022": 2.37,
+      "2023": 12.83,
+      "2024": 26.53,
+      "2025": 5.33,
+      "2026": -6.74
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 17.5,
+     "hold_bars_p90": 99.0,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 98,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 356.4,
+     "top5_trades_pnl_share_pct": 69.4
+    }
+   }
+  },
+  "be_1R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 140.47,
+     "return_net_funding_pct": 123.82,
+     "cagr_net_pct": 12.96,
+     "max_dd_pct": -24.36,
+     "mar": 0.532,
+     "sharpe_daily": 0.634,
+     "worst_start_anchored_dd_pct": -24.36,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 381,
+     "win_rate_pct": 24.9,
+     "profit_factor": 1.259,
+     "profit_factor_usd": 1.185,
+     "median_hold_days": 0.156,
+     "funding_cost_pct_of_cash": 16.65,
+     "by_year": {
+      "2020": 11.86,
+      "2021": 40.51,
+      "2022": 3.45,
+      "2023": 7.85,
+      "2024": 34.14,
+      "2025": 3.48,
+      "2026": -1.2
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 15.0,
+     "hold_bars_p90": 85.0,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 81,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 208.9,
+     "top5_trades_pnl_share_pct": 58.7
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": -0.84,
+     "return_net_funding_pct": -12.2,
+     "cagr_net_pct": -1.95,
+     "max_dd_pct": -43.08,
+     "mar": -0.045,
+     "sharpe_daily": 0.124,
+     "worst_start_anchored_dd_pct": -43.08,
+     "pct_deploy_dates_breaching": 0.62,
+     "trades": 381,
+     "win_rate_pct": 23.4,
+     "profit_factor": 1.044,
+     "profit_factor_usd": 0.998,
+     "median_hold_days": 0.156,
+     "funding_cost_pct_of_cash": 11.36,
+     "by_year": {
+      "2020": -6.67,
+      "2021": 21.52,
+      "2022": -5.5,
+      "2023": -7.7,
+      "2024": 15.17,
+      "2025": -6.59,
+      "2026": -6.82
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 15.0,
+     "hold_bars_p90": 85.0,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 81,
+     "pnl_share_of_trades_held_ge_48_bars_pct": -18740.4,
+     "top5_trades_pnl_share_pct": null
+    }
+   }
+  },
+  "be_1.25R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 310.56,
+     "return_net_funding_pct": 286.24,
+     "cagr_net_pct": 22.69,
+     "max_dd_pct": -24.46,
+     "mar": 0.927,
+     "sharpe_daily": 0.918,
+     "worst_start_anchored_dd_pct": -24.46,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 377,
+     "win_rate_pct": 27.3,
+     "profit_factor": 1.38,
+     "profit_factor_usd": 1.285,
+     "median_hold_days": 0.167,
+     "funding_cost_pct_of_cash": 24.32,
+     "by_year": {
+      "2020": 38.89,
+      "2021": 48.29,
+      "2022": 5.09,
+      "2023": 15.16,
+      "2024": 53.11,
+      "2025": 10.31,
+      "2026": -1.2
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 16.0,
+     "hold_bars_p90": 93.40000000000003,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 88,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 169.7,
+     "top5_trades_pnl_share_pct": 45.3
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 70.87,
+     "return_net_funding_pct": 54.61,
+     "cagr_net_pct": 6.82,
+     "max_dd_pct": -33.43,
+     "mar": 0.204,
+     "sharpe_daily": 0.432,
+     "worst_start_anchored_dd_pct": -33.43,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 377,
+     "win_rate_pct": 26.5,
+     "profit_factor": 1.157,
+     "profit_factor_usd": 1.093,
+     "median_hold_days": 0.167,
+     "funding_cost_pct_of_cash": 16.26,
+     "by_year": {
+      "2020": 16.01,
+      "2021": 28.79,
+      "2022": -3.91,
+      "2023": -1.34,
+      "2024": 31.53,
+      "2025": -0.16,
+      "2026": -6.94
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 16.0,
+     "hold_bars_p90": 93.40000000000003,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 88,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 400.2,
+     "top5_trades_pnl_share_pct": 84.1
+    }
+   }
+  },
+  "be_1.5R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 396.9,
+     "return_net_funding_pct": 369.55,
+     "cagr_net_pct": 26.37,
+     "max_dd_pct": -24.49,
+     "mar": 1.077,
+     "sharpe_daily": 1.021,
+     "worst_start_anchored_dd_pct": -24.49,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 374,
+     "win_rate_pct": 28.6,
+     "profit_factor": 1.423,
+     "profit_factor_usd": 1.329,
+     "median_hold_days": 0.172,
+     "funding_cost_pct_of_cash": 27.35,
+     "by_year": {
+      "2020": 38.86,
+      "2021": 46.25,
+      "2022": 5.0,
+      "2023": 34.02,
+      "2024": 53.12,
+      "2025": 16.47,
+      "2026": -1.22
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 16.5,
+     "hold_bars_p90": 97.39999999999998,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 92,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 165.3,
+     "top5_trades_pnl_share_pct": 43.0
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 108.19,
+     "return_net_funding_pct": 90.26,
+     "cagr_net_pct": 10.22,
+     "max_dd_pct": -28.41,
+     "mar": 0.36,
+     "sharpe_daily": 0.541,
+     "worst_start_anchored_dd_pct": -28.41,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 374,
+     "win_rate_pct": 28.1,
+     "profit_factor": 1.197,
+     "profit_factor_usd": 1.13,
+     "median_hold_days": 0.172,
+     "funding_cost_pct_of_cash": 17.93,
+     "by_year": {
+      "2020": 16.1,
+      "2021": 27.28,
+      "2022": -3.94,
+      "2023": 14.89,
+      "2024": 31.95,
+      "2025": 5.35,
+      "2026": -6.96
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 16.5,
+     "hold_bars_p90": 97.39999999999998,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 92,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 321.7,
+     "top5_trades_pnl_share_pct": 67.3
+    }
+   }
+  },
+  "be_1.75R": {
+   "x1": {
+    "metrics": {
+     "return_pct": 345.59,
+     "return_net_funding_pct": 320.42,
+     "cagr_net_pct": 24.27,
+     "max_dd_pct": -24.91,
+     "mar": 0.974,
+     "sharpe_daily": 0.955,
+     "worst_start_anchored_dd_pct": -24.91,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 372,
+     "win_rate_pct": 29.6,
+     "profit_factor": 1.384,
+     "profit_factor_usd": 1.312,
+     "median_hold_days": 0.177,
+     "funding_cost_pct_of_cash": 25.16,
+     "by_year": {
+      "2020": 25.26,
+      "2021": 34.65,
+      "2022": 12.1,
+      "2023": 41.65,
+      "2024": 46.51,
+      "2025": 16.44,
+      "2026": -1.19
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 17.0,
+     "hold_bars_p90": 98.0,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 98,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 174.5,
+     "top5_trades_pnl_share_pct": 44.2
+    }
+   },
+   "x2": {
+    "metrics": {
+     "return_pct": 88.47,
+     "return_net_funding_pct": 71.9,
+     "cagr_net_pct": 8.54,
+     "max_dd_pct": -30.68,
+     "mar": 0.278,
+     "sharpe_daily": 0.483,
+     "worst_start_anchored_dd_pct": -30.68,
+     "pct_deploy_dates_breaching": 0.0,
+     "trades": 372,
+     "win_rate_pct": 28.8,
+     "profit_factor": 1.172,
+     "profit_factor_usd": 1.115,
+     "median_hold_days": 0.177,
+     "funding_cost_pct_of_cash": 16.57,
+     "by_year": {
+      "2020": 4.91,
+      "2021": 17.38,
+      "2022": 2.64,
+      "2023": 21.83,
+      "2024": 26.29,
+      "2025": 5.46,
+      "2026": -6.9
+     }
+    },
+    "exits": {
+     "hold_bars_p50": 17.0,
+     "hold_bars_p90": 98.0,
+     "hold_bars_max": 202.0,
+     "trades_held_ge_48_bars": 98,
+     "pnl_share_of_trades_held_ge_48_bars_pct": 362.9,
+     "top5_trades_pnl_share_pct": 74.2
+    }
+   }
+  }
+ }
+}
