@@ -1,0 +1,591 @@
+{
+ "note": "SOL BE arms from 2020-10-01 (NOT the +515% parity span)",
+ "metrics": {
+  "baseline": {
+   "return_pct": 941.98,
+   "return_net_funding_pct": 918.18,
+   "cagr_net_pct": 49.07,
+   "max_dd_pct": -26.64,
+   "mar": 1.842,
+   "sharpe_daily": 1.301,
+   "worst_start_anchored_dd_pct": -26.64,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 158,
+   "win_rate_pct": 36.7,
+   "profit_factor": 1.52,
+   "profit_factor_usd": 1.619,
+   "median_hold_days": 4.083,
+   "funding_cost_pct_of_cash": 23.8,
+   "by_year": {
+    "2020": 12.75,
+    "2021": 23.76,
+    "2022": 73.77,
+    "2023": 35.02,
+    "2024": 95.13,
+    "2025": 27.17,
+    "2026": 30.3
+   }
+  },
+  "be_1R": {
+   "return_pct": 650.76,
+   "return_net_funding_pct": 629.72,
+   "cagr_net_pct": 40.77,
+   "max_dd_pct": -29.05,
+   "mar": 1.403,
+   "sharpe_daily": 1.206,
+   "worst_start_anchored_dd_pct": -29.05,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 185,
+   "win_rate_pct": 41.1,
+   "profit_factor": 1.428,
+   "profit_factor_usd": 1.623,
+   "median_hold_days": 3.167,
+   "funding_cost_pct_of_cash": 21.03,
+   "by_year": {
+    "2020": 7.72,
+    "2021": 20.06,
+    "2022": 93.57,
+    "2023": 29.38,
+    "2024": 48.64,
+    "2025": 31.93,
+    "2026": 18.71
+   }
+  },
+  "be_1.5R": {
+   "return_pct": 1114.81,
+   "return_net_funding_pct": 1089.47,
+   "cagr_net_pct": 53.11,
+   "max_dd_pct": -28.41,
+   "mar": 1.869,
+   "sharpe_daily": 1.392,
+   "worst_start_anchored_dd_pct": -28.41,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 175,
+   "win_rate_pct": 40.0,
+   "profit_factor": 1.536,
+   "profit_factor_usd": 1.734,
+   "median_hold_days": 3.833,
+   "funding_cost_pct_of_cash": 25.34,
+   "by_year": {
+    "2020": 13.64,
+    "2021": 13.24,
+    "2022": 114.41,
+    "2023": 27.06,
+    "2024": 65.86,
+    "2025": 49.41,
+    "2026": 40.45
+   }
+  },
+  "be_1.75R": {
+   "return_pct": 1572.04,
+   "return_net_funding_pct": 1534.08,
+   "cagr_net_pct": 61.71,
+   "max_dd_pct": -26.49,
+   "mar": 2.329,
+   "sharpe_daily": 1.513,
+   "worst_start_anchored_dd_pct": -26.49,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 171,
+   "win_rate_pct": 38.6,
+   "profit_factor": 1.668,
+   "profit_factor_usd": 1.706,
+   "median_hold_days": 4.0,
+   "funding_cost_pct_of_cash": 37.96,
+   "by_year": {
+    "2020": 13.23,
+    "2021": 38.7,
+    "2022": 106.86,
+    "2023": 49.2,
+    "2024": 59.91,
+    "2025": 63.47,
+    "2026": 30.56
+   }
+  },
+  "be_2R": {
+   "return_pct": 1377.83,
+   "return_net_funding_pct": 1343.87,
+   "cagr_net_pct": 58.3,
+   "max_dd_pct": -26.49,
+   "mar": 2.201,
+   "sharpe_daily": 1.452,
+   "worst_start_anchored_dd_pct": -26.49,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 169,
+   "win_rate_pct": 36.1,
+   "profit_factor": 1.591,
+   "profit_factor_usd": 1.709,
+   "median_hold_days": 4.0,
+   "funding_cost_pct_of_cash": 33.95,
+   "by_year": {
+    "2020": 13.23,
+    "2021": 12.52,
+    "2022": 75.82,
+    "2023": 80.21,
+    "2024": 50.17,
+    "2025": 84.73,
+    "2026": 30.56
+   }
+  },
+  "be_2.25R": {
+   "return_pct": 1405.75,
+   "return_net_funding_pct": 1369.85,
+   "cagr_net_pct": 58.79,
+   "max_dd_pct": -26.49,
+   "mar": 2.219,
+   "sharpe_daily": 1.459,
+   "worst_start_anchored_dd_pct": -26.49,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 165,
+   "win_rate_pct": 37.6,
+   "profit_factor": 1.631,
+   "profit_factor_usd": 1.717,
+   "median_hold_days": 4.167,
+   "funding_cost_pct_of_cash": 35.9,
+   "by_year": {
+    "2020": 13.23,
+    "2021": 15.57,
+    "2022": 72.27,
+    "2023": 80.21,
+    "2024": 50.17,
+    "2025": 87.02,
+    "2026": 30.56
+   }
+  },
+  "be_2.5R": {
+   "return_pct": 1331.46,
+   "return_net_funding_pct": 1298.73,
+   "cagr_net_pct": 57.44,
+   "max_dd_pct": -26.64,
+   "mar": 2.156,
+   "sharpe_daily": 1.433,
+   "worst_start_anchored_dd_pct": -26.64,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 162,
+   "win_rate_pct": 37.0,
+   "profit_factor": 1.625,
+   "profit_factor_usd": 1.704,
+   "median_hold_days": 4.167,
+   "funding_cost_pct_of_cash": 32.73,
+   "by_year": {
+    "2020": 13.23,
+    "2021": 15.57,
+    "2022": 73.77,
+    "2023": 80.21,
+    "2024": 66.23,
+    "2025": 59.92,
+    "2026": 30.3
+   }
+  },
+  "be_3R": {
+   "return_pct": 1546.51,
+   "return_net_funding_pct": 1510.49,
+   "cagr_net_pct": 61.31,
+   "max_dd_pct": -26.64,
+   "mar": 2.301,
+   "sharpe_daily": 1.497,
+   "worst_start_anchored_dd_pct": -26.64,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 160,
+   "win_rate_pct": 38.1,
+   "profit_factor": 1.67,
+   "profit_factor_usd": 1.67,
+   "median_hold_days": 4.167,
+   "funding_cost_pct_of_cash": 36.02,
+   "by_year": {
+    "2020": 13.23,
+    "2021": 42.42,
+    "2022": 73.77,
+    "2023": 80.21,
+    "2024": 95.13,
+    "2025": 27.17,
+    "2026": 30.3
+   }
+  },
+  "be_4R": {
+   "return_pct": 941.98,
+   "return_net_funding_pct": 918.18,
+   "cagr_net_pct": 49.07,
+   "max_dd_pct": -26.64,
+   "mar": 1.842,
+   "sharpe_daily": 1.301,
+   "worst_start_anchored_dd_pct": -26.64,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 158,
+   "win_rate_pct": 36.7,
+   "profit_factor": 1.52,
+   "profit_factor_usd": 1.619,
+   "median_hold_days": 4.083,
+   "funding_cost_pct_of_cash": 23.8,
+   "by_year": {
+    "2020": 12.75,
+    "2021": 23.76,
+    "2022": 73.77,
+    "2023": 35.02,
+    "2024": 95.13,
+    "2025": 27.17,
+    "2026": 30.3
+   }
+  }
+ },
+ "metrics_2x": {
+  "baseline": {
+   "return_pct": 846.7,
+   "return_net_funding_pct": 824.28,
+   "cagr_net_pct": 46.61,
+   "max_dd_pct": -27.17,
+   "mar": 1.716,
+   "sharpe_daily": 1.254,
+   "worst_start_anchored_dd_pct": -27.17,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 158,
+   "win_rate_pct": 35.4,
+   "profit_factor": 1.487,
+   "profit_factor_usd": 1.58,
+   "median_hold_days": 4.083,
+   "funding_cost_pct_of_cash": 22.42,
+   "by_year": {
+    "2020": 12.56,
+    "2021": 22.5,
+    "2022": 71.6,
+    "2023": 32.94,
+    "2024": 91.77,
+    "2025": 24.69,
+    "2026": 27.87
+   }
+  },
+  "be_1R": {
+   "return_pct": 571.24,
+   "return_net_funding_pct": 551.55,
+   "cagr_net_pct": 38.05,
+   "max_dd_pct": -29.79,
+   "mar": 1.277,
+   "sharpe_daily": 1.147,
+   "worst_start_anchored_dd_pct": -29.79,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 185,
+   "win_rate_pct": 25.4,
+   "profit_factor": 1.387,
+   "profit_factor_usd": 1.569,
+   "median_hold_days": 3.167,
+   "funding_cost_pct_of_cash": 19.68,
+   "by_year": {
+    "2020": 7.46,
+    "2021": 18.57,
+    "2022": 90.31,
+    "2023": 26.94,
+    "2024": 45.93,
+    "2025": 29.09,
+    "2026": 16.28
+   }
+  },
+  "be_1.5R": {
+   "return_pct": 994.18,
+   "return_net_funding_pct": 970.53,
+   "cagr_net_pct": 50.36,
+   "max_dd_pct": -28.99,
+   "mar": 1.737,
+   "sharpe_daily": 1.339,
+   "worst_start_anchored_dd_pct": -28.99,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 175,
+   "win_rate_pct": 31.4,
+   "profit_factor": 1.497,
+   "profit_factor_usd": 1.683,
+   "median_hold_days": 3.833,
+   "funding_cost_pct_of_cash": 23.65,
+   "by_year": {
+    "2020": 13.4,
+    "2021": 11.83,
+    "2022": 111.39,
+    "2023": 24.94,
+    "2024": 62.95,
+    "2025": 46.22,
+    "2026": 37.71
+   }
+  },
+  "be_1.75R": {
+   "return_pct": 1409.41,
+   "return_net_funding_pct": 1374.02,
+   "cagr_net_pct": 58.87,
+   "max_dd_pct": -27.09,
+   "mar": 2.173,
+   "sharpe_daily": 1.463,
+   "worst_start_anchored_dd_pct": -27.09,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 171,
+   "win_rate_pct": 33.9,
+   "profit_factor": 1.628,
+   "profit_factor_usd": 1.663,
+   "median_hold_days": 4.0,
+   "funding_cost_pct_of_cash": 35.39,
+   "by_year": {
+    "2020": 13.02,
+    "2021": 37.02,
+    "2022": 104.18,
+    "2023": 46.72,
+    "2024": 57.1,
+    "2025": 60.08,
+    "2026": 28.01
+   }
+  },
+  "be_2R": {
+   "return_pct": 1235.25,
+   "return_net_funding_pct": 1203.6,
+   "cagr_net_pct": 55.54,
+   "max_dd_pct": -27.09,
+   "mar": 2.051,
+   "sharpe_daily": 1.403,
+   "worst_start_anchored_dd_pct": -27.09,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 169,
+   "win_rate_pct": 33.1,
+   "profit_factor": 1.555,
+   "profit_factor_usd": 1.666,
+   "median_hold_days": 4.0,
+   "funding_cost_pct_of_cash": 31.65,
+   "by_year": {
+    "2020": 13.02,
+    "2021": 11.21,
+    "2022": 73.49,
+    "2023": 77.33,
+    "2024": 47.53,
+    "2025": 80.91,
+    "2026": 28.01
+   }
+  },
+  "be_2.25R": {
+   "return_pct": 1262.83,
+   "return_net_funding_pct": 1229.24,
+   "cagr_net_pct": 56.07,
+   "max_dd_pct": -27.09,
+   "mar": 2.07,
+   "sharpe_daily": 1.41,
+   "worst_start_anchored_dd_pct": -27.09,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 165,
+   "win_rate_pct": 34.5,
+   "profit_factor": 1.594,
+   "profit_factor_usd": 1.674,
+   "median_hold_days": 4.167,
+   "funding_cost_pct_of_cash": 33.59,
+   "by_year": {
+    "2020": 13.02,
+    "2021": 14.31,
+    "2022": 70.06,
+    "2023": 77.33,
+    "2024": 47.53,
+    "2025": 83.27,
+    "2026": 28.01
+   }
+  },
+  "be_2.5R": {
+   "return_pct": 1198.14,
+   "return_net_funding_pct": 1167.47,
+   "cagr_net_pct": 54.79,
+   "max_dd_pct": -27.17,
+   "mar": 2.017,
+   "sharpe_daily": 1.386,
+   "worst_start_anchored_dd_pct": -27.17,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 162,
+   "win_rate_pct": 35.8,
+   "profit_factor": 1.589,
+   "profit_factor_usd": 1.662,
+   "median_hold_days": 4.167,
+   "funding_cost_pct_of_cash": 30.67,
+   "by_year": {
+    "2020": 13.02,
+    "2021": 14.31,
+    "2022": 71.6,
+    "2023": 77.33,
+    "2024": 63.36,
+    "2025": 56.77,
+    "2026": 27.87
+   }
+  },
+  "be_3R": {
+   "return_pct": 1394.38,
+   "return_net_funding_pct": 1360.59,
+   "cagr_net_pct": 58.62,
+   "max_dd_pct": -27.17,
+   "mar": 2.157,
+   "sharpe_daily": 1.45,
+   "worst_start_anchored_dd_pct": -27.17,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 160,
+   "win_rate_pct": 36.9,
+   "profit_factor": 1.633,
+   "profit_factor_usd": 1.632,
+   "median_hold_days": 4.167,
+   "funding_cost_pct_of_cash": 33.79,
+   "by_year": {
+    "2020": 13.02,
+    "2021": 40.93,
+    "2022": 71.6,
+    "2023": 77.33,
+    "2024": 91.77,
+    "2025": 24.69,
+    "2026": 27.87
+   }
+  },
+  "be_4R": {
+   "return_pct": 846.7,
+   "return_net_funding_pct": 824.28,
+   "cagr_net_pct": 46.61,
+   "max_dd_pct": -27.17,
+   "mar": 1.716,
+   "sharpe_daily": 1.254,
+   "worst_start_anchored_dd_pct": -27.17,
+   "pct_deploy_dates_breaching": 0.0,
+   "trades": 158,
+   "win_rate_pct": 35.4,
+   "profit_factor": 1.487,
+   "profit_factor_usd": 1.58,
+   "median_hold_days": 4.083,
+   "funding_cost_pct_of_cash": 22.42,
+   "by_year": {
+    "2020": 12.56,
+    "2021": 22.5,
+    "2022": 71.6,
+    "2023": 32.94,
+    "2024": 91.77,
+    "2025": 24.69,
+    "2026": 27.87
+   }
+  }
+ },
+ "walk_forward": {
+  "12": {
+   "folds": [
+    {
+     "test": "2021-10-01..2022-04-01",
+     "chosen": "be_3R",
+     "chosen_ret_pct": 27.86,
+     "baseline_ret_pct": 27.86
+    },
+    {
+     "test": "2022-04-01..2022-10-01",
+     "chosen": "baseline",
+     "chosen_ret_pct": 10.96,
+     "baseline_ret_pct": 10.96
+    },
+    {
+     "test": "2022-10-01..2023-04-01",
+     "chosen": "be_1.75R",
+     "chosen_ret_pct": 57.23,
+     "baseline_ret_pct": 37.42
+    },
+    {
+     "test": "2023-04-01..2023-10-01",
+     "chosen": "be_1.5R",
+     "chosen_ret_pct": 26.12,
+     "baseline_ret_pct": 25.91
+    },
+    {
+     "test": "2023-10-01..2024-04-01",
+     "chosen": "be_2R",
+     "chosen_ret_pct": -7.89,
+     "baseline_ret_pct": -7.89
+    },
+    {
+     "test": "2024-04-01..2024-10-01",
+     "chosen": "be_2.5R",
+     "chosen_ret_pct": 53.29,
+     "baseline_ret_pct": 53.29
+    },
+    {
+     "test": "2024-10-01..2025-04-01",
+     "chosen": "be_1.75R",
+     "chosen_ret_pct": 44.46,
+     "baseline_ret_pct": 68.89
+    },
+    {
+     "test": "2025-04-01..2025-10-01",
+     "chosen": "be_2.25R",
+     "chosen_ret_pct": 53.62,
+     "baseline_ret_pct": 30.89
+    },
+    {
+     "test": "2025-10-01..2026-04-01",
+     "chosen": "be_2.25R",
+     "chosen_ret_pct": 1.16,
+     "baseline_ret_pct": -2.47
+    },
+    {
+     "test": "2026-04-01..2026-07-25",
+     "chosen": "be_2.25R",
+     "chosen_ret_pct": 6.53,
+     "baseline_ret_pct": 10.27
+    }
+   ],
+   "stitched_selected_pct": 849.99,
+   "stitched_baseline_pct": 724.02,
+   "folds_selected_beats_baseline": 4,
+   "folds_baseline_chosen": 1,
+   "n_folds": 10
+  },
+  "18": {
+   "folds": [
+    {
+     "test": "2022-04-01..2022-10-01",
+     "chosen": "be_3R",
+     "chosen_ret_pct": 10.96,
+     "baseline_ret_pct": 10.96
+    },
+    {
+     "test": "2022-10-01..2023-04-01",
+     "chosen": "be_1.75R",
+     "chosen_ret_pct": 57.23,
+     "baseline_ret_pct": 37.42
+    },
+    {
+     "test": "2023-04-01..2023-10-01",
+     "chosen": "be_1.75R",
+     "chosen_ret_pct": 26.12,
+     "baseline_ret_pct": 25.91
+    },
+    {
+     "test": "2023-10-01..2024-04-01",
+     "chosen": "be_1.5R",
+     "chosen_ret_pct": -16.47,
+     "baseline_ret_pct": -7.89
+    },
+    {
+     "test": "2024-04-01..2024-10-01",
+     "chosen": "be_2R",
+     "chosen_ret_pct": 53.29,
+     "baseline_ret_pct": 53.29
+    },
+    {
+     "test": "2024-10-01..2025-04-01",
+     "chosen": "be_3R",
+     "chosen_ret_pct": 68.89,
+     "baseline_ret_pct": 68.89
+    },
+    {
+     "test": "2025-04-01..2025-10-01",
+     "chosen": "be_1.75R",
+     "chosen_ret_pct": 51.74,
+     "baseline_ret_pct": 30.89
+    },
+    {
+     "test": "2025-10-01..2026-04-01",
+     "chosen": "be_2.25R",
+     "chosen_ret_pct": 1.16,
+     "baseline_ret_pct": -2.47
+    },
+    {
+     "test": "2026-04-01..2026-07-25",
+     "chosen": "be_2.25R",
+     "chosen_ret_pct": 6.53,
+     "baseline_ret_pct": 10.27
+    }
+   ],
+   "stitched_selected_pct": 678.08,
+   "stitched_baseline_pct": 544.47,
+   "folds_selected_beats_baseline": 4,
+   "folds_baseline_chosen": 0,
+   "n_folds": 9
+  }
+ }
+}

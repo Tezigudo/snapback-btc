@@ -53,6 +53,8 @@ from alerts import send_alert
 from bot_internals import (
     SignalDecision,
     bracket_state,
+    breakeven_due,
+    breakeven_stop_price,
     channel_exit_signal,  # noqa: F401  (re-exported; tools import it from here)
     evaluate_for_strategy,
     gate_status,
@@ -332,6 +334,13 @@ class Bot:
         # One alert per process when the per-position re-place cap is hit — the
         # cap itself is persisted in active_bracket; this only de-dupes the mail.
         self._reprotect_capped_alerted: bool = False
+        # Breakeven stop (see _maybe_breakeven). Open-time (epoch s) of the last
+        # CLOSED bar fully evaluated — the hook costs zero API calls until the
+        # next bar closes. Advanced only on success or a definite no-op, so a
+        # failed placement is retried (throttled by _be_retry_after).
+        self._be_evaluated_bar: int | None = None
+        self._be_retry_after: float = 0.0
+        self._be_fail_n: int = 0
         if self.dry_run:
             self.log.warning("DRY-RUN MODE: no real orders will be placed")
 
@@ -488,6 +497,7 @@ class Bot:
             (self.params.get("strategy") or {}).get("dedup_bars", 0)
         )
         consolidate_source = (os.environ.get("CONSOLIDATE_SOURCE") or "").strip() or "(default snapback-btc)"
+        be_cfg = self.params.get("breakeven") or {}
         return (
             f"snapback-btc deploy start\n"
             f"=========================\n"
@@ -512,6 +522,9 @@ class Bot:
             f"  Leverage       : {self.leverage}x\n"
             f"  Hedge mode     : {'on' if self.hedge_enabled else 'off'}\n"
             + (f"  Dedup          : {dedup_bars} bars\n" if dedup_bars else "")
+            + (f"  Breakeven stop : at +{float(be_cfg.get('at_r', 0)):g}R "
+               f"(buffer {float(be_cfg.get('buffer_pct', 0.1)):g}%)\n"
+               if be_cfg.get("enabled") else "  Breakeven stop : off\n")
             + f"\n"
             f"Timing\n"
             f"  Entry timeframe: {self.entry_tf} ({self.bar_seconds}s/bar)\n"
@@ -1470,6 +1483,268 @@ class Bot:
         except Exception as e:
             self.log.warning("channel-exit check failed: %s", e)
 
+    BE_RETRY_S = 30.0
+    BE_FAIL_LIMIT = 10
+    BE_FILL_GRACE_S = 300   # a fill this soon after the bar open counts that bar (parity)
+
+    def _maybe_breakeven(self, equity: float) -> None:
+        """Move the stop to breakeven ONCE, when the open trade's max favourable
+        excursion over CLOSED bars reaches `breakeven.at_r` R.
+
+        The live half of TRAILING_STOP_VERDICT.md's one surviving candidate
+        (SOL, at_r 2.0). Parity target: tools/trailing_stop_study.TrailMixin
+        with be_at_r — evaluated at each bar close, stop = entry ± buffer,
+        and if price is already back through that level the backtest fills at
+        the next open, so live closes at market.
+
+        Config-gated: legs without `breakeven.enabled` return before any API
+        call. Evaluates once per newly closed bar.
+
+        Order of operations is chosen so the position is never unprotected:
+          1. read the algo book (unreadable → retry later; acting blind is the
+             July reprotect bug);
+          2. place the new `-sb` stop unless one already rests (a retry after
+             a placement that timed out but was accepted must not double it —
+             and place_tagged_stop never falls back to an untagged order);
+          3. cancel ONLY the original `-s` stop, by exact id — the `-t` TP stays;
+          4. persist `be_moved` in active_bracket once the new stop rests,
+             even if step 3 failed (alerted), so it never fires twice.
+        """
+        be = self.params.get("breakeven") or {}
+        if not be.get("enabled", False):
+            return
+        at_r = float(be.get("at_r", 0.0))
+        buf = float(be.get("buffer_pct", 0.1)) / 100.0
+        if at_r <= 0:
+            return
+        now = time.time()
+        last_closed = (int(now // self.bar_seconds) - 1) * self.bar_seconds
+        if self._be_evaluated_bar == last_closed or now < self._be_retry_after:
+            return
+        try:
+            self._breakeven_step(equity, at_r, buf, last_closed, now)
+        except Exception as e:
+            self._breakeven_failed(f"unexpected error: {e}", now)
+            self.log.exception("breakeven check failed")
+
+    def _breakeven_failed(self, why: str, now: float) -> None:
+        """Retry in BE_RETRY_S; after BE_FAIL_LIMIT in a row, alert once and
+        wait for the next bar (which retries from scratch)."""
+        self._be_fail_n += 1
+        self._be_retry_after = now + self.BE_RETRY_S
+        self.log.warning("breakeven: %s (attempt %d)", why, self._be_fail_n)
+        if self._be_fail_n == self.BE_FAIL_LIMIT:
+            send_alert("Breakeven stop move FAILING",
+                       f"{self.base_asset}: {why}\n{self._be_fail_n} attempts in a "
+                       f"row. The original stop is still in place; will retry "
+                       f"next bar.")
+            self._be_fail_n = 0
+            self._be_evaluated_bar = (int(now // self.bar_seconds) - 1) * self.bar_seconds
+
+    def _breakeven_step(self, equity: float, at_r: float, buf: float,
+                        last_closed: int, now: float) -> None:
+        pos = self.client.fetch_position(self.symbol)
+        if pos.side == "flat" or pos.qty == 0:
+            self._be_evaluated_bar = last_closed
+            self._be_fail_n = 0
+            return
+        raw = state.get_meta("active_bracket")
+        try:
+            ab = json.loads(raw) if raw else None
+        except (ValueError, TypeError):
+            ab = None
+        root = state.latest_entry_coid_root()
+        # Only act on a bracket record that provably belongs to THIS position
+        # (same guards as reprotect, plus the entry coid) — active_bracket is
+        # never cleared on legs that run without reprotect.
+        ep = float((ab or {}).get("entry_price") or 0.0)
+        if (not ab or ab.get("side") != pos.side or ep <= 0 or pos.entry_price <= 0
+                or abs(ep - pos.entry_price) / pos.entry_price > 0.02
+                or not root or str(ab.get("signal_id")) != str(root)):
+            self.log.info("breakeven: no bracket record matching the open %s "
+                          "(root=%s) — not acting", pos.side, root)
+            self._be_evaluated_bar = last_closed
+            return
+        if ab.get("be_moved"):
+            self._be_evaluated_bar = last_closed
+            return
+        sl_distance = float(ab.get("sl_distance") or 0.0)
+
+        with sqlite3.connect(state.DB_PATH) as c:
+            row = c.execute("SELECT ts FROM fills WHERE reason='entry' "
+                            "ORDER BY id DESC LIMIT 1").fetchone()
+        if not row:
+            self._be_evaluated_bar = last_closed
+            return
+        entry_ts = datetime.fromisoformat(row[0])
+        if entry_ts.tzinfo is None:
+            entry_ts = entry_ts.replace(tzinfo=UTC)
+        fill_bar = int(entry_ts.timestamp() // self.bar_seconds) * self.bar_seconds
+        # The backtest fills at the bar's OPEN and counts that bar's High/Low.
+        # Live entries land ~10-30 s after the open, so counting the fill bar
+        # keeps parity. A LATE fill (e.g. an entry evaluated right after a
+        # mid-bar restart) would credit extremes printed before the position
+        # existed, so the fill bar only counts inside a short grace window
+        # (Sourcery, PR #32 — its "always exclude" fix would break parity).
+        first_bar = (fill_bar if entry_ts.timestamp() - fill_bar <= self.BE_FILL_GRACE_S
+                     else fill_bar + self.bar_seconds)
+        n_bars = (last_closed - first_bar) // self.bar_seconds + 1
+        if n_bars <= 0:
+            self._be_evaluated_bar = last_closed
+            return
+        df = self.client.fetch_ohlcv(self.symbol, self.entry_tf,
+                                     limit=int(min(1500, n_bars + 3)))
+        df = df.iloc[:-1]   # drop the still-forming bar — closed bars only
+        if df.empty or int(df.index[-1].timestamp()) < last_closed:
+            # The exchange has not published the bar that just closed yet.
+            self._be_retry_after = now + 10.0
+            return
+        win = df[(df.index >= pd.Timestamp(first_bar, unit="s"))
+                 & (df.index <= pd.Timestamp(last_closed, unit="s"))]
+        highs, lows = win["High"].tolist(), win["Low"].tolist()
+        # Running extreme persisted per position, so a window truncated by the
+        # 1500-bar fetch cap (a trade older than ~250 days on 4h) can never
+        # forget an earlier excursion (Sourcery, PR #32).
+        stored_ext = ab.get("be_ext")
+        if isinstance(stored_ext, (int, float)):
+            (highs if pos.side == "long" else lows).append(float(stored_ext))
+        due, mfe = breakeven_due(pos.side, pos.entry_price, sl_distance,
+                                 highs, lows, at_r)
+        if not due:
+            ext = pos.entry_price + (mfe if pos.side == "long" else -mfe) * sl_distance
+            if ext != stored_ext:
+                ab["be_ext"] = ext
+                state.set_meta("active_bracket", json.dumps(ab))
+            self._be_evaluated_bar = last_closed
+            return
+        be_price = breakeven_stop_price(pos.side, pos.entry_price, buf)
+        if self.dry_run:
+            self.log.info("DRY-RUN: would move %s stop to breakeven %.4f (MFE %.2fR)",
+                          pos.side, be_price, mfe)
+            self._be_evaluated_bar = last_closed
+            return
+
+        sb_coid = f"{self.coid_prefix}{root}-sb"
+        s_coid = f"{self.coid_prefix}{root}-s"
+        rows, ok = self.client.fetch_algo_orders(self.symbol)
+        if not ok:
+            self._breakeven_failed("algo book unreadable", now)
+            return
+        if not any(r.get("clientAlgoId") == sb_coid for r in rows):
+            if self._breakeven_through(pos.side, be_price):
+                self._breakeven_close(pos, root, be_price, mfe, equity)
+                ab["be_moved"] = True
+                state.set_meta("active_bracket", json.dumps(ab))
+                self._be_evaluated_bar = last_closed
+                self._be_fail_n = 0
+                return
+            try:
+                self.client.place_tagged_stop(self.symbol, pos.side, pos.qty,
+                                              be_price, str(root), "sb")
+            except Exception as e:
+                # Placement can be refused because price crossed the level
+                # between the mark read and the order — decide by MARK price,
+                # not by matching an error string the algo endpoint may word
+                # differently.
+                if self._breakeven_through(pos.side, be_price):
+                    self._breakeven_close(pos, root, be_price, mfe, equity)
+                    ab["be_moved"] = True
+                    state.set_meta("active_bracket", json.dumps(ab))
+                    self._be_evaluated_bar = last_closed
+                    self._be_fail_n = 0
+                    return
+                self._breakeven_failed(f"placing the breakeven stop failed: {e}", now)
+                return
+
+        old_cancelled = self.client.cancel_algo_by_coid(self.symbol, s_coid)
+        if not old_cancelled:
+            # False means "not found" OR "cancel failed". Re-read: if the book
+            # is readable and -s is not there, it is already gone (an earlier
+            # attempt cancelled it before crashing) — protected by -sb, no alarm.
+            rows2, ok2 = self.client.fetch_algo_orders(self.symbol)
+            if ok2 and not any(r.get("clientAlgoId") == s_coid for r in rows2):
+                old_cancelled = True
+        ab["be_moved"] = True
+        ab["be_price"] = be_price
+        state.set_meta("active_bracket", json.dumps(ab))
+        self._be_evaluated_bar = last_closed
+        self._be_fail_n = 0
+        state.record_event("INFO", "breakeven_stop",
+                           {"side": pos.side, "qty": pos.qty, "entry": pos.entry_price,
+                            "be_price": be_price, "mfe_r": round(mfe, 3),
+                            "old_stop_cancelled": old_cancelled},
+                           signal_id=root)
+        self.log.warning("Breakeven: %s %.4f stop moved to %.4f (MFE %.2fR, old -s "
+                         "cancelled=%s)", pos.side, pos.qty, be_price, mfe, old_cancelled)
+        send_alert("Stop moved to breakeven",
+                   f"{pos.side} {pos.qty:.4f} {self.base_asset} @ {pos.entry_price:,.4f} "
+                   f"reached +{mfe:.2f}R — stop now {be_price:,.4f}. TP unchanged."
+                   + ("" if old_cancelled else
+                      "\n⚠ The ORIGINAL stop could not be cancelled and may still "
+                      "rest (reduce-only, further away — the breakeven stop fires "
+                      "first). Check the Binance app."))
+
+    def _breakeven_through(self, side: str, be_price: float) -> bool:
+        """Is MARK already at/through the breakeven level? Unknown → False
+        (then placement is attempted, and a refusal re-asks this)."""
+        mark = self.client.fetch_mark_price(self.symbol)
+        if mark is None:
+            return False
+        return mark <= be_price if side == "long" else mark >= be_price
+
+    def _breakeven_close(self, pos, root: str, be_price: float, mfe: float,
+                         equity: float) -> None:
+        """Price is already back through breakeven: close at market — the
+        backtest fills this case at the next bar's open. Mirrors
+        _maybe_channel_exit's close + ledger path.
+
+        If anything below close_position() raises, the exit is NOT lost:
+        the next tick's _detect_bracket_exit sees open→flat with the newest
+        fills row still `entry`, and records the close from the exchange's own
+        trades (labelled bracket_exit). Pinned by
+        test_ledger_failure_after_close_is_recovered (Sourcery, PR #32, asked
+        for a pending-close record; the existing flat-edge path already is one)."""
+        self.log.warning("Breakeven: mark already through %.4f — closing %s at market",
+                         be_price, pos.side)
+        # Close FIRST, sweep AFTER. If the close raises, the original -s/-t
+        # are still resting and the retry starts from a protected position.
+        # (close_position's default sweep-then-close would leave it with no
+        # stop and no TP, and a retry that finds price back above breakeven
+        # would restore only the -sb stop — the TP lost for good.)
+        order = self.client.close_position(self.symbol, client_order_id_root=root,
+                                           close_leg="be", sweep_first=False)
+        try:
+            self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
+        except Exception:
+            # Leftover reduce-only brackets are harmless on a flat position,
+            # and _detect_bracket_exit / the pre-entry sweep remove them.
+            self.log.exception("breakeven close: post-close sweep failed")
+        if order is None:
+            # Already flat by the time close_position looked (e.g. a manual
+            # close in between). Write NOTHING: a bogus `close` row here would
+            # make _detect_bracket_exit treat the real exit as already recorded
+            # and suppress its true price/PnL. It records the exit next tick.
+            self.log.warning("Breakeven: position already flat at close time — "
+                             "leaving the exit to _detect_bracket_exit")
+            return
+        exit_price = self._resolve_fill_price(order)
+        _entry = self._open_entry_fill()
+        state.record_fill(side="close", qty=pos.qty, price=float(exit_price or 0.0),
+                          pnl_usd=_exit_pnl_usd(pos.side, _entry[2] if _entry else None,
+                                                exit_price, pos.qty),
+                          reason="breakeven_exit", equity_after=equity,
+                          client_order_id_root=root)
+        state.enqueue_bot_event("exit", signal_id=root, side=pos.side, qty=float(pos.qty),
+                                price_usd=exit_price, equity_usd=float(equity),
+                                payload={"reason": "breakeven_exit", "be_price": be_price,
+                                         "mfe_r": round(mfe, 3)})
+        send_alert("Bot breakeven close",
+                   f"Closed {pos.side} {pos.qty:.4f} {self.base_asset} — it reached "
+                   f"+{mfe:.2f}R but price was already back through breakeven "
+                   f"{be_price:,.4f}"
+                   + (f" @ {exit_price:,.4f}" if exit_price else "")
+                   + f". Equity: {equity:.2f}\nsignal_id: {root}")
+
     def loop(self) -> int:
         self.log.info("Bot loop started. poll=%.1fs symbol=%s", self.poll_s, self.symbol)
         backoff_s = self.poll_s
@@ -1512,6 +1787,7 @@ class Bot:
                 self._detect_bracket_exit(equity)
                 self._maybe_time_stop(equity)
                 self._maybe_channel_exit(equity)
+                self._maybe_breakeven(equity)
                 # RE-ENABLED 2026-08-11 with algo-aware detection (bracket_state
                 # merges /fapi/v1/openOrders AND /fapi/v1/openAlgoOrders). It was
                 # disabled 2026-07-22 because the plain-only check read a healthy
