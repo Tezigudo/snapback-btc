@@ -1741,6 +1741,7 @@ class Bot:
 
     BE_RETRY_S = 30.0
     BE_FAIL_LIMIT = 10
+    BE_FILL_GRACE_S = 300   # a fill this soon after the bar open counts that bar (parity)
 
     def _maybe_breakeven(self, equity: float) -> None:
         """Move the stop to breakeven ONCE, when the open trade's max favourable
@@ -1835,7 +1836,15 @@ class Bot:
         if entry_ts.tzinfo is None:
             entry_ts = entry_ts.replace(tzinfo=UTC)
         fill_bar = int(entry_ts.timestamp() // self.bar_seconds) * self.bar_seconds
-        n_bars = (last_closed - fill_bar) // self.bar_seconds + 1
+        # The backtest fills at the bar's OPEN and counts that bar's High/Low.
+        # Live entries land ~10-30 s after the open, so counting the fill bar
+        # keeps parity. A LATE fill (e.g. an entry evaluated right after a
+        # mid-bar restart) would credit extremes printed before the position
+        # existed, so the fill bar only counts inside a short grace window
+        # (Sourcery, PR #32 — its "always exclude" fix would break parity).
+        first_bar = (fill_bar if entry_ts.timestamp() - fill_bar <= self.BE_FILL_GRACE_S
+                     else fill_bar + self.bar_seconds)
+        n_bars = (last_closed - first_bar) // self.bar_seconds + 1
         if n_bars <= 0:
             self._be_evaluated_bar = last_closed
             return
@@ -1846,11 +1855,22 @@ class Bot:
             # The exchange has not published the bar that just closed yet.
             self._be_retry_after = now + 10.0
             return
-        win = df[(df.index >= pd.Timestamp(fill_bar, unit="s"))
+        win = df[(df.index >= pd.Timestamp(first_bar, unit="s"))
                  & (df.index <= pd.Timestamp(last_closed, unit="s"))]
+        highs, lows = win["High"].tolist(), win["Low"].tolist()
+        # Running extreme persisted per position, so a window truncated by the
+        # 1500-bar fetch cap (a trade older than ~250 days on 4h) can never
+        # forget an earlier excursion (Sourcery, PR #32).
+        stored_ext = ab.get("be_ext")
+        if isinstance(stored_ext, (int, float)):
+            (highs if pos.side == "long" else lows).append(float(stored_ext))
         due, mfe = breakeven_due(pos.side, pos.entry_price, sl_distance,
-                                 win["High"].tolist(), win["Low"].tolist(), at_r)
+                                 highs, lows, at_r)
         if not due:
+            ext = pos.entry_price + (mfe if pos.side == "long" else -mfe) * sl_distance
+            if ext != stored_ext:
+                ab["be_ext"] = ext
+                state.set_meta("active_bracket", json.dumps(ab))
             self._be_evaluated_bar = last_closed
             return
         be_price = breakeven_stop_price(pos.side, pos.entry_price, buf)
@@ -1932,7 +1952,14 @@ class Bot:
                          equity: float) -> None:
         """Price is already back through breakeven: close at market — the
         backtest fills this case at the next bar's open. Mirrors
-        _maybe_channel_exit's close + ledger path."""
+        _maybe_channel_exit's close + ledger path.
+
+        If anything below close_position() raises, the exit is NOT lost:
+        the next tick's _detect_bracket_exit sees open→flat with the newest
+        fills row still `entry`, and records the close from the exchange's own
+        trades (labelled bracket_exit). Pinned by
+        test_ledger_failure_after_close_is_recovered (Sourcery, PR #32, asked
+        for a pending-close record; the existing flat-edge path already is one)."""
         self.log.warning("Breakeven: mark already through %.4f — closing %s at market",
                          be_price, pos.side)
         order = self.client.close_position(self.symbol, client_order_id_root=root,
