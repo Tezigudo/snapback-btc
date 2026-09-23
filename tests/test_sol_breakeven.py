@@ -308,6 +308,70 @@ class TestMove:
         mc.close_position.assert_not_called()
 
 
+class TestSourceryRound:
+    """PR #32 Sourcery findings — each pinned to the behaviour it asked for."""
+
+    def test_late_fill_does_not_credit_pre_fill_extremes(self) -> None:
+        """A fill 2h into a bar must not count that bar's High (printed maybe
+        before the position existed)."""
+        bot, mc = _bot()
+        _seed(bars_ago_filled=2)
+        with sqlite3.connect(state.DB_PATH) as c:
+            fill_bar = (int(time.time() // BAR) - 2) * BAR
+            c.execute("UPDATE fills SET ts=? WHERE reason='entry'",
+                      (pd.Timestamp(fill_bar + 7200, unit="s").isoformat(),))
+        _ohlcv(mc, [99, 99, 120.0, 104])     # 120 = the fill bar, 104 = the bar after
+        bot._maybe_breakeven(100.0)
+        mc.place_tagged_stop.assert_not_called()
+
+    def test_fill_inside_grace_still_counts_its_bar(self) -> None:
+        bot, mc = _bot()
+        _seed(bars_ago_filled=2)            # _seed fills 5 s after the bar open
+        _ohlcv(mc, [99, 99, 120.0, 104])
+        with patch("bot.send_alert"):
+            bot._maybe_breakeven(100.0)
+        mc.place_tagged_stop.assert_called_once()
+
+    def test_running_extreme_survives_a_truncated_window(self) -> None:
+        """An excursion no longer inside the fetched window still counts."""
+        bot, mc = _bot()
+        _seed(be_ext=111.0)                 # +2.2R reached earlier
+        _ohlcv(mc, [104, 104, 104])
+        with patch("bot.send_alert"):
+            bot._maybe_breakeven(100.0)
+        mc.place_tagged_stop.assert_called_once()
+
+    def test_running_extreme_is_persisted_when_not_due(self) -> None:
+        bot, mc = _bot()
+        _seed()
+        _ohlcv(mc, [104, 107.5, 106, 105])
+        bot._maybe_breakeven(100.0)
+        assert _ab()["be_ext"] == pytest.approx(107.5)
+
+    def test_ledger_failure_after_close_is_recovered(self) -> None:
+        """Sourcery: an exception after close_position() loses the exit.
+        It does not — the next tick's flat-edge detector records it."""
+        bot, mc = _bot()
+        _seed()
+        _ohlcv(mc, [104, 120, 106])
+        mc.fetch_mark_price.return_value = 100.0
+        mc.close_position.return_value = {"average": 100.0}
+        with patch("bot.send_alert"), \
+             patch("bot.state.record_fill", side_effect=sqlite3.OperationalError("disk")):
+            bot._maybe_breakeven(100.0)          # swallowed + logged by the hook
+        # next tick: the exchange says flat
+        bot._last_position_side = "long"
+        bot._last_position_entry = ENTRY
+        bot._last_position_qty = QTY
+        mc.fetch_position.return_value = Position("SOL/USDT:USDT", "flat", 0, 0, 0, 0)
+        mc.ex.fetch_my_trades.return_value = [{"side": "sell", "price": 100.0}]
+        with patch("bot.send_alert"):
+            bot._detect_bracket_exit(100.0)
+        with sqlite3.connect(state.DB_PATH) as c:
+            rows = list(c.execute("SELECT reason, price FROM fills ORDER BY id"))
+        assert rows[-1][0] == "bracket_exit" and rows[-1][1] == pytest.approx(100.0)
+
+
 class TestStaleRecords:
 
     @pytest.mark.parametrize("seed", [
