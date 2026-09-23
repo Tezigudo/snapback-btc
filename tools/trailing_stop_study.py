@@ -101,7 +101,10 @@ class TrailMixin:
         return super().buy(*a, **k)
 
     def sell(self, *a, **k):
-        if self.no_tp:
+        # A short TP N·ATR below price goes NEGATIVE when ATR is a large share
+        # of price (SOL 2020-21 at 10 ATR) and backtesting.py asserts. Treat it
+        # as "no TP". Never triggers on the published spans — parity unchanged.
+        if self.no_tp or (k.get("tp") is not None and k["tp"] <= 0):
             k["tp"] = None
         return super().sell(*a, **k)
 
