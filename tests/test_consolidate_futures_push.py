@@ -321,17 +321,18 @@ def test_leg_without_env_file_is_skipped(monkeypatch):
     assert any(a.get("skipped") == "no_env_file" for a in out["accounts"])
 
 
-def test_symbol_collision_keeps_first_account_only(monkeypatch):
-    # v1 and donchian both hold BTCUSDT; SOL leg adds a non-colliding symbol.
+def test_same_symbol_on_two_accounts_keeps_both_tagged(monkeypatch):
+    # v1 and donchian both hold BTCUSDT; the server keys positions by
+    # (account, symbol), so both rows are sent, each tagged with its leg.
     _patch(monkeypatch,
            {"v1": _mk(100.0, positions=["BTCUSDT"]),
             "donchian": _mk(50.0, positions=["BTCUSDT"]),
             "sol_supertrend": _mk(60.0, positions=["SOLUSDT"])},
            {"v1": "A", "donchian": "B", "sol_supertrend": "C"})
     out = cfp.collect_all_accounts(income_days=2)
-    syms = [p["symbol"] for p in out["positions"]]
-    assert syms == ["BTCUSDT", "SOLUSDT"], f"expected collision dropped, got {syms}"
-    # balances still sum — the collision only affects the positions table
+    rows = [(p["account"], p["symbol"]) for p in out["positions"]]
+    assert rows == [("v1", "BTCUSDT"), ("donchian", "BTCUSDT"),
+                    ("sol_supertrend", "SOLUSDT")]
     assert out["account"]["walletBalanceUsd"] == 210.0
 
 
