@@ -364,7 +364,9 @@ def collect_all_accounts(income_days: int) -> dict[str, Any]:
     """Iterate ACCOUNT_INSTANCES and combine their futures state.
 
     Returns the same shape run() used to build from a single account, plus
-    `accounts` (per-instance detail) for logging.
+    `accounts` (per-instance detail) for logging and `accounts_read` (the
+    instances read successfully this run; the server scopes its closed-position
+    delete to these).
     """
     from exchange.env import load_env_for_instance
 
@@ -375,6 +377,9 @@ def collect_all_accounts(income_days: int) -> dict[str, Any]:
     brackets_known = True
     seen_keys: dict[str, str] = {}          # fingerprint -> instance that claimed it
     detail: list[dict[str, Any]] = []
+    # Instances actually read this run. The server only deletes closed rows
+    # within these, so a leg whose read failed keeps its last-known position.
+    accounts_read: list[str] = []
 
     for inst in ACCOUNT_INSTANCES:
         try:
@@ -408,6 +413,7 @@ def collect_all_accounts(income_days: int) -> dict[str, Any]:
         for k in totals:
             totals[k] += float(got["account"].get(k) or 0.0)
         positions.extend({**p, "account": inst} for p in got["positions"])
+        accounts_read.append(inst)
         income.extend(got["income"])
         brackets_known = brackets_known and bool(got["brackets_known"])
         detail.append({
@@ -417,7 +423,8 @@ def collect_all_accounts(income_days: int) -> dict[str, Any]:
         })
 
     return {"account": totals, "positions": positions, "income": income,
-            "brackets_known": brackets_known, "accounts": detail}
+            "brackets_known": brackets_known, "accounts": detail,
+            "accounts_read": accounts_read}
 
 
 def run(income_days: int = 2, dry_run: bool = False) -> dict[str, Any]:
@@ -461,7 +468,8 @@ def run(income_days: int = 2, dry_run: bool = False) -> dict[str, Any]:
     errors: list[str] = []
     results["account"] = _post(url, token, "/futures/account-snapshot", account)
     results["positions"] = _post(url, token, "/futures/positions",
-                                 {"positions": positions, "bracketsKnown": brackets_known})
+                                 {"positions": positions, "bracketsKnown": brackets_known,
+                                  "accountsRead": combined["accounts_read"]})
     for key in ("account", "positions"):
         if "error" in results[key]:
             errors.append(f"{key}: {results[key]['error']}")
