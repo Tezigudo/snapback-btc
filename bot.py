@@ -1801,6 +1801,7 @@ class Bot:
         pos = self.client.fetch_position(self.symbol)
         if pos.side == "flat" or pos.qty == 0:
             self._be_evaluated_bar = last_closed
+            self._be_fail_n = 0
             return
         raw = state.get_meta("active_bracket")
         try:
@@ -1871,6 +1872,7 @@ class Bot:
                 ab["be_moved"] = True
                 state.set_meta("active_bracket", json.dumps(ab))
                 self._be_evaluated_bar = last_closed
+                self._be_fail_n = 0
                 return
             try:
                 self.client.place_tagged_stop(self.symbol, pos.side, pos.qty,
@@ -1885,11 +1887,19 @@ class Bot:
                     ab["be_moved"] = True
                     state.set_meta("active_bracket", json.dumps(ab))
                     self._be_evaluated_bar = last_closed
+                    self._be_fail_n = 0
                     return
                 self._breakeven_failed(f"placing the breakeven stop failed: {e}", now)
                 return
 
         old_cancelled = self.client.cancel_algo_by_coid(self.symbol, s_coid)
+        if not old_cancelled:
+            # False means "not found" OR "cancel failed". Re-read: if the book
+            # is readable and -s is not there, it is already gone (an earlier
+            # attempt cancelled it before crashing) — protected by -sb, no alarm.
+            rows2, ok2 = self.client.fetch_algo_orders(self.symbol)
+            if ok2 and not any(r.get("clientAlgoId") == s_coid for r in rows2):
+                old_cancelled = True
         ab["be_moved"] = True
         ab["be_price"] = be_price
         state.set_meta("active_bracket", json.dumps(ab))
@@ -1927,6 +1937,14 @@ class Bot:
                          be_price, pos.side)
         order = self.client.close_position(self.symbol, client_order_id_root=root,
                                            close_leg="be")
+        if order is None:
+            # Already flat by the time close_position looked (e.g. a manual
+            # close in between). Write NOTHING: a bogus `close` row here would
+            # make _detect_bracket_exit treat the real exit as already recorded
+            # and suppress its true price/PnL. It records the exit next tick.
+            self.log.warning("Breakeven: position already flat at close time — "
+                             "leaving the exit to _detect_bracket_exit")
+            return
         exit_price = self._resolve_fill_price(order)
         _entry = self._open_entry_fill()
         state.record_fill(side="close", qty=pos.qty, price=float(exit_price or 0.0),

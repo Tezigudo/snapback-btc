@@ -204,7 +204,7 @@ def _ohlcv(mc: MagicMock, highs: list[float], lows: list[float] | None = None) -
                          unit="s")
     lows = lows or [ENTRY - 1] * n
     mc.fetch_ohlcv.return_value = pd.DataFrame(
-        {"Open": ENTRY, "High": highs + [999.0], "Low": lows + [1.0], "Close": ENTRY,
+        {"Open": ENTRY, "High": [*highs, 999.0], "Low": [*lows, 1.0], "Close": ENTRY,
          "Volume": 1.0}, index=idx)
 
 
@@ -405,6 +405,33 @@ class TestFailurePaths:
                 bot._maybe_breakeven(100.0)
         alert.assert_called_once()
         assert bot._be_evaluated_bar == (int(time.time() // BAR) - 1) * BAR
+
+    def test_close_that_finds_position_already_flat_writes_nothing(self) -> None:
+        """Review finding: a bogus close row would suppress the real exit."""
+        bot, mc = _bot()
+        _seed()
+        _ohlcv(mc, [104, 120, 106])
+        mc.fetch_mark_price.return_value = 100.0
+        mc.close_position.return_value = None
+        with patch("bot.send_alert") as alert:
+            bot._maybe_breakeven(100.0)
+        with sqlite3.connect(state.DB_PATH) as c:
+            reasons = [r[0] for r in c.execute("SELECT reason FROM fills ORDER BY id")]
+        assert reasons == ["entry"]
+        alert.assert_not_called()
+
+    def test_old_stop_already_gone_is_not_an_alarm(self) -> None:
+        """Retry after an earlier attempt cancelled -s but crashed before
+        persisting: -s is simply absent — protected by -sb, no scary alert."""
+        bot, mc = _bot()
+        _seed()
+        _ohlcv(mc, [104, 120, 106])
+        mc.fetch_algo_orders.return_value = ([_algo("t"), _algo("sb")], True)
+        mc.cancel_algo_by_coid.return_value = False
+        with patch("bot.send_alert") as alert:
+            bot._maybe_breakeven(100.0)
+        assert "could not be cancelled" not in alert.call_args.args[1]
+        assert _ab()["be_moved"] is True
 
     def test_old_stop_cancel_failure_still_persists_and_warns(self) -> None:
         bot, mc = _bot()
