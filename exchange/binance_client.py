@@ -625,6 +625,7 @@ class BinanceClient:
     def close_position(
         self, symbol: str,
         client_order_id_root: str | None = None, close_leg: str = "c",
+        sweep_first: bool = True,
     ) -> dict[str, Any] | None:
         """Flatten via reduce-only market order. No-op if already flat.
 
@@ -635,14 +636,22 @@ class BinanceClient:
           - "h"  HALT-triggered close
           - "k"  kill-switch close
           - "c"  generic (fallback)
+          - "be" breakeven close (price already back through breakeven)
         If client_order_id_root is None, places the close untagged.
+
+        sweep_first=False sends the reduce-only close WITHOUT first cancelling
+        the leg's resting SL/TP. The caller must then sweep only after the
+        close succeeds. Used by the breakeven close: with the default order, a
+        close that raises leaves the position with no stop AND no TP, and a
+        later retry could restore only the stop (review of PR #32).
         """
         p = self.fetch_position(symbol)
         if p.side == "flat" or p.qty == 0:
             return None
         ccxt_side = "sell" if p.side == "long" else "buy"
         pos_side = self._position_side(p.side)
-        self.cancel_open_orders(symbol, coid_prefix=self.coid_prefix)
+        if sweep_first:
+            self.cancel_open_orders(symbol, coid_prefix=self.coid_prefix)
         params: dict[str, Any] = {"reduceOnly": True}
         if (coid := _coid(client_order_id_root, close_leg, self.coid_prefix)):
             params["newClientOrderId"] = coid

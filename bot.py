@@ -1706,8 +1706,19 @@ class Bot:
         for a pending-close record; the existing flat-edge path already is one)."""
         self.log.warning("Breakeven: mark already through %.4f — closing %s at market",
                          be_price, pos.side)
+        # Close FIRST, sweep AFTER. If the close raises, the original -s/-t
+        # are still resting and the retry starts from a protected position.
+        # (close_position's default sweep-then-close would leave it with no
+        # stop and no TP, and a retry that finds price back above breakeven
+        # would restore only the -sb stop — the TP lost for good.)
         order = self.client.close_position(self.symbol, client_order_id_root=root,
-                                           close_leg="be")
+                                           close_leg="be", sweep_first=False)
+        try:
+            self.client.cancel_open_orders(self.symbol, coid_prefix=self.coid_prefix)
+        except Exception:
+            # Leftover reduce-only brackets are harmless on a flat position,
+            # and _detect_bracket_exit / the pre-entry sweep remove them.
+            self.log.exception("breakeven close: post-close sweep failed")
         if order is None:
             # Already flat by the time close_position looked (e.g. a manual
             # close in between). Write NOTHING: a bogus `close` row here would

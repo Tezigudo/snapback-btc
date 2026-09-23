@@ -372,6 +372,26 @@ class TestSourceryRound:
         assert rows[-1][0] == "bracket_exit" and rows[-1][1] == pytest.approx(100.0)
 
 
+class TestReviewRound:
+    """/code-review of PR #32."""
+
+    def test_failed_close_leaves_the_original_bracket_untouched(self) -> None:
+        """The close raising must not have swept -s/-t first. Otherwise the
+        position sits with no stop, and a retry after price recovers restores
+        only -sb and loses the TP for good."""
+        bot, mc = _bot()
+        _seed()
+        _ohlcv(mc, [104, 120, 106])
+        mc.fetch_mark_price.return_value = 100.0
+        mc.close_position.side_effect = ccxt.NetworkError("timeout")
+        bot._maybe_breakeven(100.0)
+        mc.cancel_open_orders.assert_not_called()
+        mc.cancel_algo_by_coid.assert_not_called()
+        assert mc.close_position.call_args.kwargs["sweep_first"] is False
+        assert "be_moved" not in _ab()
+        assert bot._be_retry_after > time.time()
+
+
 class TestStaleRecords:
 
     @pytest.mark.parametrize("seed", [
@@ -429,7 +449,10 @@ class TestFailurePaths:
             bot._maybe_breakeven(100.0)
         mc.place_tagged_stop.assert_not_called()
         mc.close_position.assert_called_once_with(
-            "SOL/USDT:USDT", client_order_id_root=ROOT, close_leg="be")
+            "SOL/USDT:USDT", client_order_id_root=ROOT, close_leg="be", sweep_first=False)
+        # the sweep comes AFTER the close, never before it
+        names = [c[0] for c in mc.method_calls]
+        assert names.index("close_position") < names.index("cancel_open_orders")
         with sqlite3.connect(state.DB_PATH) as c:
             reasons = [r[0] for r in c.execute("SELECT reason FROM fills ORDER BY id")]
         assert reasons[-1] == "breakeven_exit"
@@ -540,6 +563,21 @@ class TestClientNoUntaggedFallback:
         with pytest.raises(ccxt.InvalidOrder):
             c.place_tagged_stop("SOL/USDT:USDT", "long", 0.66, 100.1, ROOT, "sb")
         assert c.ex.create_order.call_count == 1
+
+    def test_close_position_sweep_first_false_does_not_cancel(self) -> None:
+        c = self._client()
+        c.ex.fetch_positions.return_value = [
+            {"symbol": "SOL/USDT:USDT", "contracts": 0.66, "side": "long", "entryPrice": 100}]
+        c.cancel_open_orders = MagicMock()  # type: ignore[method-assign]
+        c.close_position("SOL/USDT:USDT", client_order_id_root=ROOT, close_leg="be",
+                         sweep_first=False)
+        c.cancel_open_orders.assert_not_called()
+        args, kw = c.ex.create_order.call_args
+        assert args[:4] == ("SOL/USDT:USDT", "market", "sell", 0.66)
+        assert kw["params"]["reduceOnly"] is True
+        # default behaviour unchanged for every other caller
+        c.close_position("SOL/USDT:USDT", client_order_id_root=ROOT, close_leg="x")
+        c.cancel_open_orders.assert_called_once()
 
     def test_cancel_by_coid_is_exact(self) -> None:
         c = self._client()
