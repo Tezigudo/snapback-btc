@@ -595,9 +595,54 @@ def algo_bracket_leg(row: dict, coid_prefix: str) -> str | None:
     leg = coid.rsplit("-", 1)[-1]
     if leg == "t":
         return "tp"
-    if leg == "s":
+    # `sb` = the breakeven stop that _maybe_breakeven places in place of `s`
+    # (a distinct id, never an untagged order — see
+    # BinanceClient.place_tagged_stop). It IS the position's stop, so it counts
+    # as SL here. ⚠️ Reprotect would re-place a missing stop at the ORIGINAL
+    # distance from `active_bracket` and undo the breakeven move — before
+    # enabling reprotect on a breakeven leg, teach it to read `be_moved`.
+    if leg in ("s", "sb"):
         return "sl"
     return None
+
+
+def breakeven_due(
+    side: str,
+    entry_price: float,
+    sl_distance: float,
+    closed_highs: list[float],
+    closed_lows: list[float],
+    at_r: float,
+) -> tuple[bool, float]:
+    """Has the open trade's max favourable excursion reached `at_r` R?
+
+    Live port of `tools/trailing_stop_study.TrailMixin` with `be_at_r` set (the
+    arm validated in TRAILING_STOP_VERDICT.md): the extreme starts at the
+    entry price and extends with the High (long) / Low (short) of every CLOSED
+    bar from the fill bar onward — the fill bar included, because the backtest
+    fills at that bar's open and sees its High at its close. 1R is the
+    initial stop distance.
+
+    Returns (due, mfe_in_R). Never raises; bad inputs are "not due".
+    """
+    if at_r <= 0 or sl_distance <= 0 or entry_price <= 0:
+        return False, 0.0
+    if side == "long":
+        vals = [float(h) for h in closed_highs if h == h]   # drop NaN
+        ext = max([entry_price, *vals])
+        mfe = (ext - entry_price) / sl_distance
+    elif side == "short":
+        vals = [float(v) for v in closed_lows if v == v]
+        ext = min([entry_price, *vals])
+        mfe = (entry_price - ext) / sl_distance
+    else:
+        return False, 0.0
+    return mfe >= at_r, mfe
+
+
+def breakeven_stop_price(side: str, entry_price: float, buffer_frac: float) -> float:
+    """Entry ± a small buffer so a scratch covers fees (study: 0.1%)."""
+    return entry_price * (1 + buffer_frac) if side == "long" else entry_price * (1 - buffer_frac)
 
 
 @dataclass(frozen=True)

@@ -333,6 +333,69 @@ class BinanceClient:
                 log.warning("cancel algo order %s failed: %s", r.get("algoId"), e)
         return n
 
+    def fetch_mark_price(self, symbol: str) -> float | None:
+        """Current MARK price (what our STOP_MARKETs trigger on). None on failure."""
+        try:
+            r = self.ex.fapiPublicGetPremiumIndex({"symbol": self._market_id(symbol)})
+            v = float((r or {}).get("markPrice") or 0.0)
+            return v if v > 0 else None
+        except Exception as e:
+            log.warning("fetch_mark_price failed: %s", e)
+            return None
+
+    def place_tagged_stop(
+        self, symbol: str, side: str, qty: float, stop_price: float,
+        client_order_id_root: str, leg: str,
+    ) -> dict[str, Any]:
+        """Place ONE reduce-only STOP_MARKET for an open `side` position, tagged
+        `{prefix}{root}-{leg}` — and never untagged.
+
+        Unlike `_create_order_with_coid_retry` there is NO untagged fallback,
+        on purpose. That wrapper retries without a clientOrderId when Binance
+        rejects the id, which is harmless for an entry but dangerous for a stop
+        placed mid-trade: a placement that timed out on our side yet was
+        accepted, then retried, gets "duplicate id" — and the fallback would
+        rest a SECOND, untagged stop that no prefix-scoped sweep can ever find.
+        It would outlive the trade and could close a later position — the
+        orphan-bracket bug class. Callers must check the algo book for an
+        existing `-{leg}` order before calling this.
+        """
+        coid = _coid(client_order_id_root, leg, self.coid_prefix)
+        if coid is None:
+            raise ValueError(f"cannot build a valid clientOrderId from root={client_order_id_root!r}")
+        qty = self._round_qty(symbol, qty)
+        if qty <= 0:
+            raise ValueError(f"qty rounded to <= 0 for {symbol}")
+        params: dict[str, Any] = {"stopPrice": float(stop_price), "reduceOnly": True,
+                                  "workingType": "MARK_PRICE", "newClientOrderId": coid}
+        if (pos_side := self._position_side(side)) is not None:
+            params["positionSide"] = pos_side
+        bracket_side = "sell" if side == "long" else "buy"
+        return self.ex.create_order(symbol, "STOP_MARKET", bracket_side, qty, None, params=params)
+
+    def cancel_algo_by_coid(self, symbol: str, coid: str) -> bool:
+        """Cancel the ONE resting algo order whose clientAlgoId == `coid`.
+
+        Returns True only if it was found and the cancel call succeeded. An
+        unreadable book, a missing order, or a failed cancel all return False —
+        the caller decides whether that is alarming.
+        """
+        cancel = getattr(self.ex, "fapiPrivateDeleteAlgoOrder", None)
+        if cancel is None:
+            return False
+        rows, ok = self.fetch_algo_orders(symbol)
+        if not ok:
+            return False
+        for r in rows:
+            if r.get("clientAlgoId") == coid:
+                try:
+                    cancel({"symbol": self._market_id(symbol), "algoId": r["algoId"]})
+                    return True
+                except Exception as e:
+                    log.warning("cancel algo order %s (%s) failed: %s", r.get("algoId"), coid, e)
+                    return False
+        return False
+
     def set_leverage(self, symbol: str, leverage: int) -> None:
         try:
             self.ex.set_leverage(int(leverage), symbol)
