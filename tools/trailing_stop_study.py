@@ -89,6 +89,7 @@ class TrailMixin:
     be_at_r: float = 0.0          # 0 = off
     line_stop: bool = False       # resting stop at the leg's own exit line
     live_time_stop: int = 0       # bars after the fill; 0 = off (donchian as-live = 48)
+    _be_sink: list | None = None  # test hook: records each breakeven move (live-parity test)
     _atr_col: str = ""            # per-leg ATR column
     _line_long: str = ""          # column holding the long-side exit line
     _line_short: str = ""
@@ -171,6 +172,11 @@ class TrailMixin:
         new = max(cands) if long else min(cands)
         cur = t.sl
         if cur is None or (long and new > cur) or (not long and new < cur):
+            if self._be_sink is not None and self.be_at_r > 0 and mfe_r >= self.be_at_r:
+                self._be_sink.append({
+                    "entry_time": self.data.index[t.entry_bar], "entry_price": t.entry_price,
+                    "risk": self._risk, "is_long": long,
+                    "armed_bar_time": self.data.index[i], "stop": new})
             t.sl = new
         return False
 
