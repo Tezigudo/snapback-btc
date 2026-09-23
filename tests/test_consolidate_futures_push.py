@@ -336,6 +336,25 @@ def test_same_symbol_on_two_accounts_keeps_both_tagged(monkeypatch):
     assert out["account"]["walletBalanceUsd"] == 210.0
 
 
+def test_accounts_read_excludes_failed_and_skipped_legs(monkeypatch):
+    # The server scopes its delete to accounts_read, so a leg whose read failed
+    # (or has no env file) must NOT be listed — its last-known row survives.
+    _patch(monkeypatch,
+           {"v1": _mk(100.0, positions=["BTCUSDT"]),
+            "donchian": _mk(50.0, positions=["BTCUSDT"])},
+           {"v1": "A", "donchian": "B", "sol_supertrend": None})
+    real = cfp._collect_one_account
+
+    def flaky(days):
+        if cfp._key_fingerprint() == "fp-B":
+            raise RuntimeError("binance 503")
+        return real(days)
+    monkeypatch.setattr(cfp, "_collect_one_account", flaky)
+    out = cfp.collect_all_accounts(income_days=2)
+    assert out["accounts_read"] == ["v1"]
+    assert [p["account"] for p in out["positions"]] == ["v1"]
+
+
 def test_income_concatenated_across_accounts(monkeypatch):
     _patch(monkeypatch,
            {"v1": _mk(100.0, income=[1, 2]), "sol_supertrend": _mk(60.0, income=[3])},
