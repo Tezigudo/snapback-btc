@@ -364,7 +364,9 @@ def collect_all_accounts(income_days: int) -> dict[str, Any]:
     """Iterate ACCOUNT_INSTANCES and combine their futures state.
 
     Returns the same shape run() used to build from a single account, plus
-    `accounts` (per-instance detail) for logging.
+    `accounts` (per-instance detail) for logging and `accounts_read` (the
+    instances read successfully this run; the server scopes its closed-position
+    delete to these).
     """
     from exchange.env import load_env_for_instance
 
