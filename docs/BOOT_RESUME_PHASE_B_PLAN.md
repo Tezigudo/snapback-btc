@@ -59,7 +59,8 @@ Evidence and footprint:
 
 - The flatten block is byte-identical to `704df89` (sha256 `c95930f5…`, pinned in
   `tests/test_boot_resume_flag_off.py`).
-- `git diff 704df89 -- bot.py` is insertions only; comment text was also edited outside the flatten
+- `git diff 704df89 -- bot.py` is 295 insertions / 2 deletions (the 2 are a stale `_open_entry_fill` docstring, outside the flatten); the flatten block is byte-identical (sha test).
+- Live side effects with the shipped config, all local, none change an exchange call or trading decision: (1) one `last_entry_bar_ts` meta write per evaluated signal bar on every leg, after evaluation and before sizing/order, sqlite busy-wait 0.5 s per blocked step (bounded, not zero; disk stalls not covered; cannot suppress an entry); (2) `active_bracket` JSON gains a `qty` field (readers: reprotect, breakeven, both read-modify-write); (3) a v1 boot holding a position does one extra local DB read + logs one WARNING/observe line.
   block.
 - Observe mode's client call sequence is **identical** to a leg with no `boot_resume` block (tested).
 - The only new flag-off side effect is one `meta` upsert (`last_entry_bar_ts`) per evaluated bar on
