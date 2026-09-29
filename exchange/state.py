@@ -83,9 +83,9 @@ def set_db_path(path: str | Path) -> None:
     DB_PATH = Path(path)
 
 
-def _conn() -> sqlite3.Connection:
+def _conn(timeout: float = 10.0) -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(DB_PATH, timeout=10.0)
+    c = sqlite3.connect(DB_PATH, timeout=timeout)
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA synchronous=NORMAL")
     return c
@@ -163,8 +163,10 @@ def get_meta(key: str, default: str | None = None) -> str | None:
     return row[0] if row else default
 
 
-def set_meta(key: str, value: str) -> None:
-    with _conn() as c:
+def set_meta(key: str, value: str, timeout: float = 10.0) -> None:
+    """Upsert a meta key. `timeout` is sqlite's busy wait; pass a short one
+    from any path that must never stall trading (see bot._persist_last_signal_ts)."""
+    with _conn(timeout) as c:
         c.execute("INSERT INTO meta(key, value) VALUES (?,?) "
                   "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                   (key, value))

@@ -409,3 +409,21 @@ class TestAdoptLoopGuardPure:
         raw = json.dumps({"signal_id": "s", "count": 3, "first_ts": 5000.0})
         ok, _why, _log = adopt_loop_guard(raw, "s", 1000.0)
         assert ok is False
+
+
+def test_a_locked_db_cannot_delay_entry_more_than_the_cap():
+    """A2: another writer holds the DB; the per-bar persist gives up within
+    ~0.5 s instead of sqlite's default 10 s, and never raises."""
+    import time as _t
+    bot, _mc = _make_bot()
+    blocker = sqlite3.connect(state.DB_PATH, timeout=0.1, isolation_level=None)
+    blocker.execute("BEGIN IMMEDIATE")
+    try:
+        t0 = _t.monotonic()
+        bot._persist_last_signal_ts(pd.Timestamp("2026-09-29 10:00:00"))
+        elapsed = _t.monotonic() - t0
+    finally:
+        blocker.execute("ROLLBACK")
+        blocker.close()
+    assert elapsed < 2.0, elapsed
+    assert state.get_meta("last_entry_bar_ts") is None     # write was abandoned

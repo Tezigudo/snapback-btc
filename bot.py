@@ -892,6 +892,8 @@ class Bot:
         self._daily_loss_blocked = False
         return False
 
+    LAST_BAR_PERSIST_TIMEOUT_S = 0.5
+
     def _persist_last_signal_ts(self, last_ts) -> None:
         """B2: mirror `_last_signal_ts` into the `last_entry_bar_ts` meta key.
 
@@ -901,11 +903,15 @@ class Bot:
         took. boot() reads this back on the adopt path only.
 
         Best-effort by construction: a locked or failing DB must never skip
-        this bar's evaluation or entry, so it logs and carries on. The cost of
-        a missed write is only the entry-fill fallback in signal_bar_seed.
+        OR DELAY this bar's evaluation or entry, so the sqlite busy wait is
+        capped at LAST_BAR_PERSIST_TIMEOUT_S (the default is 10 s, which a
+        lock would add straight onto entry latency), and any failure logs and
+        carries on. The cost of a missed write is only the entry-fill fallback
+        in signal_bar_seed.
         """
         try:
-            state.set_meta("last_entry_bar_ts", pd.Timestamp(last_ts).isoformat())
+            state.set_meta("last_entry_bar_ts", pd.Timestamp(last_ts).isoformat(),
+                           timeout=self.LAST_BAR_PERSIST_TIMEOUT_S)
         except Exception as e:
             self.log.warning("could not persist last_entry_bar_ts=%s: %s", last_ts, e)
 
