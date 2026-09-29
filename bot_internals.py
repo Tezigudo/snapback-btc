@@ -749,12 +749,21 @@ def adopt_precheck(params: dict, pos, ab_raw: str | None,
     # Adoption inherits more than a bracket, so a partially-closed position
     # must not be resumed against a stale size. One qty_step of tolerance,
     # because the stash records the requested qty and the fill is rounded.
-    stashed_qty = float(ab.get("qty") or 0.0)
-    if stashed_qty > 0:
-        step = float(qty_step or 0.0)
-        if abs(stashed_qty - float(pos.qty)) > max(step, 1e-12):
-            return (f"qty mismatch: stashed {stashed_qty} vs live "
-                    f"{pos.qty} (step {step})"), ab
+    #
+    # D2 (God, 2026-09-29): a record with NO stashed qty is REFUSED, not
+    # skipped. Every position opened before Phase A deployed lacks the field,
+    # and "cannot check the size" is not affirmative proof. Cost: at most the
+    # first position after deploy is flattened, exactly as today.
+    try:
+        stashed_qty = float(ab.get("qty") or 0.0)
+    except (TypeError, ValueError):
+        stashed_qty = 0.0
+    if stashed_qty <= 0:
+        return "no stashed qty (position opened before Phase A) — cannot verify size", ab
+    step = float(qty_step or 0.0)
+    if abs(stashed_qty - float(pos.qty)) > max(step, 1e-12):
+        return (f"qty mismatch: stashed {stashed_qty} vs live "
+                f"{pos.qty} (step {step})"), ab
 
     # A channel-exit strategy (donchian-v3) places an SL and no TP, so
     # `bracket_state` would be asked whether a HALF bracket is intact —

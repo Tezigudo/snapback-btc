@@ -188,12 +188,41 @@ class TestCanAdopt:
         assert ok is False
         assert "qty mismatch" in why
 
-    def test_qty_check_skipped_for_records_written_before_the_field_existed(self):
-        bot, _ = _make_bot()
+    def test_refuses_a_record_written_before_the_qty_field_existed(self):
+        """D2 (Phase B): a pre-Phase-A stash has no qty, so size cannot be
+        verified. Phase A SKIPPED the check here; God chose refuse → flatten.
+        Asserted with a MATCHING live qty and an intact bracket, so the only
+        thing that can refuse is the missing field."""
+        bot, mc = _make_bot()
         legacy = {k: v for k, v in _ARMED_BRACKET.items() if k != "qty"}
         with _with_bracket(legacy):
-            ok, _why = bot._can_adopt(_open(qty=0.005))
-        assert ok is True
+            ok, why = bot._can_adopt(_open(qty=0.01))
+        assert ok is False
+        assert "no stashed qty" in why
+        # Refused before any network round-trip.
+        mc.ex.fetch_open_orders.assert_not_called()
+        mc.fetch_algo_orders.assert_not_called()
+
+    def test_refuses_a_zero_or_garbage_stashed_qty(self):
+        bot, _ = _make_bot()
+        for bad in (0, 0.0, None, "abc"):
+            with _with_bracket({**_ARMED_BRACKET, "qty": bad}):
+                ok, why = bot._can_adopt(_open())
+            assert ok is False, bad
+            assert "no stashed qty" in why
+
+    def test_armed_boot_flattens_a_pre_phase_a_position(self):
+        """D2 end to end: armed, intact bracket, but no qty → today's flatten."""
+        params = {**_MINIMAL_PARAMS,
+                  "boot_resume": {"enabled": True, "observe_only": False}}
+        bot, mc = _make_bot(params=params)
+        mc.fetch_equity_usdt.return_value = 1000.0
+        mc.fetch_position.return_value = _open()
+        legacy = {k: v for k, v in _ARMED_BRACKET.items() if k != "qty"}
+        with _boot_patches(), _state_patches(bracket=legacy), _principal_patches():
+            bot.boot()
+        mc.close_position.assert_called_once_with(
+            "BTC/USDT:USDT", client_order_id_root="sig-1", close_leg="bf")
 
     def test_refuses_an_sl_only_bracket(self):
         """donchian-v3 places no TP leg. bracket_state would be asked about a
