@@ -52,6 +52,7 @@ import yaml
 from alerts import send_alert
 from bot_internals import (
     SignalDecision,
+    adopt_loop_guard,
     adopt_precheck,
     bracket_state,
     breakeven_due,
@@ -1182,14 +1183,14 @@ class Bot:
             return False, why
         # ---- ARMED from here. Nothing below runs while observe_only. ----
         if adopt:
-            adopt, why = self._prepare_adopt(why)
+            adopt, why = self._prepare_adopt(pos, why)
         self.log.warning(
             "boot-resume ARMED: %s %s %.4f @ %.2f — %s",
             "ADOPT" if adopt else "FLATTEN",
             pos.side, pos.qty, pos.entry_price, why)
         return adopt, why
 
-    def _prepare_adopt(self, why: str) -> tuple[bool, str]:
+    def _prepare_adopt(self, pos, why: str) -> tuple[bool, str]:
         """Everything the adopt branch needs, computed BEFORE committing.
 
         boot()'s adopt branch runs after the verdict; if it raised there, the
@@ -1206,8 +1207,40 @@ class Bot:
         if seed is None:
             return False, ("no entry-dedup bar to seed (no last_entry_bar_ts "
                            "and no entry fill)")
+
+        # D5 adopt-loop guard — LAST, so a refusal above never spends budget.
+        # The counter is persisted BEFORE returning True: a crash anywhere
+        # after this point must still count toward the limit.
+        root = None
+        try:
+            root = state.latest_entry_coid_root()
+            allowed, gwhy, new_log = adopt_loop_guard(
+                state.get_meta("boot_adopt_log"), root, time.time())
+            if allowed:
+                state.set_meta("boot_adopt_log", json.dumps(new_log))
+        except Exception:
+            self.log.exception("boot-resume: adopt-loop guard unreadable — flattening")
+            return False, "adopt-loop guard unreadable"
+        if not allowed:
+            self.log.error("boot-resume: %s — flattening instead of adopting", gwhy)
+            try:
+                send_alert(
+                    "boot-resume: adopt-loop guard tripped",
+                    f"The {self.instance} leg restarted holding a "
+                    f"{pos.side.upper()} {float(pos.qty):.4f} {self.base_asset} "
+                    f"position @ {float(pos.entry_price):,.2f} and would have "
+                    f"adopted it again.\n{gwhy}.\n"
+                    f"It is being FLATTENED at market instead (today's "
+                    f"pre-resume behaviour). Something is restarting this leg "
+                    f"repeatedly while it holds this position — read the "
+                    f"journal before the next entry.\n"
+                    f"signal_id: {root or '(untagged)'}",
+                )
+            except Exception:
+                self.log.exception("boot-resume: guard alert failed")
+            return False, gwhy
         self._adopt_signal_ts_seed = seed
-        return True, why
+        return True, f"{why}; {gwhy}"
 
     def _maybe_reprotect(self, equity: float) -> None:
         """Restore a missing SL/TP bracket while a position is still open.

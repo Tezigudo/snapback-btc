@@ -8,6 +8,8 @@ Schema:
                                   _maybe_enter evaluated. Written every time
                                   _last_signal_ts advances; read by boot-resume
                                   (adopt path ONLY) to stop a same-bar re-entry.
+    'boot_adopt_log'            : JSON {signal_id, count, first_ts} — boot-resume
+                                  adopt-loop guard (D5). Written on adopt only.
     'consecutive_losses'        : int
     'daily_anchor_date'         : YYYY-MM-DD UTC date of today's equity anchor
     'daily_anchor_equity'       : float equity at UTC-day start

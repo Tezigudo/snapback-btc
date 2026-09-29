@@ -261,3 +261,144 @@ class TestSignalBarSeedPure:
         got = signal_bar_seed("2026-09-29T16:45:00+07:00", None, 900)
         assert got == pd.Timestamp("2026-09-29 09:45:00")
         assert got.tzinfo is None
+
+
+# ---------------------------------------------------------------------------
+# D5 — adopt-loop guard: max 3 adopts of one position per 30 min
+# ---------------------------------------------------------------------------
+
+def _adopt_log() -> dict | None:
+    raw = state.get_meta("boot_adopt_log")
+    return json.loads(raw) if raw else None
+
+
+def _boot_once(params=None, position=None):
+    bot, mc = _make_bot(params=dict(params or _ARMED_PARAMS))
+    mc.close_position.return_value = {}
+    alert = MagicMock()
+    mc.fetch_equity_usdt.return_value = 1000.0
+    mc.fetch_position.return_value = position or _open()
+    with _boot_patches(), _principal_patches(), patch("bot.send_alert", alert):
+        bot.boot()
+    return bot, mc, alert
+
+
+def _guard_alerts(alert: MagicMock) -> list:
+    return [c for c in alert.call_args_list
+            if c.args and "adopt-loop guard" in c.args[0]]
+
+
+class TestD5AdoptLoopGuard:
+
+    def test_three_adopts_then_the_fourth_boot_flattens_and_alerts(self):
+        """T6 per God's D5 wording: MAX 3 adopts / 30 min, so the 4th flattens.
+        (The plan's T6 text says 'the 3rd flattens'; God's decision wins.)"""
+        _seed_db()
+        state.set_meta("last_entry_bar_ts", "2026-09-29T09:45:00")
+        for n in (1, 2, 3):
+            _bot, mc, alert = _boot_once()
+            mc.close_position.assert_not_called()
+            assert _adopt_log()["count"] == n
+            assert _guard_alerts(alert) == []
+
+        _bot, mc, alert = _boot_once()
+        mc.close_position.assert_called_once_with(
+            "BTC/USDT:USDT", client_order_id_root="sig-1", close_leg="bf")
+        assert len(_guard_alerts(alert)) == 1
+        assert _adopt_log()["count"] == 3        # refusal does not bump it
+        assert _outbox_kinds().count("boot_adopt") == 3
+
+    def test_window_expiry_resets_the_count(self):
+        import time as _t
+        _seed_db()
+        state.set_meta("last_entry_bar_ts", "2026-09-29T09:45:00")
+        state.set_meta("boot_adopt_log", json.dumps(
+            {"signal_id": "sig-1", "count": 3, "first_ts": _t.time() - 31 * 60}))
+        _bot, mc, _ = _boot_once()
+        mc.close_position.assert_not_called()
+        assert _adopt_log()["count"] == 1
+
+    def test_inside_the_window_a_full_count_flattens(self):
+        import time as _t
+        _seed_db()
+        state.set_meta("last_entry_bar_ts", "2026-09-29T09:45:00")
+        state.set_meta("boot_adopt_log", json.dumps(
+            {"signal_id": "sig-1", "count": 3, "first_ts": _t.time() - 29 * 60}))
+        _bot, mc, alert = _boot_once()
+        mc.close_position.assert_called_once()
+        assert len(_guard_alerts(alert)) == 1
+
+    def test_a_different_position_starts_a_fresh_count(self):
+        import time as _t
+        _seed_db()
+        state.set_meta("last_entry_bar_ts", "2026-09-29T09:45:00")
+        state.set_meta("boot_adopt_log", json.dumps(
+            {"signal_id": "sig-OLD", "count": 3, "first_ts": _t.time() - 60}))
+        _bot, mc, _ = _boot_once()
+        mc.close_position.assert_not_called()
+        assert _adopt_log() == {"signal_id": "sig-1", "count": 1,
+                                "first_ts": _adopt_log()["first_ts"]}
+
+    def test_observe_only_never_touches_the_counter(self):
+        _seed_db()
+        state.set_meta("last_entry_bar_ts", "2026-09-29T09:45:00")
+        _bot, mc, _ = _boot_once(params=_MINIMAL_PARAMS)     # observe_only
+        mc.close_position.assert_called_once()
+        assert _adopt_log() is None
+
+    def test_a_seed_refusal_does_not_spend_budget(self):
+        state.set_meta("active_bracket", json.dumps(_ARMED_BRACKET))  # no fill
+        _bot, mc, _ = _boot_once()
+        mc.close_position.assert_called_once()
+        assert _adopt_log() is None
+
+    def test_an_unwritable_counter_flattens(self):
+        _seed_db()
+        state.set_meta("last_entry_bar_ts", "2026-09-29T09:45:00")
+        real = state.set_meta
+
+        def boom(key, value):
+            if key == "boot_adopt_log":
+                raise sqlite3.OperationalError("locked")
+            return real(key, value)
+        with patch("bot.state.set_meta", side_effect=boom):
+            _bot, mc, _ = _boot_once()
+        mc.close_position.assert_called_once()
+        assert "boot_adopt" not in _outbox_kinds()
+
+
+class TestAdoptLoopGuardPure:
+
+    def test_fresh(self):
+        from bot_internals import adopt_loop_guard
+        ok, why, log = adopt_loop_guard(None, "s", 1000.0)
+        assert ok and log == {"signal_id": "s", "count": 1, "first_ts": 1000.0}
+
+    def test_counts_up_to_three_then_refuses(self):
+        from bot_internals import adopt_loop_guard
+        raw = None
+        for n in (1, 2, 3):
+            ok, _why, log = adopt_loop_guard(raw, "s", 1000.0 + n)
+            assert ok and log["count"] == n
+            raw = json.dumps(log)
+        ok, why, _ = adopt_loop_guard(raw, "s", 1000.0 + 60)
+        assert not ok and "adopt-loop guard" in why
+
+    def test_exactly_at_the_window_edge_still_counts(self):
+        from bot_internals import adopt_loop_guard
+        raw = json.dumps({"signal_id": "s", "count": 3, "first_ts": 0.0})
+        assert adopt_loop_guard(raw, "s", 1800.0)[0] is False
+        assert adopt_loop_guard(raw, "s", 1800.1)[0] is True
+
+    def test_garbage_log_is_treated_as_empty(self):
+        from bot_internals import adopt_loop_guard
+        for raw in ("{", "[]", json.dumps({"count": "x"})):
+            ok, _why, log = adopt_loop_guard(raw, "s", 5.0)
+            assert ok and log["count"] == 1
+
+    def test_clock_going_backwards_stays_inside_the_window(self):
+        """Fail-closed: a backwards clock must not reset a tripped guard."""
+        from bot_internals import adopt_loop_guard
+        raw = json.dumps({"signal_id": "s", "count": 3, "first_ts": 5000.0})
+        ok, _why, _log = adopt_loop_guard(raw, "s", 1000.0)
+        assert ok is False

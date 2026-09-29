@@ -817,6 +817,60 @@ def can_adopt(params: dict, pos, ab_raw: str | None,
                   f"restore it ({done}/{cap} used)")
 
 
+# D5 (God, 2026-09-29): at most 3 adopts of the same position in 30 minutes.
+ADOPT_LOOP_MAX = 3
+ADOPT_LOOP_WINDOW_S = 30 * 60
+
+
+def adopt_loop_guard(log_raw: str | None, signal_id: str | None, now_s: float,
+                     max_adopts: int = ADOPT_LOOP_MAX,
+                     window_s: float = ADOPT_LOOP_WINDOW_S) -> tuple[bool, str, dict]:
+    """Crash-loop breaker for boot-resume. PURE.
+
+    A bug that crashes the tick loop BECAUSE of the adopted position would,
+    under systemd `Restart=on-failure` / `RestartSec=10`, become
+    crash → adopt → crash forever, and the time stop / trend exit / reprotect
+    would never run. Today's flatten breaks that loop; this keeps a breaker.
+
+    `log_raw` is the persisted `boot_adopt_log` meta value. Returns
+    (allowed, reason, new_log). `new_log` is what the caller must persist
+    BEFORE adopting when allowed is True (so a crash after it still counts).
+
+    The window is anchored on the first adopt of this signal_id and resets
+    once it has elapsed, or when the signal_id changes (a different position).
+    An unreadable log is treated as empty: it is our own counter, not proof of
+    anything, and failing closed on it would refuse every future adopt.
+    """
+    key = signal_id or ""
+    prev: dict = {}
+    if log_raw:
+        try:
+            parsed = json.loads(log_raw)
+            if isinstance(parsed, dict):
+                prev = parsed
+        except (ValueError, TypeError):
+            prev = {}
+    try:
+        prev_count = int(prev.get("count", 0))
+        prev_first = float(prev.get("first_ts", 0.0))
+    except (TypeError, ValueError):
+        prev_count, prev_first = 0, 0.0
+    # A clock that went BACKWARDS (negative elapsed) counts as inside the
+    # window: fail-closed, the worst case is today's flatten.
+    same = (prev.get("signal_id", None) == key and prev_count > 0
+            and now_s - prev_first <= window_s)
+    if not same:
+        return True, f"adopt 1/{max_adopts} in {int(window_s // 60)} min", {
+            "signal_id": key, "count": 1, "first_ts": float(now_s)}
+    if prev_count >= max_adopts:
+        return False, (f"adopt-loop guard: {prev_count} adopts of {key or '(untagged)'} "
+                       f"in the last {int((now_s - prev_first) // 60)} min "
+                       f"(max {max_adopts}/{int(window_s // 60)} min)"), prev
+    n = prev_count + 1
+    return True, f"adopt {n}/{max_adopts} in {int(window_s // 60)} min", {
+        "signal_id": key, "count": n, "first_ts": prev_first}
+
+
 def _naive_utc(ts) -> pd.Timestamp:
     """pd.Timestamp in NAIVE UTC — the convention of fetch_ohlcv's index.
 
