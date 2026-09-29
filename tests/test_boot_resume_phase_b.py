@@ -190,7 +190,7 @@ class TestB2SignalBarSeed:
 
     def test_adopted_then_flat_in_the_same_bar_does_not_re_evaluate(self):
         """T2. The bar evaluated before the restart must not be re-taken."""
-        _seed_db()
+        _seed_db(entry_ts="2026-09-29T09:45:00+00:00")  # pin the fill: a wall-clock ts beat the meta seed after ~10:00 UTC
         state.set_meta("last_entry_bar_ts", "2026-09-29T09:45:00")
         bot, mc = _make_bot(params=dict(_ARMED_PARAMS))
         _boot(bot, mc, _open())
@@ -202,7 +202,7 @@ class TestB2SignalBarSeed:
 
     def test_the_next_bar_is_still_evaluated(self):
         """The seed must suppress ONLY bars already seen, not the next one."""
-        _seed_db()
+        _seed_db(entry_ts="2026-09-29T09:45:00+00:00")  # pin the fill: a wall-clock ts beat the meta seed after ~10:00 UTC
         state.set_meta("last_entry_bar_ts", "2026-09-29T09:45:00")
         bot, mc = _make_bot(params=dict(_ARMED_PARAMS))
         _boot(bot, mc, _open())
