@@ -52,15 +52,19 @@ import yaml
 from alerts import send_alert
 from bot_internals import (
     SignalDecision,
+    adopt_loop_guard,
+    adopt_precheck,
     bracket_state,
     breakeven_due,
     breakeven_stop_price,
+    can_adopt,
     channel_exit_signal,  # noqa: F401  (re-exported; tools import it from here)
     evaluate_for_strategy,
     gate_status,
     limit_entry_price,
     order_avg_price,
     resolve_strategy_name,
+    signal_bar_seed,
     strategy_uses_channel_exit,
     strategy_uses_trend_exit,
     time_stop_due,
@@ -160,6 +164,19 @@ INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
 # cascade). See exchange/env.py :: is_halted / leg_halt_path.
 for _name, _profile in INSTANCE_PROFILES.items():
     _profile["halt"] = leg_halt_path(_name)
+
+# Boot-resume HARD ARMING INTERLOCK. Adoption can only be armed when BOTH this
+# constant is True AND a leg's config sets `boot_resume.observe_only: false`,
+# so arming can never be a one-line config edit. Flip it only in a reviewed code
+# change that ALSO builds the arming prerequisites from
+# docs/BOOT_RESUME_PHASE_B_PLAN.md (Status → "Blockers before arming"):
+#   C5  require active_bracket.signal_id == latest entry coid root
+#   C6  re-read the position immediately before committing to adopt
+#   C9  bounded retry of an unreadable order book at boot
+#   C11 send_alert on every adopt ("Position RESUMED after restart")
+# plus the other blockers listed there. While False, `observe_only: false` is
+# logged at ERROR, alerted, and treated as observe_only (the position flattens).
+ARMING_PREREQS_BUILT = False
 
 # Console logs display in Bangkok time (GMT+7) for human readability.
 # JSONL `ts` field and state.db remain UTC for alignment with Binance candles.
@@ -313,6 +330,9 @@ class Bot:
         self.constraints: ExchangeConstraints = DEFAULT_CONSTRAINTS
         self._stopped = False
         self._last_signal_ts: pd.Timestamp | None = None
+        # B2 (boot-resume): prepared by _boot_resume_verdict on the ARMED adopt
+        # path only, consumed by _seed_adopted_tracking. None otherwise.
+        self._adopt_signal_ts_seed: pd.Timestamp | None = None
         # Push to consolidate every PUSH_INTERVAL_S; also send a heartbeat
         # event at the same cadence so the dashboard's "alive" check works.
         # 30s is well under consolidate's 60s healthy-threshold.
@@ -498,6 +518,35 @@ class Bot:
                 self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
                                  "DRY-RUN: leaving it alone.",
                                  pos.side, pos.qty, pos.entry_price)
+            elif self._boot_resume_verdict(pos)[0]:
+                # RESUME. The tick loop owns this position from here exactly as
+                # if no restart had happened: its age still reads from the fills
+                # table, the daily anchor still reads from state.meta, and the
+                # first _maybe_reprotect will restore the bracket if it is gone.
+                root = state.latest_entry_coid_root()
+                # B1: seed the exit-tracking snapshot BEFORE anything else can
+                # run (or raise). Without it _last_position_side stays
+                # "unknown", and a bracket that fills between this read and the
+                # first tick reads as unknown→flat — NOT an exit — so no close
+                # row, no exit event, no alert: the donchian 09-04 dropped-exit
+                # shape through a new door. Plain assignments; cannot raise.
+                self._seed_adopted_tracking(pos, root)
+                self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
+                                 "RESUMING it (root=%s).",
+                                 pos.side, pos.qty, pos.entry_price, root or "—")
+                state.record_event("WARN", "boot_adopt",
+                                   {"side": pos.side, "qty": pos.qty,
+                                    "entry": pos.entry_price, "signal_id": root},
+                                   signal_id=root)
+                state.enqueue_bot_event(
+                    "boot_adopt",
+                    signal_id=root,
+                    side=pos.side,
+                    qty=float(pos.qty),
+                    price_usd=float(pos.entry_price),
+                    payload={"reason": "resumed_at_boot",
+                             "entry_price": float(pos.entry_price)},
+                )
             else:
                 root = state.latest_entry_coid_root()
                 self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
@@ -843,6 +892,29 @@ class Bot:
         self._daily_loss_blocked = False
         return False
 
+    LAST_BAR_PERSIST_TIMEOUT_S = 0.5
+
+    def _persist_last_signal_ts(self, last_ts) -> None:
+        """B2: mirror `_last_signal_ts` into the `last_entry_bar_ts` meta key.
+
+        The in-memory value dies with the process, so after a restart that
+        ADOPTS a position, _maybe_enter would re-evaluate the same closed bar
+        once the position goes flat and re-enter on the signal it already
+        took. boot() reads this back on the adopt path only.
+
+        Best-effort by construction: a locked or failing DB must never skip
+        OR DELAY this bar's evaluation or entry, so the sqlite busy wait is
+        capped at LAST_BAR_PERSIST_TIMEOUT_S (the default is 10 s, which a
+        lock would add straight onto entry latency), and any failure logs and
+        carries on. The cost of a missed write is only the entry-fill fallback
+        in signal_bar_seed.
+        """
+        try:
+            state.set_meta("last_entry_bar_ts", pd.Timestamp(last_ts).isoformat(),
+                           timeout=self.LAST_BAR_PERSIST_TIMEOUT_S)
+        except Exception as e:
+            self.log.warning("could not persist last_entry_bar_ts=%s: %s", last_ts, e)
+
     def _maybe_enter(self, equity: float) -> None:
         # Skip entry evaluation if already in a position — bracket SL/TP
         # manage the existing trade. Matches backtest's exclusive_orders=True.
@@ -881,6 +953,7 @@ class Bot:
         funding = self.client.fetch_funding_rate(self.symbol)
         decision = evaluate_for_strategy(self.strategy_name, df, funding, self.params)
         self._last_signal_ts = last_ts
+        self._persist_last_signal_ts(last_ts)
 
         # Snapshot the gate state for heartbeat-payload + log. Computed on every
         # bar evaluation so the dashboard's "current state" panel can always
@@ -976,9 +1049,15 @@ class Bot:
         # Remember this trade's bracket params so _maybe_reprotect can restore
         # the SL/TP if they later go missing while the position is still open
         # (external cancel, or a leverage change → Binance auto-cancels orders).
+        # `qty` is recorded for _can_adopt, NOT for reprotect — reprotect always
+        # re-places against the live pos.qty, deliberately. Adoption is the only
+        # caller that needs to notice a partially-closed position, and without
+        # this field its size check has nothing to compare against. A record
+        # WITHOUT it (written before Phase A) is refused and flattened (D2).
         state.set_meta("active_bracket", json.dumps({
             "signal_id": signal_id, "side": decision.side,
             "entry_price": float(decision.price),
+            "qty": float(qty),
             "sl_distance": float(decision.sl_distance),
             "tp_distance": float(decision.tp_distance),
             "place_tp": bool(place_tp),
@@ -1023,6 +1102,220 @@ class Bot:
             strategy_name=self.strategy_name,
             orders=orders, dbg=decision.debug,
         )
+
+    def _can_adopt(self, pos) -> tuple[bool, str]:
+        """Decide whether boot() may RESUME an open position instead of closing it.
+
+        boot() flattens whatever it finds, because a fresh process cannot assume
+        a position it did not open still has a live bracket behind it. That is a
+        real cost, not a theoretical one: it has killed four live positions
+        (sol 08-10 and 09-11, donchian 08-26, v1 07-21), and for sol it accounts
+        for two of the three infrastructure deaths in a five-entry record.
+
+        Arming reprotect is what makes resuming defensible — the bot can now see
+        a missing bracket across BOTH order books and restore it. So this gate is
+        deliberately not new machinery: it is the SAME identity + readability
+        checks `_maybe_reprotect` already applies, asked once at boot.
+
+        Returns (verdict, reason). The reason is the whole point during the
+        observe-only phase: this event is far too rare to prove anything by
+        silence, so the log line IS the evidence.
+
+        FAIL-CLOSED. Every unknown, every exception, every missing record returns
+        False, and the caller flattens exactly as it does today. The bar to
+        resume is affirmative proof; the bar to flatten is anything less.
+        """
+        # The decision itself lives in bot_internals.can_adopt (C1), so the
+        # read-only probe (tools/boot_resume_probe.py) runs the SAME code. This
+        # wrapper only does the I/O, and only reads the books once the cheap
+        # checks have passed — the same order Phase A used inline.
+        ab_raw = state.get_meta("active_bracket")
+        qty_step = float(getattr(self.constraints, "qty_step", 0.0) or 0.0)
+        why, _ab = adopt_precheck(self.params, pos, ab_raw, qty_step)
+        if why is not None:
+            return False, why
+        try:
+            open_orders = self.client.ex.fetch_open_orders(self.symbol)
+        except Exception:
+            self.log.exception("boot-resume: fetch_open_orders failed")
+            open_orders = None
+        algo_rows, algo_ok = ((None, False) if open_orders is None
+                              else self.client.fetch_algo_orders(self.symbol))
+        return can_adopt(self.params, pos, ab_raw, open_orders, algo_rows,
+                         algo_ok, qty_step, self.coid_prefix)
+
+    def _seed_adopted_tracking(self, pos, root: str | None) -> None:
+        """Make the tick loop treat an adopted position as one it already knew.
+
+        B1: _detect_bracket_exit only emits an exit on a tracked open→flat (or
+        replaced) edge; seeding here makes a bracket fill before the first tick
+        a normal flat-edge exit. B2: `_last_signal_ts` is seeded from the value
+        `_boot_resume_verdict` prepared, so the bar that opened (or was last
+        evaluated for) this position is not re-evaluated once it closes.
+
+        Called on the ADOPT path only. The flatten path is deliberately left
+        as it was (plan §9: its same-bar exposure is a separate decision).
+        """
+        self._last_position_side = pos.side
+        self._last_position_entry = float(pos.entry_price)
+        self._last_position_qty = float(pos.qty)
+        self._last_entry_root = root
+        seed = self._adopt_signal_ts_seed
+        if seed is not None:
+            self._last_signal_ts = seed
+        # C12 — the Phase B evidence line.
+        self.log.warning(
+            "adopt: tracking seeded side=%s entry=%.2f qty=%.4f root=%s "
+            "last_signal_ts=%s",
+            pos.side, float(pos.entry_price), float(pos.qty), root or "—",
+            seed.isoformat() if seed is not None else "—")
+
+    def _boot_resume_verdict(self, pos) -> tuple[bool, str]:
+        """Config + rollout wrapper around `_can_adopt`. NEVER raises.
+
+        Returns (adopt, reason). Only (True, ...) makes boot() resume; anything
+        else — disabled, malformed config, observe mode, the arming interlock,
+        a refusing or raising gate — falls through to today's flatten.
+
+        OBSERVE mode (`observe_only: true`, what ships) must be behaviour-
+        neutral, so it makes NO exchange call at all: it runs only the offline
+        precheck (config + the stashed active_bracket in the local DB), logs
+        that result, says the order-book check was SKIPPED, and returns False.
+        The full verdict against the live books is what
+        `tools/boot_resume_probe.py` produces, read-only, without a restart —
+        that probe is the counted arming evidence (Phase B plan §2), not
+        restarts.
+
+        ARMED requires BOTH `observe_only: false` in config AND the code
+        constant ARMING_PREREQS_BUILT. Until the latter flips, a config that
+        asks for armed mode is logged at ERROR, alerted, and treated as observe.
+        """
+        try:
+            br = self.params.get("boot_resume")
+            if br is None:
+                return False, "boot_resume disabled"
+            if not isinstance(br, dict):
+                # Malformed config must never abort boot() before the flatten.
+                self.log.warning("boot-resume: config is %s, not a mapping — "
+                                 "treating as disabled", type(br).__name__)
+                return False, "boot_resume config malformed — treated as disabled"
+            # Strict booleans, fail-closed: `enabled: "yes"` does not enable and
+            # `observe_only: "false"` does not arm.
+            if br.get("enabled", False) is not True:
+                return False, "boot_resume disabled"
+            wants_armed = br.get("observe_only", True) is False
+            if wants_armed and not ARMING_PREREQS_BUILT:
+                self._alert_arming_interlock(pos)
+            if not (wants_armed and ARMING_PREREQS_BUILT):
+                return self._observe_verdict(pos)
+        except Exception:
+            self.log.exception("boot-resume: rollout wrapper raised — flattening")
+            return False, "boot_resume evaluation raised"
+
+        # ---- ARMED from here: config asks for it AND the prereqs are built. ----
+        try:
+            adopt, why = self._can_adopt(pos)
+        except Exception:
+            # A gate that raises must not take the position with it.
+            self.log.exception("boot-resume: gate raised — flattening")
+            return False, "gate raised"
+        if adopt:
+            adopt, why = self._prepare_adopt(pos, why)
+        self.log.warning(
+            "boot-resume ARMED: %s %s %.4f @ %.2f — %s",
+            "ADOPT" if adopt else "FLATTEN",
+            pos.side, pos.qty, pos.entry_price, why)
+        return adopt, why
+
+    def _observe_verdict(self, pos) -> tuple[bool, str]:
+        """Observe mode: offline precheck only, ZERO exchange calls, always False."""
+        try:
+            qty_step = float(getattr(self.constraints, "qty_step", 0.0) or 0.0)
+            why, _ab = adopt_precheck(self.params, pos,
+                                      state.get_meta("active_bracket"), qty_step)
+        except Exception:
+            self.log.exception("boot-resume: gate raised — flattening")
+            return False, "gate raised"
+        if why is not None:
+            self.log.warning("boot-resume OBSERVE: WOULD FLATTEN %s %.4f @ %.2f — %s",
+                             pos.side, pos.qty, pos.entry_price, why)
+            return False, why
+        why = ("precheck passed; order-book check SKIPPED in observe mode "
+               "(no exchange calls) — run tools/boot_resume_probe.py for the "
+               "full verdict")
+        self.log.warning("boot-resume OBSERVE: PRECHECK OK %s %.4f @ %.2f — %s",
+                         pos.side, pos.qty, pos.entry_price, why)
+        return False, why
+
+    def _alert_arming_interlock(self, pos) -> None:
+        """Config says `observe_only: false` but the code is not ready to arm."""
+        msg = ("boot_resume.observe_only is false, but ARMING_PREREQS_BUILT is "
+               "False in bot.py (C5 root match, C6 re-read, C9 book retry, C11 "
+               "resume alert are not built). Arming REFUSED — treating as "
+               "observe_only, so this position is FLATTENED as before.")
+        self.log.error("boot-resume: ARMING INTERLOCK — %s", msg)
+        try:
+            send_alert(
+                "boot-resume: arming interlock tripped",
+                f"The {self.instance} leg booted holding a {pos.side.upper()} "
+                f"{float(pos.qty):.4f} {self.base_asset} position @ "
+                f"{float(pos.entry_price):,.2f}.\n{msg}\n"
+                f"Set boot_resume.observe_only back to true in the config.",
+            )
+        except Exception:
+            self.log.exception("boot-resume: interlock alert failed")
+
+    def _prepare_adopt(self, pos, why: str) -> tuple[bool, str]:
+        """Everything the adopt branch needs, computed BEFORE committing.
+
+        boot()'s adopt branch runs after the verdict; if it raised there, the
+        process would die and systemd would adopt again. So anything that can
+        fail runs here, and any failure becomes a refusal → today's flatten.
+        """
+        try:
+            seed = signal_bar_seed(state.get_meta("last_entry_bar_ts"),
+                                   state.latest_entry_fill_ts(),
+                                   int(self.bar_seconds))
+        except Exception:
+            self.log.exception("boot-resume: entry-dedup seed unreadable — flattening")
+            return False, "entry-dedup bar unreadable"
+        if seed is None:
+            return False, ("no entry-dedup bar to seed (no last_entry_bar_ts "
+                           "and no entry fill)")
+
+        # D5 adopt-loop guard — LAST, so a refusal above never spends budget.
+        # The counter is persisted BEFORE returning True: a crash anywhere
+        # after this point must still count toward the limit.
+        root = None
+        try:
+            root = state.latest_entry_coid_root()
+            allowed, gwhy, new_log = adopt_loop_guard(
+                state.get_meta("boot_adopt_log"), root, time.time())
+            if allowed:
+                state.set_meta("boot_adopt_log", json.dumps(new_log))
+        except Exception:
+            self.log.exception("boot-resume: adopt-loop guard unreadable — flattening")
+            return False, "adopt-loop guard unreadable"
+        if not allowed:
+            self.log.error("boot-resume: %s — flattening instead of adopting", gwhy)
+            try:
+                send_alert(
+                    "boot-resume: adopt-loop guard tripped",
+                    f"The {self.instance} leg restarted holding a "
+                    f"{pos.side.upper()} {float(pos.qty):.4f} {self.base_asset} "
+                    f"position @ {float(pos.entry_price):,.2f} and would have "
+                    f"adopted it again.\n{gwhy}.\n"
+                    f"It is being FLATTENED at market instead (today's "
+                    f"pre-resume behaviour). Something is restarting this leg "
+                    f"repeatedly while it holds this position — read the "
+                    f"journal before the next entry.\n"
+                    f"signal_id: {root or '(untagged)'}",
+                )
+            except Exception:
+                self.log.exception("boot-resume: guard alert failed")
+            return False, gwhy
+        self._adopt_signal_ts_seed = seed
+        return True, f"{why}; {gwhy}"
 
     def _maybe_reprotect(self, equity: float) -> None:
         """Restore a missing SL/TP bracket while a position is still open.
@@ -1579,8 +1872,8 @@ class Bot:
         entry that is already closed -- attributing a stale entry price to the
         current position and writing a wrong number into the trade record.
 
-        That is reachable: a position adopted at boot (stale_position_at_boot)
-        or opened manually has no entry row of its own, so the newest fill is
+        That is reachable: a position opened manually, or one whose own entry
+        was never recorded, has no entry row of its own, so the newest fill is
         the PREVIOUS trade's close. Returning None there is correct -- the
         caller records the exit without a PnL rather than with a false one.
         """

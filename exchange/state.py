@@ -4,7 +4,12 @@ Schema:
   meta(key TEXT PRIMARY KEY, value TEXT)
     'deploy_start_equity'       : float
     'deploy_start_ts'           : ISO ts
-    'last_entry_bar_ts'         : ISO ts of bar bot last considered for entry
+    'last_entry_bar_ts'         : ISO ts (naive UTC, bar OPEN) of the last CLOSED bar
+                                  _maybe_enter evaluated. Written every time
+                                  _last_signal_ts advances; read by boot-resume
+                                  (adopt path ONLY) to stop a same-bar re-entry.
+    'boot_adopt_log'            : JSON {signal_id, count, first_ts} — boot-resume
+                                  adopt-loop guard (D5). Written on adopt only.
     'consecutive_losses'        : int
     'daily_anchor_date'         : YYYY-MM-DD UTC date of today's equity anchor
     'daily_anchor_equity'       : float equity at UTC-day start
@@ -78,9 +83,9 @@ def set_db_path(path: str | Path) -> None:
     DB_PATH = Path(path)
 
 
-def _conn() -> sqlite3.Connection:
+def _conn(timeout: float = 10.0) -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(DB_PATH, timeout=10.0)
+    c = sqlite3.connect(DB_PATH, timeout=timeout)
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA synchronous=NORMAL")
     return c
@@ -154,12 +159,14 @@ def init_db() -> None:
 
 def get_meta(key: str, default: str | None = None) -> str | None:
     with _conn() as c:
-        row = c.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        row = c.execute(META_GET_SQL, (key,)).fetchone()
     return row[0] if row else default
 
 
-def set_meta(key: str, value: str) -> None:
-    with _conn() as c:
+def set_meta(key: str, value: str, timeout: float = 10.0) -> None:
+    """Upsert a meta key. `timeout` is sqlite's busy wait; pass a short one
+    from any path that must never stall trading (see bot._persist_last_signal_ts)."""
+    with _conn(timeout) as c:
         c.execute("INSERT INTO meta(key, value) VALUES (?,?) "
                   "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                   (key, value))
@@ -387,6 +394,20 @@ def principal_ledger_non_usdt_count() -> int:
     return int(row[0]) if row else 0
 
 
+# Shared with tools/boot_resume_probe.py, which runs these same reads against a
+# `mode=ro` connection. One string per question, so the probe cannot drift from
+# what boot() actually asks.
+META_GET_SQL = "SELECT value FROM meta WHERE key=?"
+LATEST_ENTRY_ROOT_SQL = (
+    "SELECT client_order_id_root FROM fills "
+    "WHERE reason='entry' "
+    "ORDER BY id DESC LIMIT 1"
+)
+LATEST_ENTRY_TS_SQL = (
+    "SELECT ts FROM fills WHERE reason='entry' ORDER BY id DESC LIMIT 1"
+)
+
+
 def latest_entry_coid_root() -> str | None:
     """The most recent entry fill's client_order_id_root, or None.
 
@@ -400,9 +421,16 @@ def latest_entry_coid_root() -> str | None:
     to an older, already-closed position's root.
     """
     with _conn() as c:
-        row = c.execute(
-            "SELECT client_order_id_root FROM fills "
-            "WHERE reason='entry' "
-            "ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        row = c.execute(LATEST_ENTRY_ROOT_SQL).fetchone()
+    return row[0] if row else None
+
+
+def latest_entry_fill_ts() -> str | None:
+    """ISO ts of the most recent `reason='entry'` fill, or None.
+
+    Boot-resume (Phase B, B2) fallback for seeding the entry-dedup bar when the
+    `last_entry_bar_ts` meta key is absent. Read-only.
+    """
+    with _conn() as c:
+        row = c.execute(LATEST_ENTRY_TS_SQL).fetchone()
     return row[0] if row else None
