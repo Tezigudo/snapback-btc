@@ -117,6 +117,38 @@ class TestB1TrackingSeed:
         assert [f for f in _fills() if f[0] == "close"] == []
         assert "exit" not in _outbox_kinds()
 
+    def test_bookkeeping_failure_after_adopt_does_not_abort_boot(self):
+        """A sqlite error in record_event must not flatten or abort an adopt."""
+        _seed_db()
+        bot, mc = _make_bot(params=dict(_ARMED_PARAMS))
+        bot.log = MagicMock()
+        with patch.object(state, "record_event",
+                          side_effect=sqlite3.OperationalError("database is locked")):
+            _boot(bot, mc, _open())
+        mc.close_position.assert_not_called()
+        assert bot._last_position_side == "long"
+        assert bot._last_entry_root == "sig-1"
+        bot.log.exception.assert_called()
+
+    def test_root_lookup_failure_after_adopt_does_not_abort_boot(self):
+        _seed_db()
+        bot, mc = _make_bot(params=dict(_ARMED_PARAMS))
+        bot.log = MagicMock()
+        real = state.latest_entry_coid_root
+        calls = {"n": 0}
+
+        def flaky():
+            calls["n"] += 1
+            if calls["n"] > 1:      # first call is the verdict's own read
+                raise sqlite3.OperationalError("disk I/O error")
+            return real()
+
+        with patch.object(state, "latest_entry_coid_root", side_effect=flaky):
+            _boot(bot, mc, _open())
+        mc.close_position.assert_not_called()
+        assert bot._last_position_side == "long"
+        assert bot._last_entry_root is None
+
     def test_flatten_path_does_not_seed(self):
         """Refused → flatten must leave the tracking exactly as before."""
         _seed_db(bracket=None)          # no active_bracket → refuse
