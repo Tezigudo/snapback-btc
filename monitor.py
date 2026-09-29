@@ -6,10 +6,15 @@ Checks (per leg):
   2. ERROR / WARNING / mtf_4h_gate_nan events in last poll window
   3. Equity drop from deploy_start_equity (LIVE legs only)
   4. systemd unit state (active vs failed)
+  5. Losing streak (ALERT-ONLY, never blocks trading): consecutive losing
+     closes read read-only from the leg's fills DB; alerts at the leg's
+     threshold (v1 13 / donchian 9 / sol 7) and again every +3. An estimate
+     from local fills, not exchange truth (see _losing_streak).
 
 State persistence:
   data/monitor_state.json — last seen log offsets per leg, last alert ts per
-  kind, and the last equity band (ok/warn/alert) per leg.
+  kind, the last equity band (ok/warn/alert) per leg, and the last alerted
+  losing-streak level per leg (streak_alerted; a win re-arms it).
   Prevents duplicate alerts every 5 min for the same condition. Event-style
   checks are rate-limited by cooldown; the equity check fires only when its
   band changes (see _check_equity).
