@@ -7,6 +7,7 @@ counter), so patching the persistence away would test nothing.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from unittest.mock import MagicMock, patch
@@ -137,11 +138,9 @@ def _run_maybe_enter(bot, mc, last_closed: str):
     mc.fetch_funding_rate.return_value = 0.0001
     ev = MagicMock(side_effect=RuntimeError("stop after evaluate"))
     with patch("bot.evaluate_for_strategy", ev), \
-         patch.object(bot, "_daily_loss_blocks_entry", return_value=False):
-        try:
-            bot._maybe_enter(1000.0)
-        except RuntimeError:
-            pass
+         patch.object(bot, "_daily_loss_blocks_entry", return_value=False), \
+         contextlib.suppress(RuntimeError):
+        bot._maybe_enter(1000.0)
     return ev
 
 
@@ -211,11 +210,9 @@ class TestB2SignalBarSeed:
         mc.fetch_ohlcv.return_value = _bars("2026-09-29 10:00:00")
         with patch("bot.evaluate_for_strategy", ok), \
              patch("bot.gate_status", return_value={}), \
-             patch.object(bot, "_daily_loss_blocks_entry", return_value=False):
-            try:
-                bot._maybe_enter(1000.0)
-            except Exception:
-                pass
+             patch.object(bot, "_daily_loss_blocks_entry", return_value=False), \
+             contextlib.suppress(Exception):
+            bot._maybe_enter(1000.0)
         assert bot._last_signal_ts == pd.Timestamp("2026-09-29 10:00:00")
         assert state.get_meta("last_entry_bar_ts") == "2026-09-29T10:00:00"
 
@@ -231,8 +228,8 @@ class TestB2SignalBarSeed:
              patch.object(bot, "_daily_loss_blocks_entry", return_value=False):
             try:
                 bot._maybe_enter(1000.0)
-            except sqlite3.OperationalError:
-                raise AssertionError("persist failure escaped _maybe_enter")
+            except sqlite3.OperationalError as e:
+                raise AssertionError("persist failure escaped _maybe_enter") from e
             except Exception:
                 pass
         ok.assert_called_once()
@@ -371,7 +368,7 @@ class TestAdoptLoopGuardPure:
 
     def test_fresh(self):
         from bot_internals import adopt_loop_guard
-        ok, why, log = adopt_loop_guard(None, "s", 1000.0)
+        ok, _why, log = adopt_loop_guard(None, "s", 1000.0)
         assert ok and log == {"signal_id": "s", "count": 1, "first_ts": 1000.0}
 
     def test_counts_up_to_three_then_refuses(self):
@@ -381,7 +378,7 @@ class TestAdoptLoopGuardPure:
             ok, _why, log = adopt_loop_guard(raw, "s", 1000.0 + n)
             assert ok and log["count"] == n
             raw = json.dumps(log)
-        ok, why, _ = adopt_loop_guard(raw, "s", 1000.0 + 60)
+        ok, why, _log = adopt_loop_guard(raw, "s", 1000.0 + 60)
         assert not ok and "adopt-loop guard" in why
 
     def test_exactly_at_the_window_edge_still_counts(self):

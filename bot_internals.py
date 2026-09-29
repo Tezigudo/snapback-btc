@@ -8,6 +8,7 @@ the I/O itself.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 
@@ -857,7 +858,7 @@ def adopt_loop_guard(log_raw: str | None, signal_id: str | None, now_s: float,
         prev_count, prev_first = 0, 0.0
     # A clock that went BACKWARDS (negative elapsed) counts as inside the
     # window: fail-closed, the worst case is today's flatten.
-    same = (prev.get("signal_id", None) == key and prev_count > 0
+    same = (prev.get("signal_id") == key and prev_count > 0
             and now_s - prev_first <= window_s)
     if not same:
         return True, f"adopt 1/{max_adopts} in {int(window_s // 60)} min", {
@@ -902,15 +903,13 @@ def signal_bar_seed(persisted_raw: str | None, entry_fill_ts_raw: str | None,
     """
     out: list[pd.Timestamp] = []
     if persisted_raw:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             out.append(_naive_utc(persisted_raw))
-        except (ValueError, TypeError):
-            pass
     if entry_fill_ts_raw and bar_seconds > 0:
         try:
             t = _naive_utc(entry_fill_ts_raw)
             out.append(t.floor(f"{int(bar_seconds)}s")
                        - pd.Timedelta(seconds=int(bar_seconds)))
         except (ValueError, TypeError):
-            pass
+            pass  # unusable fallback; the meta key alone may still seed
     return max(out) if out else None
