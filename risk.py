@@ -43,7 +43,10 @@ class RiskCeilings:
     # Rate-limit defence against runaway loops.
     MAX_ORDERS_PER_MINUTE: int = 6
 
-    # Trip kill-switch after this many losses in a row.
+    # UNENFORCED - informational only. Nothing in the bot reads this value; it
+    # does NOT trip any kill-switch. Decided 2026-09-29 (E1/E2) not to wire it
+    # as a trading breaker: see docs/CONSECUTIVE_LOSS_BREAKER_PLAN.md. Streaks
+    # are only alerted on, in monitor.py (streak_alert_thresholds).
     MAX_CONSECUTIVE_LOSSES: int = 4
 
     # Minimum seconds between trades, prevents rapid-fire on bad signals.

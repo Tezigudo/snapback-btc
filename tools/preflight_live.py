@@ -256,7 +256,7 @@ def main() -> int:
         warn(str(e))
     print(f"  MAX_DAILY_LOSS_PCT: {CEILINGS.MAX_DAILY_LOSS_PCT}%")
     print(f"  MAX_OPEN_POSITIONS: {CEILINGS.MAX_OPEN_POSITIONS}")
-    print(f"  MAX_CONSECUTIVE_LOSSES: {CEILINGS.MAX_CONSECUTIVE_LOSSES}")
+    print(f"  MAX_CONSECUTIVE_LOSSES: {CEILINGS.MAX_CONSECUTIVE_LOSSES} (UNENFORCED, informational only)")
 
     return _summarize(failures, warnings)
 

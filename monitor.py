@@ -6,10 +6,15 @@ Checks (per leg):
   2. ERROR / WARNING / mtf_4h_gate_nan events in last poll window
   3. Equity drop from deploy_start_equity (LIVE legs only)
   4. systemd unit state (active vs failed)
+  5. Losing streak (ALERT-ONLY, never blocks trading): consecutive losing
+     closes read read-only from the leg's fills DB; alerts at the leg's
+     threshold (v1 13 / donchian 9 / sol 7) and again every +3. An estimate
+     from local fills, not exchange truth (see _losing_streak).
 
 State persistence:
   data/monitor_state.json — last seen log offsets per leg, last alert ts per
-  kind, and the last equity band (ok/warn/alert) per leg.
+  kind, the last equity band (ok/warn/alert) per leg, and the last alerted
+  losing-streak level per leg (streak_alerted; a win re-arms it).
   Prevents duplicate alerts every 5 min for the same condition. Event-style
   checks are rate-limited by cooldown; the equity check fires only when its
   band changes (see _check_equity).
@@ -71,6 +76,12 @@ DEFAULTS: dict[str, Any] = {
     # See the ROLLOVER GRACE section of _equity_from_db. Must comfortably clear
     # the slowest leg's poll interval (60s for donchian/sol_supertrend).
     "equity_anchor_grace_min":    10,
+    # ALERT-ONLY losing-streak monitor (docs/CONSECUTIVE_LOSS_BREAKER_PLAN.md,
+    # decision E3). Per-leg count of consecutive losing closed trades at which
+    # to alert once. Each is the leg's longest backtest streak + 1, i.e. "worse
+    # than anything in 6 years of history". Never blocks entries or changes
+    # risk; a leg missing from this map is not monitored.
+    "streak_alert_thresholds":    {"v1": 13, "donchian": 9, "sol_supertrend": 7},
 }
 
 LEGS: list[dict[str, str]] = [
@@ -141,7 +152,12 @@ def _load_config() -> dict[str, Any]:
     if yaml is not None and CONFIG_PATH.exists():
         try:
             user_cfg = yaml.safe_load(CONFIG_PATH.read_text()) or {}
+            # streak_alert_thresholds merges PER LEG so overriding one leg
+            # does not silently un-monitor the others.
+            thr = dict(cfg["streak_alert_thresholds"])
+            thr.update(user_cfg.get("streak_alert_thresholds") or {})
             cfg.update(user_cfg)
+            cfg["streak_alert_thresholds"] = thr
         except Exception as e:
             log.warning("monitor: monitor.yaml unreadable, using defaults: %s", e)
     return cfg
@@ -432,6 +448,105 @@ def _equity_from_db(
         return None, None
 
 
+def _losing_streak(db_path: Path) -> int | None:
+    """Current run of consecutive losing closed trades, or None on read failure.
+
+    Recomputed from scratch on every call (no incremental counter), so it is
+    idempotent across re-runs and restarts.
+
+    ESTIMATE, not exchange truth: local fills, gross PnL, strategy exits only.
+    Restart/HALT/kill closes and pre-23-Aug NULL-pnl closes are invisible, so
+    the count can run late or early. See docs/CONSECUTIVE_LOSS_BREAKER_PLAN.md.
+
+    Source: `fills` rows with side='close', in id order. Those are written only
+    for strategy exits (bracket_exit, time_stop, breakeven_exit, channel/flip
+    exits). Infrastructure closes (boot_flatten, HALT, kill) write NO fills row
+    — they are events only — so they are excluded by construction.
+
+    Classification by `pnl_usd` (gross; see bot._exit_pnl_usd):
+      < 0   loss      -> extends the streak
+      > 0   win       -> resets it to 0
+      == 0 or NULL    -> breakeven / unknown: NEUTRAL, neither extends nor
+                         resets. A trade whose outcome we cannot establish
+                         must not manufacture or erase a streak.
+    """
+    try:
+        import sqlite3
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0) as conn:
+            rows = conn.execute(
+                "SELECT pnl_usd FROM fills WHERE side='close' ORDER BY id").fetchall()
+    except Exception as e:
+        log.warning("monitor: streak read failed for %s: %s", db_path, e)
+        return None
+    streak = 0
+    for (pnl,) in rows:
+        try:
+            v = float(pnl)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(v) or v == 0:
+            continue
+        streak = streak + 1 if v < 0 else 0
+    return streak
+
+
+def _check_streak(name: str, db_path: Path, cfg: dict[str, Any],
+                  state: dict[str, Any]) -> None:
+    """ALERT-ONLY. Alert when a leg's losing streak reaches its threshold, then
+    once more at each +3 beyond it (threshold+3, +6, ...). A win re-arms fully.
+
+    Touches nothing but monitor state and the alert path: no HALT file, no
+    bot state write, no risk change.
+
+    The latch `state["streak_alerted"][leg]` is the LAST ALERTED LEVEL (int),
+    committed only after a successful send so an SMTP failure retries next
+    tick. If the streak jumps past several levels between ticks, one alert is
+    sent and the latch takes the highest level reached. A legacy bool latch
+    (True) is migrated to the threshold level.
+
+    The count is an ESTIMATE from local fills (see _losing_streak), so it can
+    run late or early versus the exchange.
+    """
+    threshold = (cfg.get("streak_alert_thresholds") or {}).get(name)
+    if not threshold:
+        return
+    threshold = int(threshold)
+    streak = _losing_streak(db_path)
+    if streak is None:
+        return
+    latched = state.setdefault("streak_alerted", {})
+    if streak < threshold:
+        latched.pop(name, None)   # streak broke (or never reached it): re-arm
+        return
+    last = latched.get(name)
+    if isinstance(last, bool):    # legacy bool latch
+        last = threshold if last else None
+    if last is not None and not isinstance(last, int):
+        last = None
+    if last is not None and last > streak:
+        last = None               # stale latch from a streak that has since reset
+    level = threshold + 3 * ((streak - threshold) // 3)
+    if last is not None:
+        latched[name] = last      # persist migration
+        if level <= last:
+            return
+    sent = _emit(
+        f"LOSING STREAK {streak}: {name}",
+        f"{name} has an estimated {streak} consecutive losing closed trades "
+        f"(alert level {level}; threshold {threshold} = longest backtest streak + 1).\n"
+        f"Estimated from local fills (gross PnL, strategy exits only; "
+        f"restart/HALT/kill closes and pre-23-Aug NULL-pnl closes are invisible), "
+        f"so it can run late or early.\n"
+        f"This is worse than anything in the backtest history. It does NOT "
+        f"block trading; re-run the live-vs-backtest parity review.\n"
+        f"See docs/CONSECUTIVE_LOSS_BREAKER_PLAN.md. Next alert at {level + 3}, "
+        f"or after a win resets the streak.",
+        state, kind=f"streak:{name}", cooldown_min=0, force=True,
+    )
+    if sent:
+        latched[name] = level
+
+
 def _check_leg(leg: dict[str, str], cfg: dict[str, Any], state: dict[str, Any]) -> None:
     name = leg["name"]
     hb_path = DATA / leg["heartbeat"]
@@ -509,6 +624,10 @@ def _check_leg(leg: dict[str, str], cfg: dict[str, Any], state: dict[str, Any]) 
     # 4. equity check (LIVE only — for DRY legs, balance changes are paper)
     if leg.get("live") and db_path.exists():
         _check_equity(name, db_path, cfg, state)
+        try:
+            _check_streak(name, db_path, cfg, state)
+        except Exception:
+            log.error("monitor: streak check crashed for %s:\n%s", name, traceback.format_exc())
 
 
 def _equity_band(drop_pct: float, cfg: dict[str, Any]) -> str:
