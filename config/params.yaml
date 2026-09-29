@@ -205,16 +205,22 @@ reprotect:
 # tools/leg_safe_restart.py already covers the operator case by refusing unless
 # flat. What is left is precisely the restarts nobody chose.
 #
-# ROLLOUT PHASE A. Logs "boot-resume OBSERVE: WOULD ADOPT/FLATTEN ..." and then
-# flattens anyway. Behaviour is identical to having no boot_resume block at all.
+# OBSERVE MODE (observe_only: true, what ships). At boot it runs only the
+# OFFLINE precheck (config + the stashed active_bracket), logs
+# "boot-resume OBSERVE: PRECHECK OK|WOULD FLATTEN ...", makes NO exchange call,
+# and flattens exactly as with no boot_resume block at all.
 #
-# The Phase 1 trick does NOT work here. reprotect could be proven by silence
-# ("zero WOULD re-place lines across a full position") because a healthy
-# position ticks constantly. A restart that happens to hold a position is RARE,
-# so an empty log means "never came up", not "works". Drive this with DELIBERATE
-# restarts on a dry-run leg and read every verdict.
-# Gate to flip observe_only: >=5 deliberate restarts while holding a position,
-# every verdict inspected, zero disagreements.
+# EVIDENCE GATE (docs/BOOT_RESUME_PHASE_B_PLAN.md §2) is the READ-ONLY probe,
+# NOT restarts — a deliberate restart holding a position closes a live trade:
+#   sudo ./.venv/bin/python tools/boot_resume_probe.py v1
+# >=5 ADOPT verdicts across >=3 distinct v1 positions, each checked against the
+# Binance app, zero disagreements (a "C5 mismatch" WARNING counts as one).
+#
+# HARD ARMING INTERLOCK. Setting observe_only: false here is NOT enough and is
+# refused: bot.py's ARMING_PREREQS_BUILT constant must also be True, which
+# needs a reviewed code change that builds C5/C6/C9/C11 and the other blockers
+# in the plan's Status. Until then, false logs an ERROR, sends an alert, and
+# the position is still FLATTENED.
 #
 # It is gated on reprotect being ARMED (enabled AND not observe_only), and that
 # is load-bearing: without a re-placer nothing would ever restore a missing
