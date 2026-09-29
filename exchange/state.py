@@ -159,7 +159,7 @@ def init_db() -> None:
 
 def get_meta(key: str, default: str | None = None) -> str | None:
     with _conn() as c:
-        row = c.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        row = c.execute(META_GET_SQL, (key,)).fetchone()
     return row[0] if row else default
 
 
@@ -392,6 +392,20 @@ def principal_ledger_non_usdt_count() -> int:
     return int(row[0]) if row else 0
 
 
+# Shared with tools/boot_resume_probe.py, which runs these same reads against a
+# `mode=ro` connection. One string per question, so the probe cannot drift from
+# what boot() actually asks.
+META_GET_SQL = "SELECT value FROM meta WHERE key=?"
+LATEST_ENTRY_ROOT_SQL = (
+    "SELECT client_order_id_root FROM fills "
+    "WHERE reason='entry' "
+    "ORDER BY id DESC LIMIT 1"
+)
+LATEST_ENTRY_TS_SQL = (
+    "SELECT ts FROM fills WHERE reason='entry' ORDER BY id DESC LIMIT 1"
+)
+
+
 def latest_entry_coid_root() -> str | None:
     """The most recent entry fill's client_order_id_root, or None.
 
@@ -405,11 +419,7 @@ def latest_entry_coid_root() -> str | None:
     to an older, already-closed position's root.
     """
     with _conn() as c:
-        row = c.execute(
-            "SELECT client_order_id_root FROM fills "
-            "WHERE reason='entry' "
-            "ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        row = c.execute(LATEST_ENTRY_ROOT_SQL).fetchone()
     return row[0] if row else None
 
 
@@ -420,7 +430,5 @@ def latest_entry_fill_ts() -> str | None:
     `last_entry_bar_ts` meta key is absent. Read-only.
     """
     with _conn() as c:
-        row = c.execute(
-            "SELECT ts FROM fills WHERE reason='entry' ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        row = c.execute(LATEST_ENTRY_TS_SQL).fetchone()
     return row[0] if row else None
