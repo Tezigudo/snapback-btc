@@ -266,7 +266,7 @@ Design it to minimise lock-out, and put it where it has to live.
 
 Nothing is built yet; implementation needs a separate go and goes through review + tests before any droplet change.
 
-## Implementation deviation (E3), 2026-09-29 - needs God's sign-off
+## Implementation deviation (E3), 2026-09-29 - SIGNED OFF by God 2026-09-29 (local fills accepted for this advisory alert)
 
 The alert-only monitor (`monitor.py`, `_check_streak`) does NOT use exchange
 realized PnL as section 3 specifies. Its input is the leg's local `fills`
