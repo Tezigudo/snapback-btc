@@ -70,7 +70,9 @@ class TestDefaults:
 
     def test_code_defaults_are_off(self):
         """Absent block, and a block with no observe_only key, never adopt."""
-        for params in (_ABSENT, _NO_OBSERVE_KEY, _DISABLED):
+        for params in (_ABSENT, _NO_OBSERVE_KEY, _DISABLED,
+                   {**_MINIMAL_PARAMS,
+                    "boot_resume": {"enabled": True, "observe_only": False}}):
             bot, _ = _make_bot(params=dict(params))
             with patch.object(bot, "_can_adopt", return_value=(True, "forced yes")):
                 assert bot._boot_resume_verdict(_open())[0] is False
@@ -111,19 +113,96 @@ def test_flag_off_flattens_an_adoptable_position_exactly_as_before(params):
     assert bot._adopt_signal_ts_seed is None
 
 
-def test_observe_only_adds_nothing_but_the_two_book_reads():
-    """Same boot with the block absent vs observe_only: the ONLY extra client
-    calls are the gate's two read-only order-book fetches."""
+def _names(mc) -> list[str]:
+    return [c[0] for c in mc.mock_calls]
+
+
+def test_observe_only_makes_zero_extra_exchange_calls():
+    """Same boot with the block absent vs observe_only: the client call
+    sequence is IDENTICAL — observe mode reads no order book at all."""
     _seed_adoptable()
     _b, mc_absent, _ = _boot(_ABSENT)
     _b, mc_observe, _ = _boot(_OBSERVE)
+    assert _names(mc_observe) == _names(mc_absent)
+    for n in ("ex.fetch_open_orders", "fetch_algo_orders"):
+        assert n not in _names(mc_observe)
 
-    def names(mc):
-        return [c[0] for c in mc.mock_calls]
 
-    extra = {"ex.fetch_open_orders", "fetch_algo_orders"}
-    assert [n for n in names(mc_observe) if n not in extra] == names(mc_absent)
-    assert extra <= set(names(mc_observe))
+def test_observe_verdict_says_the_book_check_was_skipped(caplog):
+    _seed_adoptable()
+    with caplog.at_level("WARNING"):
+        _boot(_OBSERVE)
+    lines = [r.getMessage() for r in caplog.records if "boot-resume OBSERVE" in r.getMessage()]
+    assert len(lines) == 1
+    assert "order-book check SKIPPED in observe mode" in lines[0]
+
+
+@pytest.mark.parametrize("bad", [["enabled"], "true", 1, True])
+def test_malformed_boot_resume_config_still_flattens(bad):
+    """A non-mapping boot_resume must not abort boot() before the flatten."""
+    _seed_adoptable()
+    _bot, mc, meta_keys = _boot({**_MINIMAL_PARAMS, "boot_resume": bad})
+    mc.close_position.assert_called_once_with(
+        "BTC/USDT:USDT", client_order_id_root="sig-1", close_leg="bf")
+    assert "boot_adopt_log" not in meta_keys
+
+
+@pytest.mark.parametrize("br", [{"enabled": "yes", "observe_only": False},
+                                {"enabled": True, "observe_only": "false"},
+                                {"enabled": True, "observe_only": 0}])
+def test_non_boolean_flags_never_arm(br):
+    _seed_adoptable()
+    with patch("bot.ARMING_PREREQS_BUILT", True):
+        _bot, mc, _ = _boot({**_MINIMAL_PARAMS, "boot_resume": br})
+    mc.close_position.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# 2b. HARD ARMING INTERLOCK — one config line cannot arm adoption
+# ---------------------------------------------------------------------------
+
+_ARMED_CONFIG = {**_MINIMAL_PARAMS, "boot_resume": {"enabled": True, "observe_only": False}}
+
+
+def test_interlock_constant_ships_false():
+    import bot
+    assert bot.ARMING_PREREQS_BUILT is False
+
+
+def test_interlock_forces_flatten_when_config_says_armed(caplog):
+    """observe_only: false + an ADOPTABLE position + prereqs NOT built ⇒
+    ERROR log, alert, and today's flatten — with zero extra exchange calls."""
+    _seed_adoptable()
+    _b, mc_absent, _ = _boot(_ABSENT)
+
+    bot, mc = _make_bot(params=dict(_ARMED_CONFIG))
+    mc.fetch_equity_usdt.return_value = 1000.0
+    mc.fetch_position.return_value = _open()
+    mc.close_position.return_value = {}
+    alert = MagicMock()
+    with caplog.at_level("WARNING"), _boot_patches(), _principal_patches(), \
+         patch("bot.send_alert", alert):
+        bot.boot()
+
+    mc.close_position.assert_called_once_with(
+        "BTC/USDT:USDT", client_order_id_root="sig-1", close_leg="bf")
+    assert "boot_adopt" not in _outbox_kinds()
+    assert [c for c in alert.call_args_list
+            if c.args and "arming interlock" in c.args[0]]
+    assert any(r.levelname == "ERROR" and "ARMING INTERLOCK" in r.getMessage()
+               for r in caplog.records)
+    assert _names(mc) == _names(mc_absent)
+    assert state.get_meta("boot_adopt_log") is None
+    assert bot._last_position_side == "unknown"
+
+
+def test_the_same_config_adopts_only_once_the_constant_flips():
+    """Proves the interlock is the ONLY thing stopping the adopt above."""
+    _seed_adoptable()
+    with patch("bot.ARMING_PREREQS_BUILT", True):
+        _bot, mc, _ = _boot(_ARMED_CONFIG)
+    mc.close_position.assert_not_called()
+    assert "boot_adopt" in _outbox_kinds()
 
 
 def test_dry_run_never_consults_the_gate():

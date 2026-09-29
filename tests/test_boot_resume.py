@@ -19,7 +19,18 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from exchange.binance_client import Position
+
+
+@pytest.fixture(autouse=True)
+def _lift_arming_interlock():
+    """This module exercises the ARMED code path, which production cannot
+    reach while bot.ARMING_PREREQS_BUILT is False (see
+    tests/test_boot_resume_flag_off.py for the interlock itself)."""
+    with patch("bot.ARMING_PREREQS_BUILT", True):
+        yield
 
 
 _MINIMAL_PARAMS: dict = {

@@ -165,6 +165,19 @@ INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
 for _name, _profile in INSTANCE_PROFILES.items():
     _profile["halt"] = leg_halt_path(_name)
 
+# Boot-resume HARD ARMING INTERLOCK. Adoption can only be armed when BOTH this
+# constant is True AND a leg's config sets `boot_resume.observe_only: false`,
+# so arming can never be a one-line config edit. Flip it only in a reviewed code
+# change that ALSO builds the arming prerequisites from
+# docs/BOOT_RESUME_PHASE_B_PLAN.md (Status → "Blockers before arming"):
+#   C5  require active_bracket.signal_id == latest entry coid root
+#   C6  re-read the position immediately before committing to adopt
+#   C9  bounded retry of an unreadable order book at boot
+#   C11 send_alert on every adopt ("Position RESUMED after restart")
+# plus the other blockers listed there. While False, `observe_only: false` is
+# logged at ERROR, alerted, and treated as observe_only (the position flattens).
+ARMING_PREREQS_BUILT = False
+
 # Console logs display in Bangkok time (GMT+7) for human readability.
 # JSONL `ts` field and state.db remain UTC for alignment with Binance candles.
 LOCAL_TZ = ZoneInfo("Asia/Bangkok")
@@ -1033,8 +1046,8 @@ class Bot:
         # `qty` is recorded for _can_adopt, NOT for reprotect — reprotect always
         # re-places against the live pos.qty, deliberately. Adoption is the only
         # caller that needs to notice a partially-closed position, and without
-        # this field its size check has nothing to compare against. Records
-        # written before this field existed simply skip that check.
+        # this field its size check has nothing to compare against. A record
+        # WITHOUT it (written before Phase A) is refused and flattened (D2).
         state.set_meta("active_bracket", json.dumps({
             "signal_id": signal_id, "side": decision.side,
             "entry_price": float(decision.price),
@@ -1152,36 +1165,54 @@ class Bot:
             seed.isoformat() if seed is not None else "—")
 
     def _boot_resume_verdict(self, pos) -> tuple[bool, str]:
-        """Config + rollout wrapper around `_can_adopt`. Never raises.
+        """Config + rollout wrapper around `_can_adopt`. NEVER raises.
 
-        Split out from boot() so the ROLLOUT can be tested without standing up a
-        boot, and split from `_can_adopt` so the gate logic stays pure.
+        Returns (adopt, reason). Only (True, ...) makes boot() resume; anything
+        else — disabled, malformed config, observe mode, the arming interlock,
+        a refusing or raising gate — falls through to today's flatten.
 
-        PHASE A (`observe_only: true`, what ships): evaluate, log the verdict and
-        its reason, then return False so boot() flattens exactly as it always
-        has. Zero behaviour change, and the log line is the evidence for arming.
+        OBSERVE mode (`observe_only: true`, what ships) must be behaviour-
+        neutral, so it makes NO exchange call at all: it runs only the offline
+        precheck (config + the stashed active_bracket in the local DB), logs
+        that result, says the order-book check was SKIPPED, and returns False.
+        The full verdict against the live books is what
+        `tools/boot_resume_probe.py` produces, read-only, without a restart —
+        that probe is the counted arming evidence (Phase B plan §2), not
+        restarts.
 
-        Silence proves nothing here — unlike reprotect's Phase 1, where a clean
-        position produced a checkable "zero WOULD re-place lines". A restart that
-        happens to hold a position is rare, so an empty log means "it never came
-        up", not "it works". The gate must be driven by DELIBERATE restarts.
+        ARMED requires BOTH `observe_only: false` in config AND the code
+        constant ARMING_PREREQS_BUILT. Until the latter flips, a config that
+        asks for armed mode is logged at ERROR, alerted, and treated as observe.
         """
-        br = (self.params.get("boot_resume") or {})
-        if not br.get("enabled", False):
-            return False, "boot_resume disabled"
+        try:
+            br = self.params.get("boot_resume")
+            if br is None:
+                return False, "boot_resume disabled"
+            if not isinstance(br, dict):
+                # Malformed config must never abort boot() before the flatten.
+                self.log.warning("boot-resume: config is %s, not a mapping — "
+                                 "treating as disabled", type(br).__name__)
+                return False, "boot_resume config malformed — treated as disabled"
+            # Strict booleans, fail-closed: `enabled: "yes"` does not enable and
+            # `observe_only: "false"` does not arm.
+            if br.get("enabled", False) is not True:
+                return False, "boot_resume disabled"
+            wants_armed = br.get("observe_only", True) is False
+            if wants_armed and not ARMING_PREREQS_BUILT:
+                self._alert_arming_interlock(pos)
+            if not (wants_armed and ARMING_PREREQS_BUILT):
+                return self._observe_verdict(pos)
+        except Exception:
+            self.log.exception("boot-resume: rollout wrapper raised — flattening")
+            return False, "boot_resume evaluation raised"
+
+        # ---- ARMED from here: config asks for it AND the prereqs are built. ----
         try:
             adopt, why = self._can_adopt(pos)
         except Exception:
             # A gate that raises must not take the position with it.
             self.log.exception("boot-resume: gate raised — flattening")
             return False, "gate raised"
-        if br.get("observe_only", True):
-            self.log.warning(
-                "boot-resume OBSERVE: WOULD %s %s %.4f @ %.2f — %s",
-                "ADOPT" if adopt else "FLATTEN",
-                pos.side, pos.qty, pos.entry_price, why)
-            return False, why
-        # ---- ARMED from here. Nothing below runs while observe_only. ----
         if adopt:
             adopt, why = self._prepare_adopt(pos, why)
         self.log.warning(
@@ -1189,6 +1220,44 @@ class Bot:
             "ADOPT" if adopt else "FLATTEN",
             pos.side, pos.qty, pos.entry_price, why)
         return adopt, why
+
+    def _observe_verdict(self, pos) -> tuple[bool, str]:
+        """Observe mode: offline precheck only, ZERO exchange calls, always False."""
+        try:
+            qty_step = float(getattr(self.constraints, "qty_step", 0.0) or 0.0)
+            why, _ab = adopt_precheck(self.params, pos,
+                                      state.get_meta("active_bracket"), qty_step)
+        except Exception:
+            self.log.exception("boot-resume: gate raised — flattening")
+            return False, "gate raised"
+        if why is not None:
+            self.log.warning("boot-resume OBSERVE: WOULD FLATTEN %s %.4f @ %.2f — %s",
+                             pos.side, pos.qty, pos.entry_price, why)
+            return False, why
+        why = ("precheck passed; order-book check SKIPPED in observe mode "
+               "(no exchange calls) — run tools/boot_resume_probe.py for the "
+               "full verdict")
+        self.log.warning("boot-resume OBSERVE: PRECHECK OK %s %.4f @ %.2f — %s",
+                         pos.side, pos.qty, pos.entry_price, why)
+        return False, why
+
+    def _alert_arming_interlock(self, pos) -> None:
+        """Config says `observe_only: false` but the code is not ready to arm."""
+        msg = ("boot_resume.observe_only is false, but ARMING_PREREQS_BUILT is "
+               "False in bot.py (C5 root match, C6 re-read, C9 book retry, C11 "
+               "resume alert are not built). Arming REFUSED — treating as "
+               "observe_only, so this position is FLATTENED as before.")
+        self.log.error("boot-resume: ARMING INTERLOCK — %s", msg)
+        try:
+            send_alert(
+                "boot-resume: arming interlock tripped",
+                f"The {self.instance} leg booted holding a {pos.side.upper()} "
+                f"{float(pos.qty):.4f} {self.base_asset} position @ "
+                f"{float(pos.entry_price):,.2f}.\n{msg}\n"
+                f"Set boot_resume.observe_only back to true in the config.",
+            )
+        except Exception:
+            self.log.exception("boot-resume: interlock alert failed")
 
     def _prepare_adopt(self, pos, why: str) -> tuple[bool, str]:
         """Everything the adopt branch needs, computed BEFORE committing.
@@ -1797,8 +1866,8 @@ class Bot:
         entry that is already closed -- attributing a stale entry price to the
         current position and writing a wrong number into the trade record.
 
-        That is reachable: a position adopted at boot (stale_position_at_boot)
-        or opened manually has no entry row of its own, so the newest fill is
+        That is reachable: a position opened manually, or one whose own entry
+        was never recorded, has no entry row of its own, so the newest fill is
         the PREVIOUS trade's close. Returning None there is correct -- the
         caller records the exit without a PnL rather than with a false one.
         """

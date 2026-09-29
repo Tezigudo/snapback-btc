@@ -13,6 +13,7 @@ import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 from exchange import state
 from tests.test_boot_resume import (
@@ -24,6 +25,15 @@ from tests.test_boot_resume import (
     _open,
     _principal_patches,
 )
+
+@pytest.fixture(autouse=True)
+def _lift_arming_interlock():
+    """This module exercises the ARMED code path, which production cannot
+    reach while bot.ARMING_PREREQS_BUILT is False (see
+    tests/test_boot_resume_flag_off.py for the interlock itself)."""
+    with patch("bot.ARMING_PREREQS_BUILT", True):
+        yield
+
 
 _ARMED_PARAMS = {**_MINIMAL_PARAMS,
                  "boot_resume": {"enabled": True, "observe_only": False}}
