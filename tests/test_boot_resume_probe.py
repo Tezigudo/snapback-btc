@@ -336,6 +336,14 @@ class TestProbeGuardsAndOutput:
         assert "probed at 20" in out and " UTC" in out
         assert "position_age" in out and "(from latest entry fill)" in out
 
+    def test_headline_is_labelled_hypothetical_and_restart_line_follows(self, isolated_state_db):
+        _seed()
+        with open_state_ro(isolated_state_db) as conn:
+            res = evaluate(dict(_MINIMAL_PARAMS), _ro_client(_inner_exchange()), conn)
+        lines = probe.render("v1", res).splitlines()
+        assert lines[1].startswith("GATE VERDICT (if armed): ADOPT")
+        assert lines[2].startswith("a restart right now would:")
+
     def test_c5_mismatch_is_flagged_loudly_on_adopt(self, isolated_state_db):
         _seed(bracket={**_ARMED_BRACKET, "signal_id": "sig-STALE"})
         with open_state_ro(isolated_state_db) as conn:

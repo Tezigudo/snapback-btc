@@ -22,7 +22,9 @@ READ-ONLY, ENFORCED STRUCTURALLY — not by care:
     It prints to stdout only — otherwise its lines would land in the leg's
     bot.jsonl and be mistaken for organic `boot-resume OBSERVE` evidence.
 
-Verdicts:
+Verdicts (the headline prints as `GATE VERDICT (if armed)`: the hypothetical
+armed-gate result — the counted arming evidence — NOT what a restart does; the
+`a restart right now would:` line directly under it says that):
   ADOPT    gate says adopt AND the armed-path checks (dedup-bar seed, D5 guard)
            would pass.
   REFUSE   gate or an armed-path check refuses → a restart flattens.
@@ -299,28 +301,31 @@ def _evaluate(params: dict, client: Any, conn: sqlite3.Connection,
     return ProbeResult("ADOPT", gate[1], gate, inputs)
 
 
+def _restart_now(res: ProbeResult, br: dict) -> str:
+    """What a restart would do with the leg's CURRENT config (not the gate verdict)."""
+    if not br.get("enabled"):
+        return "FLATTEN (boot_resume disabled)"
+    if not br.get("observe_only", True) and not res.inputs.get("arming_prereqs_built"):
+        return ("FLATTEN (ARMING INTERLOCK: observe_only is false but "
+                "bot.ARMING_PREREQS_BUILT is False — ERROR + alert, then flatten)")
+    if br.get("observe_only", True):
+        return "FLATTEN (observe_only: verdict is logged, then the position is closed)"
+    return "ADOPT" if res.verdict == "ADOPT" else "FLATTEN"
+
+
 def render(instance: str, res: ProbeResult) -> str:
     lines = [f"boot-resume probe — instance={instance} (read-only) — probed at "
              f"{res.inputs.get('probed_at_utc', '?')} UTC",
-             f"VERDICT: {res.verdict} — {res.reason}"]
+             f"GATE VERDICT (if armed): {res.verdict} — {res.reason}"]
+    br = res.inputs.get("boot_resume") or {}
+    if res.verdict != "FLAT":
+        lines.append(f"a restart right now would: {_restart_now(res, br)}")
     if (res.verdict == "ADOPT"
             and res.inputs.get("active_bracket_sid_matches_latest_root") is False):
         lines.append("WARNING: C5 mismatch — active_bracket.signal_id != latest entry "
                      "root — treat this probe as a DISAGREEMENT (count resets)")
     if res.gate is not None:
         lines.append(f"gate: {'ADOPT' if res.gate[0] else 'REFUSE'} — {res.gate[1]}")
-    br = res.inputs.get("boot_resume") or {}
-    if res.verdict != "FLAT":
-        if not br.get("enabled"):
-            now = "FLATTEN (boot_resume disabled)"
-        elif not br.get("observe_only", True) and not res.inputs.get("arming_prereqs_built"):
-            now = ("FLATTEN (ARMING INTERLOCK: observe_only is false but "
-                   "bot.ARMING_PREREQS_BUILT is False — ERROR + alert, then flatten)")
-        elif br.get("observe_only", True):
-            now = "FLATTEN (observe_only: verdict is logged, then the position is closed)"
-        else:
-            now = "ADOPT" if res.verdict == "ADOPT" else "FLATTEN"
-        lines.append(f"a restart right now would: {now}")
     lines.append("inputs:")
     for k, v in res.inputs.items():
         lines.append(f"  {k}: {json.dumps(v, default=str)}")

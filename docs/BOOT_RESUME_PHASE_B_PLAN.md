@@ -12,7 +12,7 @@ supersedes that plan's §5 gate wording.
 |---|---|---|
 | Step 0: Phase A onto `droplet` | Yes. The cherry-pick was clean; `qty` survives breakeven's read-modify-write of `active_bracket`. | bot.py |
 | C1: pure gate | Yes. `bot_internals.adopt_precheck` + `can_adopt`; `Bot._can_adopt` is now the I/O wrapper. Reason strings are unchanged. | bot_internals.py, bot.py |
-| C2: probe | Yes. `tools/boot_resume_probe.py <v1\|donchian\|sol_supertrend>`. It is read-only by construction (whitelist proxies around ccxt *and* the client, `mode=ro` + `query_only` DB). It prints `VERDICT` ADOPT/REFUSE/FLATTEN/FLAT, plus a `gate:` line that is byte-comparable with the OBSERVE reason. | tools/ |
+| C2: probe | Yes. `tools/boot_resume_probe.py <v1\|donchian\|sol_supertrend>`. It is read-only by construction (whitelist proxies around ccxt *and* the client, `mode=ro` + `query_only` DB). It prints `GATE VERDICT (if armed)` ADOPT/REFUSE/FLATTEN/FLAT (the hypothetical armed-gate result, which is what gets counted; NOT what a restart does), directly followed by `a restart right now would: ...` (what the current config actually does), plus a `gate:` line that is byte-comparable with the OBSERVE reason. | tools/ |
 | C3 / B1: tracking seed | Yes. `_seed_adopted_tracking` + the C12 line `adopt: tracking seeded ...`. | bot.py |
 | C4 / B2: dedup bar | Yes. `last_entry_bar_ts` is written whenever `_last_signal_ts` advances, and read on the **adopt path only**. The fallback is `floor(entry fill, bar) − 1 bar`, deliberately. A plain floor would suppress the next bar. | bot.py, bot_internals.py |
 | C7 / D2: missing qty | Yes. Refuse → flatten. | bot_internals.py |
