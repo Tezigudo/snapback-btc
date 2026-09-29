@@ -102,3 +102,50 @@ def test_default_thresholds_and_no_side_effects(tmp_path):
         monitor._check_streak("v1", db, CFG, {"alerts": {}})
     assert db.read_bytes() == before                       # DB untouched
     assert not list(tmp_path.glob("HALT*"))                 # no HALT files
+
+
+def test_realert_at_plus_3_levels(tmp_path):
+    state = {"alerts": {}}
+    with patch.object(monitor, "send_alert", return_value=True) as send:
+        for n, expected in [(7, 1), (9, 1), (10, 2), (12, 2), (13, 3), (20, 4), (21, 4)]:
+            monitor._check_streak("sol_supertrend",
+                                  _db(tmp_path, [-1] * n, f"l{n}.db"), CFG, state)
+            assert send.call_count == expected, n
+    assert state["streak_alerted"]["sol_supertrend"] == 19   # 7+3*4
+
+
+def test_bool_latch_migrates(tmp_path):
+    state = {"alerts": {}, "streak_alerted": {"sol_supertrend": True}}
+    with patch.object(monitor, "send_alert", return_value=True) as send:
+        monitor._check_streak("sol_supertrend", _db(tmp_path, [-1] * 9), CFG, state)
+        assert send.call_count == 0
+        assert state["streak_alerted"]["sol_supertrend"] == 7
+        monitor._check_streak("sol_supertrend", _db(tmp_path, [-1] * 10, "b.db"), CFG, state)
+        assert send.call_count == 1
+
+
+def test_yaml_thresholds_merge_per_leg(tmp_path):
+    cfgfile = tmp_path / "monitor.yaml"
+    cfgfile.write_text("streak_alert_thresholds:\n  v1: 20\n")
+    with patch.object(monitor, "CONFIG_PATH", cfgfile):
+        cfg = monitor._load_config()
+    assert cfg["streak_alert_thresholds"] == {"v1": 20, "donchian": 9, "sol_supertrend": 7}
+
+
+def test_check_leg_end_to_end_and_crash_isolated(tmp_path):
+    (tmp_path / "logs").mkdir()
+    _db(tmp_path, [-1] * 7, "state_x.db")
+    (tmp_path / "hb").write_text("x")
+    leg = {"name": "sol_supertrend", "heartbeat": "hb", "log": "x.jsonl",
+           "state": "state_x.db", "systemd": "u", "live": True}
+    cfg = dict(monitor.DEFAULTS)
+    state = {"alerts": {}, "log_offsets": {}}
+    with patch.object(monitor, "DATA", tmp_path), \
+         patch.object(monitor, "LOGS", tmp_path / "logs"), \
+         patch.object(monitor, "_systemd_active", return_value=True), \
+         patch.object(monitor, "send_alert", return_value=True) as send:
+        monitor._check_leg(leg, cfg, state)
+        subjects = [c.args[0] for c in send.call_args_list]
+        assert any(s.startswith("LOSING STREAK 7") for s in subjects)
+        with patch.object(monitor, "_check_streak", side_effect=RuntimeError("boom")):
+            monitor._check_leg(leg, cfg, state)   # must not raise
