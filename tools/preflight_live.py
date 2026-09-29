@@ -18,19 +18,19 @@ USAGE:
 from __future__ import annotations
 
 import argparse
-import pathlib
 import sys
 
-# Put the repo root FIRST on sys.path. Without this, `python tools/preflight_live.py`
-# resolves `bot` / `exchange` / `risk` via the venv's editable-install .pth
-# entry, which points at a DIFFERENT checkout (snapback-droplet-wt) — so the
-# pre-flight would validate that checkout's risk ceilings and constraints, not
-# this working tree's. Every other tool in tools/ already does this.
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+# Put the repo root FIRST on sys.path. Without it, `python tools/preflight_live.py`
+# resolves `bot` / `exchange` / `risk` through the venv's editable-install .pth
+# entry, which can point at a DIFFERENT checkout — so the pre-flight would
+# validate that checkout's risk ceilings and constraints instead of this one's.
+# Every other tool in tools/ already does this; preflight was the odd one out.
+import pathlib as _pathlib  # noqa: E402
+sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent))
 
 from alerts import is_configured as alerts_configured
 from alerts import send_alert
-from bot import compute_qty, load_params
+from bot import INSTANCE_PROFILES, compute_qty, load_params
 from exchange.binance_client import BinanceClient
 from exchange.constraints import (
     DEFAULT_CONSTRAINTS,
@@ -39,7 +39,12 @@ from exchange.constraints import (
     passes_minimums,
     round_qty_down,
 )
-from exchange.env import get_api_credentials, get_env, is_halted
+from exchange.env import (
+    get_api_credentials,
+    get_env,
+    halt_source,
+    load_env_for_instance,
+)
 from risk import (
     CEILINGS,
     RiskBreach,
@@ -74,31 +79,31 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--send-test-email", action="store_true",
                     help="Actually send the SMTP test email (default just checks config).")
-    # Was hardcoded to v1's config, so a new leg could not be verified before
-    # funding it. --instance also loads that leg's .env.<instance>, so the
-    # equity/position readings come from the leg's OWN sub-account — which is
-    # the point: it is how you confirm the leg is not pointed at v1's account.
-    ap.add_argument("--instance", default="v1",
-                    help="Leg to pre-flight (v1 | donchian | cnh_short | "
-                         "sol_supertrend). Loads its config AND its .env.<instance>.")
-    ap.add_argument("--config", help="Explicit params YAML; overrides --instance.")
+    ap.add_argument("--instance", default="v1", choices=list(INSTANCE_PROFILES),
+                    help="Which leg to validate: loads its .env.<instance> overlay + "
+                         "config and checks its per-leg data/HALT_<instance>. Default v1.")
     args = ap.parse_args()
-
-    if args.instance != "v1":
-        from exchange.env import load_env_for_instance
-        loaded = load_env_for_instance(args.instance)
-        if loaded is None:
-            fail(f"instance {args.instance!r} has no .env.{args.instance} — it would "
-                 f"pre-flight against v1's account, which tells you nothing. "
-                 f"Create the file first.")
-            return 1
-        ok(f"loaded per-instance env: {loaded.name}")
+    instance = args.instance
 
     failures: list[str] = []
     warnings: list[str] = []
 
     # 1. env + lockfile
     section("Environment")
+    # Overlay this leg's sub-account keys BEFORE any authenticated call, so we
+    # validate the SAME account the leg will trade (not v1's base .env). This is
+    # also fail-loud: a sub-account leg missing its .env.<instance> aborts here.
+    try:
+        instance_env = load_env_for_instance(instance)
+        if instance_env is not None:
+            ok(f"loaded per-instance env overlay: {instance_env.name}")
+        else:
+            ok(f"instance {instance!r} runs on the base .env (no overlay needed)")
+    except Exception as e:
+        fail(f"per-instance env load failed: {e}")
+        failures.append("instance env")
+        return _summarize(failures, warnings)
+
     try:
         env = get_env()
         ok(f"BINANCE_ENV={env}")
@@ -123,11 +128,19 @@ def main() -> int:
         failures.append("creds")
         return _summarize(failures, warnings)
 
-    if is_halted():
-        warn("data/HALT file exists — bot would refuse to enter. Remove before live.")
-        warnings.append("HALT file present")
+    # Per-leg HALT: the leg is halted by the GLOBAL data/HALT (stops every leg)
+    # OR its own data/HALT_<instance> (self-halt). Check the instance's view.
+    halt_by = halt_source(instance)
+    if halt_by == "global":
+        warn("GLOBAL data/HALT exists — stops ALL legs. Bot would flatten + "
+             "refuse to enter. Remove data/HALT before live.")
+        warnings.append("global HALT present")
+    elif halt_by is not None:
+        warn(f"self-halt data/HALT_{instance} exists — this leg would flatten + "
+             f"refuse to enter. Remove data/HALT_{instance} before live.")
+        warnings.append(f"HALT_{instance} present")
     else:
-        ok("No data/HALT file. Bot will run.")
+        ok(f"No data/HALT or data/HALT_{instance}. Bot will run.")
 
     # 2. SMTP
     section("Alerts (SMTP)")
@@ -153,20 +166,14 @@ def main() -> int:
         failures.append("ccxt client")
         return _summarize(failures, warnings)
 
-    if args.config:
-        config_path = args.config
-    else:
-        from bot import INSTANCE_PROFILES
-        config_path = str(INSTANCE_PROFILES[args.instance]["config"])
-    params = load_params(config_path)
+    params = load_params(INSTANCE_PROFILES[instance]["config"])
     symbol = params["symbol"]
-    ok(f"instance={args.instance} config={pathlib.Path(config_path).name} symbol={symbol}")
 
     try:
         m = client.ex.market(symbol)
         constraints = merge_with_live(fallbacks_for_symbol(symbol), m)
         ok(f"market loaded for {symbol}")
-        ok(f"min_qty={constraints.min_qty_base}, "
+        ok(f"min_qty={constraints.min_qty_base} BTC, "
            f"min_notional=${constraints.min_notional_usdt}, "
            f"qty_step={constraints.qty_step}, price_step={constraints.price_step}")
     except Exception as e:
