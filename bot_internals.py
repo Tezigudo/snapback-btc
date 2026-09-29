@@ -8,6 +8,7 @@ the I/O itself.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import pandas as pd
@@ -687,3 +688,121 @@ def bracket_state(
     legs: set[str | None] = {reduce_only_bracket_leg(o) for o in (plain_orders or [])}
     legs |= {algo_bracket_leg(r, coid_prefix) for r in (algo_rows or [])}
     return BracketState(sl="sl" in legs, tp="tp" in legs, place_tp=place_tp)
+
+
+# ---------------------------------------------------------------------------
+# Boot-resume gate (Phase B, C1). PURE: the caller does every fetch.
+#
+# Split out of Bot._can_adopt so that tools/boot_resume_probe.py and boot() run
+# the SAME code. A probe that re-implemented the gate would prove nothing about
+# the gate. The reason strings are the evidence (the boot's "boot-resume
+# OBSERVE" line and the probe's output must be byte-comparable), so do not
+# reword them casually.
+#
+# Split in two because the order-book reads are network round-trips. The Bot
+# wrapper runs `adopt_precheck` first and only fetches the books if it passes,
+# exactly as Phase A did inline. `can_adopt` re-runs the precheck itself, so a
+# caller that fetches up front (the probe) gets the identical verdict.
+# ---------------------------------------------------------------------------
+
+def adopt_precheck(params: dict, pos, ab_raw: str | None,
+                   qty_step: float) -> tuple[str | None, dict | None]:
+    """Everything the gate can decide without an order book.
+
+    Returns (refusal_reason, parsed_active_bracket). A None reason means "no
+    refusal yet; go and read the books".
+    """
+    rp = (params.get("reprotect") or {})
+    # Without an ARMED re-placer, adopting a possibly-unprotected position is
+    # strictly worse than closing it — nothing would ever restore the bracket.
+    # This is also what keeps donchian and sol fail-closed by construction:
+    # neither config has a `reprotect:` key at all.
+    if not rp.get("enabled", False):
+        return "reprotect not enabled for this leg", None
+    if rp.get("observe_only", True):
+        return "reprotect still observe-only — no armed re-placer", None
+
+    if not ab_raw:
+        # REACHABLE, and it must flatten. _maybe_reprotect clears this to ''
+        # on the first flat tick, and a dropped exit leaves the same shape
+        # (donchian 2026-09-04 wrote no fill and no event). An open position
+        # with no stashed bracket is one we cannot identify as ours.
+        return "no active_bracket record (cleared, or never ours)", None
+    try:
+        ab = json.loads(ab_raw)
+    except (ValueError, TypeError):
+        return "active_bracket unparseable", None
+    if not isinstance(ab, dict):
+        return "active_bracket unparseable", None
+
+    if ab.get("side") != pos.side:
+        return f"side mismatch: stashed {ab.get('side')} vs live {pos.side}", ab
+    ep = float(ab.get("entry_price") or 0.0)
+    if ep <= 0 or pos.entry_price <= 0:
+        return "entry price missing on one side", ab
+    if abs(ep - pos.entry_price) / pos.entry_price > 0.02:
+        return (f"entry price drift {ep:.2f} vs {pos.entry_price:.2f} "
+                f"exceeds 2%"), ab
+
+    # Quantity is NOT checked by _maybe_reprotect, and that is safe there
+    # because it re-places against the live pos.qty whatever the stash says.
+    # Adoption inherits more than a bracket, so a partially-closed position
+    # must not be resumed against a stale size. One qty_step of tolerance,
+    # because the stash records the requested qty and the fill is rounded.
+    stashed_qty = float(ab.get("qty") or 0.0)
+    if stashed_qty > 0:
+        step = float(qty_step or 0.0)
+        if abs(stashed_qty - float(pos.qty)) > max(step, 1e-12):
+            return (f"qty mismatch: stashed {stashed_qty} vs live "
+                    f"{pos.qty} (step {step})"), ab
+
+    # A channel-exit strategy (donchian-v3) places an SL and no TP, so
+    # `bracket_state` would be asked whether a HALF bracket is intact —
+    # a shape nothing has been exercised against. Refuse it in code, not
+    # in a comment.
+    #
+    # Note this is the OPPOSITE safety direction from reprotect's decision
+    # not to gate on strategy. There, a hard gate would silently DISABLE
+    # protection on a legitimate switch. Here, refusing simply falls through
+    # to flatten — today's behaviour — so the gate costs a resumed trade,
+    # never an unprotected one. Lift it once the half-bracket path is tested.
+    if not bool(ab.get("place_tp", True)):
+        return "SL-only bracket (channel-exit strategy) — half-bracket path untested", ab
+    return None, ab
+
+
+def can_adopt(params: dict, pos, ab_raw: str | None,
+              open_orders: list[dict] | None, algo_rows: list[dict] | None,
+              algo_ok: bool, qty_step: float,
+              coid_prefix: str) -> tuple[bool, str]:
+    """The whole boot-resume gate. Returns (verdict, reason). FAIL-CLOSED.
+
+    `open_orders=None` means the plain book could not be read.
+    `algo_ok=False` means the algo book could not be read — never round that
+    down to "no bracket" (the July -4045 bug; at boot it would be worse,
+    because we would resume rather than merely re-place).
+    """
+    why, ab = adopt_precheck(params, pos, ab_raw, qty_step)
+    if why is not None:
+        return False, why
+    assert ab is not None
+    if open_orders is None:
+        return False, "plain order book unreadable"
+    if not algo_ok:
+        return False, "algo book unreadable — cannot distinguish 'no bracket' from 'no answer'"
+
+    st = bracket_state(open_orders, algo_rows, coid_prefix, True)
+    if st.intact:
+        return True, f"bracket intact ({st.describe()})"
+
+    # Not intact is still adoptable IF the armed re-placer is allowed to act
+    # on the very next tick. If it has already spent its cap, nothing will
+    # restore the bracket and resuming would leave it unprotected.
+    rp = (params.get("reprotect") or {})
+    cap = int(rp.get("max_replaces_per_position", 3))
+    done = int(ab.get("reprotect_count", 0))
+    if done >= cap:
+        return False, (f"bracket missing ({st.describe()}) and reprotect "
+                       f"cap spent ({done}/{cap})")
+    return True, (f"bracket missing ({st.describe()}) but reprotect can "
+                  f"restore it ({done}/{cap} used)")

@@ -52,9 +52,11 @@ import yaml
 from alerts import send_alert
 from bot_internals import (
     SignalDecision,
+    adopt_precheck,
     bracket_state,
     breakeven_due,
     breakeven_stop_price,
+    can_adopt,
     channel_exit_signal,  # noqa: F401  (re-exported; tools import it from here)
     evaluate_for_strategy,
     gate_status,
@@ -1074,88 +1076,24 @@ class Bot:
         False, and the caller flattens exactly as it does today. The bar to
         resume is affirmative proof; the bar to flatten is anything less.
         """
-        rp = (self.params.get("reprotect") or {})
-        # Without an ARMED re-placer, adopting a possibly-unprotected position is
-        # strictly worse than closing it — nothing would ever restore the bracket.
-        # This is also what keeps donchian and sol fail-closed by construction:
-        # neither config has a `reprotect:` key at all.
-        if not rp.get("enabled", False):
-            return False, "reprotect not enabled for this leg"
-        if rp.get("observe_only", True):
-            return False, "reprotect still observe-only — no armed re-placer"
-
-        raw = state.get_meta("active_bracket")
-        if not raw:
-            # REACHABLE, and it must flatten. _maybe_reprotect clears this to ''
-            # on the first flat tick, and a dropped exit leaves the same shape
-            # (donchian 2026-09-04 wrote no fill and no event). An open position
-            # with no stashed bracket is one we cannot identify as ours.
-            return False, "no active_bracket record (cleared, or never ours)"
-        try:
-            ab = json.loads(raw)
-        except (ValueError, TypeError):
-            return False, "active_bracket unparseable"
-
-        if ab.get("side") != pos.side:
-            return False, f"side mismatch: stashed {ab.get('side')} vs live {pos.side}"
-        ep = float(ab.get("entry_price") or 0.0)
-        if ep <= 0 or pos.entry_price <= 0:
-            return False, "entry price missing on one side"
-        if abs(ep - pos.entry_price) / pos.entry_price > 0.02:
-            return False, (f"entry price drift {ep:.2f} vs {pos.entry_price:.2f} "
-                           f"exceeds 2%")
-
-        # Quantity is NOT checked by _maybe_reprotect, and that is safe there
-        # because it re-places against the live pos.qty whatever the stash says.
-        # Adoption inherits more than a bracket, so a partially-closed position
-        # must not be resumed against a stale size. One qty_step of tolerance,
-        # because the stash records the requested qty and the fill is rounded.
-        stashed_qty = float(ab.get("qty") or 0.0)
-        if stashed_qty > 0:
-            step = float(getattr(self.constraints, "qty_step", 0.0) or 0.0)
-            if abs(stashed_qty - float(pos.qty)) > max(step, 1e-12):
-                return False, (f"qty mismatch: stashed {stashed_qty} vs live "
-                               f"{pos.qty} (step {step})")
-
-        place_tp = bool(ab.get("place_tp", True))
-        # A channel-exit strategy (donchian-v3) places an SL and no TP, so
-        # `bracket_state` would be asked whether a HALF bracket is intact —
-        # a shape nothing has been exercised against. Refuse it in code, not
-        # in a comment.
-        #
-        # Note this is the OPPOSITE safety direction from reprotect's decision
-        # not to gate on strategy. There, a hard gate would silently DISABLE
-        # protection on a legitimate switch. Here, refusing simply falls through
-        # to flatten — today's behaviour — so the gate costs a resumed trade,
-        # never an unprotected one. Lift it once the half-bracket path is tested.
-        if not place_tp:
-            return False, "SL-only bracket (channel-exit strategy) — half-bracket path untested"
+        # The decision itself lives in bot_internals.can_adopt (C1), so the
+        # read-only probe (tools/boot_resume_probe.py) runs the SAME code. This
+        # wrapper only does the I/O, and only reads the books once the cheap
+        # checks have passed — the same order Phase A used inline.
+        ab_raw = state.get_meta("active_bracket")
+        qty_step = float(getattr(self.constraints, "qty_step", 0.0) or 0.0)
+        why, _ab = adopt_precheck(self.params, pos, ab_raw, qty_step)
+        if why is not None:
+            return False, why
         try:
             open_orders = self.client.ex.fetch_open_orders(self.symbol)
         except Exception:
             self.log.exception("boot-resume: fetch_open_orders failed")
-            return False, "plain order book unreadable"
-        # An UNREADABLE algo book is the one state we must never round down to
-        # "no bracket" — that is the July -4045 bug, and at boot it would be
-        # worse, because we would resume rather than merely re-place.
-        algo_rows, algo_ok = self.client.fetch_algo_orders(self.symbol)
-        if not algo_ok:
-            return False, "algo book unreadable — cannot distinguish 'no bracket' from 'no answer'"
-
-        state_ = bracket_state(open_orders, algo_rows, self.coid_prefix, place_tp)
-        if state_.intact:
-            return True, f"bracket intact ({state_.describe()})"
-
-        # Not intact is still adoptable IF the armed re-placer is allowed to act
-        # on the very next tick. If it has already spent its cap, nothing will
-        # restore the bracket and resuming would leave it unprotected.
-        cap = int(rp.get("max_replaces_per_position", 3))
-        done = int(ab.get("reprotect_count", 0))
-        if done >= cap:
-            return False, (f"bracket missing ({state_.describe()}) and reprotect "
-                           f"cap spent ({done}/{cap})")
-        return True, (f"bracket missing ({state_.describe()}) but reprotect can "
-                      f"restore it ({done}/{cap} used)")
+            open_orders = None
+        algo_rows, algo_ok = ((None, False) if open_orders is None
+                              else self.client.fetch_algo_orders(self.symbol))
+        return can_adopt(self.params, pos, ab_raw, open_orders, algo_rows,
+                         algo_ok, qty_step, self.coid_prefix)
 
     def _boot_resume_verdict(self, pos) -> tuple[bool, str]:
         """Config + rollout wrapper around `_can_adopt`. Never raises.
