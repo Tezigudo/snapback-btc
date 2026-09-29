@@ -506,6 +506,13 @@ class Bot:
                 # table, the daily anchor still reads from state.meta, and the
                 # first _maybe_reprotect will restore the bracket if it is gone.
                 root = state.latest_entry_coid_root()
+                # B1: seed the exit-tracking snapshot BEFORE anything else can
+                # run (or raise). Without it _last_position_side stays
+                # "unknown", and a bracket that fills between this read and the
+                # first tick reads as unknown→flat — NOT an exit — so no close
+                # row, no exit event, no alert: the donchian 09-04 dropped-exit
+                # shape through a new door. Plain assignments; cannot raise.
+                self._seed_adopted_tracking(pos, root)
                 self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
                                  "RESUMING it (root=%s).",
                                  pos.side, pos.qty, pos.entry_price, root or "—")
@@ -1094,6 +1101,32 @@ class Bot:
                               else self.client.fetch_algo_orders(self.symbol))
         return can_adopt(self.params, pos, ab_raw, open_orders, algo_rows,
                          algo_ok, qty_step, self.coid_prefix)
+
+    def _seed_adopted_tracking(self, pos, root: str | None) -> None:
+        """Make the tick loop treat an adopted position as one it already knew.
+
+        B1: _detect_bracket_exit only emits an exit on a tracked open→flat (or
+        replaced) edge; seeding here makes a bracket fill before the first tick
+        a normal flat-edge exit. B2: `_last_signal_ts` is seeded from the value
+        `_boot_resume_verdict` prepared, so the bar that opened (or was last
+        evaluated for) this position is not re-evaluated once it closes.
+
+        Called on the ADOPT path only. The flatten path is deliberately left
+        as it was (plan §9: its same-bar exposure is a separate decision).
+        """
+        self._last_position_side = pos.side
+        self._last_position_entry = float(pos.entry_price)
+        self._last_position_qty = float(pos.qty)
+        self._last_entry_root = root
+        seed = getattr(self, "_adopt_signal_ts_seed", None)
+        if seed is not None:
+            self._last_signal_ts = seed
+        # C12 — the Phase B evidence line.
+        self.log.warning(
+            "adopt: tracking seeded side=%s entry=%.2f qty=%.4f root=%s "
+            "last_signal_ts=%s",
+            pos.side, float(pos.entry_price), float(pos.qty), root or "—",
+            seed.isoformat() if seed is not None else "—")
 
     def _boot_resume_verdict(self, pos) -> tuple[bool, str]:
         """Config + rollout wrapper around `_can_adopt`. Never raises.
