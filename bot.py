@@ -67,7 +67,7 @@ from bot_internals import (
     trend_exit_fill_reason,
     trend_exit_signal,
 )
-from exchange import state, trade_events
+from exchange import principal, state, trade_events
 from exchange.binance_client import BinanceClient
 from exchange.constraints import (
     DEFAULT_CONSTRAINTS,
@@ -77,9 +77,18 @@ from exchange.constraints import (
     passes_minimums,
     round_qty_down,
 )
-from exchange.env import REPO_ROOT, get_env, is_halted, load_env_for_instance
+from exchange.env import (
+    REPO_ROOT,
+    get_env,
+    halt_source,
+    is_halted,
+    leg_halt_path,
+    load_env_for_instance,
+)
 from risk import (
+    CEILINGS,
     RiskBreach,
+    check_daily_loss,
     check_leverage,
     check_notional,
     check_symbol,
@@ -143,6 +152,14 @@ INSTANCE_PROFILES: dict[str, dict[str, Path]] = {
         "heartbeat": REPO_ROOT / "data" / "heartbeat_sol_supertrend",
     },
 }
+
+# Derive each leg's SELF-halt flag (data/HALT_<instance>) the same way as the
+# other per-leg paths, from a single source of truth (env.leg_halt_path). The
+# shared data/HALT stays a GLOBAL manual stop-all and is NOT in the profile —
+# no leg's kill switch may write it (that shared write is what caused the 07-01
+# cascade). See exchange/env.py :: is_halted / leg_halt_path.
+for _name, _profile in INSTANCE_PROFILES.items():
+    _profile["halt"] = leg_halt_path(_name)
 
 # Console logs display in Bangkok time (GMT+7) for human readability.
 # JSONL `ts` field and state.db remain UTC for alignment with Binance candles.
@@ -264,6 +281,9 @@ class Bot:
         self.strategy_name = resolve_strategy_name(params)
         self.dry_run = dry_run
         self.instance = instance
+        # This leg's SELF-halt flag. The kill switch touches ONLY this file, so
+        # a leg self-halting can never take a sibling down.
+        self.halt_path = leg_halt_path(instance)
         self.log = logging.getLogger("snapback.bot")
         # Hedge mode + clientOrderId prefix come from `hedge` block in params YAML.
         # When unset, behaves exactly like the legacy single-bot deploy.
@@ -329,8 +349,18 @@ class Bot:
         # _hold_unrecorded_exit). Reset on success and on giving up.
         self._exit_retry_n: int = 0
         # Throttle bracket re-placement (see _maybe_reprotect) so a persistent
-        # placement failure can't spam orders/alerts every 5s poll.
+        # placement failure can't spam orders/alerts every poll.
         self._last_reprotect_ts: float = 0.0
+        # Latch so the daily-loss breaker logs/alerts once per trip, not every
+        # poll. Cleared on drawdown recovery or UTC-day rollover.
+        self._daily_loss_blocked: bool = False
+        # Principal-anchor reconcile cadence. The kill switch compares equity to
+        # NET DEPOSITED PRINCIPAL (exchange/principal.py), refreshed from the
+        # Binance income ledger. DCA is monthly so hourly is ample once the
+        # anchor exists; retry faster while it is still uninitialised.
+        self._principal_reconcile_interval_s: float = 3600.0
+        self._principal_retry_interval_s: float = 60.0
+        self._last_principal_reconcile_ts: float = 0.0
         # One alert per process when the per-position re-place cap is hit — the
         # cap itself is persisted in active_bracket; this only de-dupes the mail.
         self._reprotect_capped_alerted: bool = False
@@ -370,6 +400,24 @@ class Bot:
 
         state.init_db()
 
+        # Establish the principal anchor P (kill-switch denominator = NET
+        # DEPOSITED PRINCIPAL, not a balance snapshot). Best-effort: if the
+        # income backfill fails here, the loop retries and the kill switch
+        # stays fail-safe (disabled) until P is known. NEVER snapshots balance.
+        try:
+            P = principal.initialize(self.client, self.params, log=self.log)
+            self._last_principal_reconcile_ts = time.time()
+            if P is not None:
+                self.log.info(
+                    "Principal anchor P=%.2f USDT (kill floor=%.2f at fraction %.3f)",
+                    P, P * self.kill_fraction, self.kill_fraction)
+            else:
+                self.log.warning(
+                    "Principal anchor NOT established at boot — kill switch "
+                    "DISABLED until income reconcile succeeds.")
+        except Exception as e:
+            self.log.warning("Principal init failed at boot (will retry in loop): %s", e)
+
         equity = self.client.fetch_equity_usdt()
         if equity < self.min_capital_warn:
             self.log.warning("LOW CAPITAL: equity $%.2f < $%.2f recommended. "
@@ -388,16 +436,41 @@ class Bot:
             )
             start_eq = equity
         else:
-            drift = equity / start_eq - 1
-            self.log.info("Resuming deploy. start=%.2f current=%.2f (%+.2f%%)",
-                          start_eq, equity, drift * 100)
-            if abs(drift) > 0.5:
-                self.log.warning(
-                    "ANCHOR DRIFT >50%%: deploy_start_equity=%.2f but current=%.2f. "
-                    "Possible stale anchor from a prior deploy. Kill-switch level "
-                    "and dashboard headroom will be wrong until reset.",
-                    start_eq, equity,
-                )
+            # Report against PRINCIPAL, not against deploy_start_equity.
+            # start_eq is a raw equity snapshot frozen at deploy time, so every
+            # later deposit or withdrawal moves the numerator and leaves the
+            # denominator behind -- the same two-clocks defect PR #25 fixed in
+            # the monitor, and it flatters in the dangerous direction.
+            # Live 2026-09-09: sol_supertrend booted announcing
+            # "start=60.00 current=73.71 (+22.85%)" for a leg that was DOWN
+            # 7.9% -- $60 deployed on 25 Jul, another $20 funded on 28 Aug.
+            # P is the denominator the kill switch already names (see
+            # _check_kill_switch), so reporting against it also stops the boot
+            # line and the kill-switch line describing the same leg
+            # differently. start_eq stays RAW and is still printed: do NOT
+            # re-baseline it, _daily_book_anchor applies its own delta and
+            # pre-shifting the stored value would double-count.
+            P = principal.get_principal()
+            if P is not None and P > 0:
+                self.log.info(
+                    "Resuming deploy. start=%.2f current=%.2f principal=%.2f "
+                    "(%+.2f%% vs principal)",
+                    start_eq, equity, P, (equity / P - 1) * 100)
+            else:
+                # Two distinct reasons land here and an operator has to tell
+                # them apart: P is None until the income backfill lands,
+                # whereas a P that is present but <= 0 means the ledger HAS
+                # been read and nets to nothing -- a fully withdrawn leg, which
+                # is not "pending" and will never resolve on its own.
+                # breached() treats both as unknown; only the first is waiting
+                # on anything. Either way, say the number is unadjusted rather
+                # than print a transfer-contaminated percentage bare.
+                why = ("principal pending" if P is None
+                       else f"principal non-positive ({P:.2f})")
+                self.log.info(
+                    "Resuming deploy. start=%.2f current=%.2f (%+.2f%% vs "
+                    "start; %s, NOT transfer-adjusted)",
+                    start_eq, equity, (equity / start_eq - 1) * 100, why)
 
         # Push a boot event to consolidate so the dashboard knows the bot
         # is alive and which strategy/env it's running. The deploy-start
@@ -412,6 +485,7 @@ class Bot:
                 "dry_run": bool(self.dry_run),
                 "strategy_name": self.strategy_name,
                 "deploy_start_equity": float(start_eq),
+                "principal_anchor": principal.get_principal(),
                 "kill_switch_fraction": float(self.kill_fraction),
                 "leverage": int(self.leverage),
                 "order_type": self.order_type,
@@ -488,7 +562,15 @@ class Bot:
 
     def _format_deploy_summary(self, equity: float, mode: str) -> str:
         kill_pct = self.kill_fraction * 100.0
-        kill_usd = equity * self.kill_fraction
+        # Kill floor is anchored on DEPOSITED PRINCIPAL, not this boot's equity.
+        # Fall back to the equity figure only if the anchor isn't established yet
+        # (income backfill pending) — marked provisional so it isn't mistaken
+        # for the real floor.
+        P = principal.get_principal()
+        kill_anchor = P if (P is not None and P > 0) else equity
+        kill_usd = kill_anchor * self.kill_fraction
+        kill_anchor_label = ("principal" if (P is not None and P > 0)
+                             else "equity (PROVISIONAL — principal pending)")
         max_hold = int(
             (self.params.get("strategy") or {}).get("max_hold_bars", 0)
         )
@@ -515,7 +597,9 @@ class Bot:
             f"  Min recommended: ${self.min_capital_warn:,.2f} USDT"
             + ("  ⚠ BELOW FLOOR" if equity < self.min_capital_warn else "")
             + f"\n"
-            f"  Kill switch    : {kill_pct:.1f}% → exit at ${kill_usd:,.2f} USDT\n"
+            f"  Kill switch    : {kill_pct:.1f}% of {kill_anchor_label}\n"
+            f"                   → exit at ${kill_usd:,.2f} USDT "
+            f"(anchor ${kill_anchor:,.2f})\n"
             f"\n"
             f"Risk\n"
             f"  Per trade      : {self.risk_pct:.2f}% equity\n"
@@ -554,7 +638,7 @@ class Bot:
         if not consolidate_push.is_configured():
             return  # don't even enqueue heartbeats if no consumer
         try:
-            payload: dict = {"halt_present": is_halted(),
+            payload: dict = {"halt_present": is_halted(self.instance),
                              "outbox_size_before_drain": state.outbox_size()}
             # Include the most recent gate-status snapshot so the dashboard
             # can show "what's true now / waiting on what" without operator
@@ -575,38 +659,199 @@ class Bot:
             self.log.warning("consolidate push raised (continuing): %s", e)
 
     def _check_kill_switch(self, equity: float) -> bool:
-        start = state.get_float("deploy_start_equity", 0.0)
-        if start <= 0:
+        # Anchor = NET DEPOSITED PRINCIPAL (God's rule), NOT a balance snapshot
+        # and NOT a high-water mark. principal.breached() is fail-safe: it never
+        # trips on an unknown/degenerate anchor, so a stale/wrong equity read or
+        # a not-yet-initialised P cannot cause a false-positive kill (the
+        # donchian $114.75 class of incident).
+        P = principal.get_principal()
+        if not principal.breached(equity, P, self.kill_fraction):
             return False
-        if equity < start * self.kill_fraction:
-            self.log.error("KILL SWITCH: equity %.2f < %.2f (start %.2f * %.2f)",
-                           equity, start * self.kill_fraction, start, self.kill_fraction)
-            (REPO_ROOT / "data" / "HALT").touch()
-            state.enqueue_bot_event(
-                "kill_switch", equity_usd=float(equity),
-                payload={"deploy_start_equity": float(start),
-                         "kill_switch_fraction": float(self.kill_fraction),
-                         "drawdown_pct": (equity/start - 1) * 100},
-            )
-            # Force a push so the dashboard sees this before the bot exits.
-            try:
-                consolidate_push.drain()
-            except Exception as e:
-                self.log.warning("kill-switch push failed: %s", e)
-            send_alert(
-                "BOT KILL SWITCH FIRED",
-                f"Equity drawdown breached -{(1-self.kill_fraction)*100:.0f}%.\n"
-                f"deploy_start={start:.2f}  current={equity:.2f}  "
-                f"drawdown={(equity/start - 1)*100:+.2f}%\n"
-                f"Position will be flattened, HALT file created, bot will exit.",
-            )
+        # breached() only returns True for a positive float anchor. Make that
+        # invariant explicit with a real guard — an `assert` here is stripped
+        # under `python -O`, which would let `P * fraction` raise TypeError (or
+        # touch the HALT on a None anchor) in the hot trading path.
+        if P is None:
+            raise RuntimeError(
+                "kill-switch invariant violated: breached() true but principal "
+                "is None — refusing to act on an unknown anchor.")
+        floor = P * self.kill_fraction
+        self.log.error("KILL SWITCH: equity %.2f < %.2f (principal %.2f * %.2f)",
+                       equity, floor, P, self.kill_fraction)
+        # Touch ONLY this leg's self-halt flag — never the shared data/HALT.
+        self.halt_path.touch()
+        state.enqueue_bot_event(
+            "kill_switch", equity_usd=float(equity),
+            payload={"principal_anchor": float(P),
+                     "kill_switch_fraction": float(self.kill_fraction),
+                     "kill_floor": float(floor),
+                     "drawdown_vs_principal_pct": (equity / P - 1) * 100},
+        )
+        # Force a push so the dashboard sees this before the bot exits.
+        try:
+            consolidate_push.drain()
+        except Exception as e:
+            self.log.warning("kill-switch push failed: %s", e)
+        send_alert(
+            "BOT KILL SWITCH FIRED",
+            f"Equity fell below -{(1-self.kill_fraction)*100:.0f}% of DEPOSITED "
+            f"PRINCIPAL.\n"
+            f"principal={P:.2f}  floor={floor:.2f}  current={equity:.2f}  "
+            f"({(equity / P - 1)*100:+.2f}% vs principal)\n"
+            f"Position will be flattened, data/HALT_{self.instance} created, "
+            f"bot will exit.",
+        )
+        return True
+
+    def _maybe_reconcile_principal(self) -> None:
+        """Periodically refresh the principal anchor from the Binance income
+        ledger. Idempotent (tranId-keyed) so overlapping windows never
+        double-count. Never blocks or crashes the loop — failures are logged."""
+        now = time.time()
+        initialized = principal.is_initialized()
+        interval = (self._principal_reconcile_interval_s if initialized
+                    else self._principal_retry_interval_s)
+        if now - self._last_principal_reconcile_ts < interval:
+            return
+        self._last_principal_reconcile_ts = now
+        try:
+            if not initialized:
+                principal.initialize(self.client, self.params, log=self.log)
+            else:
+                principal.reconcile_recent(self.client, log=self.log)
+        except Exception as e:
+            self.log.warning("principal reconcile failed (continuing): %s", e)
+
+    def _daily_anchor_equity(self, equity: float) -> float:
+        """Return the UTC-day's RAW starting equity, re-anchoring on date rollover.
+
+        Persisted in state.meta so it survives restarts within a day. Unlike
+        deploy_start_equity (set once at first deploy), this anchor resets every
+        UTC midnight and drives the tighter 2% daily-loss breaker. On each new UTC
+        day we ALSO snapshot the cumulative principal-ledger sum
+        (daily_anchor_principal_sum) so the breaker can neutralise intraday
+        transfers — see _daily_book_anchor. The two ceilings stay separate.
+        """
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        anchor_date = state.get_meta("daily_anchor_date")
+        anchor_eq = state.get_float("daily_anchor_equity", 0.0)
+        if anchor_date != today or anchor_eq <= 0:
+            state.set_meta("daily_anchor_date", today)
+            state.set_float("daily_anchor_equity", equity)
+            # Baseline for intraday-transfer neutralisation: net deposited
+            # principal (Part C ledger) as of the anchor. Intraday transfers move
+            # the ledger sum; _daily_book_anchor adds the delta back so only
+            # trading P&L counts toward the threshold.
+            state.set_float("daily_anchor_principal_sum",
+                            state.principal_ledger_sum(principal.PRINCIPAL_ASSET))
+            self.log.info("Daily anchor set: date=%s equity=%.2f USDT", today, equity)
+            return equity
+        return anchor_eq
+
+    def _daily_book_anchor(self, equity: float) -> float:
+        """Transfer-immune daily baseline (BOOK equity at day start).
+
+        A raw equity anchor misreads an intraday deposit/withdrawal as P&L: a
+        deposit inflates equity (can MASK a real trading loss), a withdrawal
+        deflates it (can FALSELY trip the breaker). Neutralise both by shifting
+        the baseline by the net principal moved since the anchor was set:
+
+            book_anchor = raw_anchor + (ledger_sum_now − ledger_sum_at_anchor)
+
+        A transfer then moves equity and the baseline by the same amount, so only
+        true trading P&L counts toward the 2% threshold — consistent with the
+        principal-derived kill switch. Reuses the Part C principal ledger.
+
+        Fail-safe to legacy behaviour: an empty/uninitialised ledger gives a 0
+        delta (== raw anchor). A legacy anchor set before this migration (no
+        baseline key) is seeded to the current sum, so PRE-existing principal is
+        never mistaken for an intraday transfer (which would inflate the baseline
+        and stop the breaker from ever tripping).
+        """
+        raw_anchor = self._daily_anchor_equity(equity)
+        now_sum = state.principal_ledger_sum(principal.PRINCIPAL_ASSET)
+        baseline = state.get_meta("daily_anchor_principal_sum")
+        if baseline is None:
+            state.set_float("daily_anchor_principal_sum", now_sum)
+            return raw_anchor
+        try:
+            anchor_sum = float(baseline)
+        except ValueError:
+            anchor_sum = now_sum
+        return raw_anchor + (now_sum - anchor_sum)
+
+    def _daily_loss_blocks_entry(self, equity: float) -> bool:
+        """True if today's TRADING drawdown has hit MAX_DAILY_LOSS_PCT — block new
+        entries for the rest of the UTC day. Does NOT flatten or HALT: existing
+        brackets keep managing any open position, and the anchor resets at the
+        next UTC midnight (see _daily_anchor_equity). The baseline is transfer-
+        immune book equity (_daily_book_anchor), so an intraday deposit/withdrawal
+        neither trips nor clears the breaker. Tighter, daily-resetting sibling of
+        the principal-anchored kill switch.
+        """
+        # Fail-safe (mirrors the kill switch): the transfer-immune baseline is
+        # derived from Part C's principal ledger. Until that ledger is
+        # initialised, principal_ledger_sum() is 0 and a later full-history
+        # backfill would look like one huge intraday deposit — inflating the book
+        # anchor and falsely blocking entries for the rest of the UTC day. So the
+        # breaker stays INACTIVE until P is ready (the same window the kill switch
+        # is fail-safe/disabled), and the daily anchor is not snapshotted yet.
+        if not principal.is_initialized():
+            self._daily_loss_blocked = False
+            return False
+        day_start = self._daily_book_anchor(equity)
+        try:
+            check_daily_loss(equity, day_start)
+        except RiskBreach as e:
+            loss_pct = (day_start - equity) / day_start * 100.0 if day_start > 0 else 0.0
+            # Dedupe: emit the outbox event + alert at most once per UTC day.
+            # self._daily_loss_blocked is an in-memory fast path; the persisted
+            # meta key 'daily_loss_breaker_date' ensures the latch survives a
+            # bot restart within the same UTC day (prevents the dashboard from
+            # receiving a duplicate event on every restart after a breach).
+            today = datetime.now(UTC).strftime("%Y-%m-%d")
+            if not self._daily_loss_blocked:
+                if state.get_meta("daily_loss_breaker_date") == today:
+                    self._daily_loss_blocked = True  # sync in-memory with persisted latch
+                else:
+                    # Log + event once per day, on the bar the breaker trips.
+                    self.log.warning("DAILY LOSS BREAKER: %s — blocking new entries "
+                                     "until next UTC day.", e)
+                    state.record_event("WARN", "daily_loss_breaker",
+                                       {"equity": equity, "day_start": day_start,
+                                        "loss_pct": loss_pct,
+                                        "threshold_pct": CEILINGS.MAX_DAILY_LOSS_PCT})
+                    state.enqueue_bot_event(
+                        "daily_loss_breaker", equity_usd=float(equity),
+                        payload={"day_start_equity": float(day_start),
+                                 "loss_pct": loss_pct,
+                                 "threshold_pct": CEILINGS.MAX_DAILY_LOSS_PCT},
+                    )
+                    send_alert(
+                        "Bot daily-loss breaker tripped",
+                        f"Daily drawdown breached -{CEILINGS.MAX_DAILY_LOSS_PCT:.0f}%.\n"
+                        f"day_start={day_start:.2f}  current={equity:.2f}  "
+                        f"loss={loss_pct:.2f}%\n"
+                        f"New entries blocked until next UTC day. "
+                        f"Open position (if any) left to its brackets; no flatten.",
+                    )
+                    state.set_meta("daily_loss_breaker_date", today)
+                    self._daily_loss_blocked = True
             return True
+        # Drawdown recovered or new day anchored — clear the in-memory latch.
+        # (The persisted key expires naturally: next breach day uses a new date.)
+        self._daily_loss_blocked = False
         return False
 
     def _maybe_enter(self, equity: float) -> None:
         # Skip entry evaluation if already in a position — bracket SL/TP
         # manage the existing trade. Matches backtest's exclusive_orders=True.
         if self.client.fetch_position(self.symbol).side != "flat":
+            return
+
+        # Daily-loss breaker: tighter (2%) daily-resetting guard, separate from
+        # the -18% cumulative kill-switch. Blocks NEW entries only.
+        if self._daily_loss_blocks_entry(equity):
             return
 
         # 1500 bars covers warmup on every supported timeframe:
@@ -616,6 +861,17 @@ class Bot:
         #        admission walk)
         # Binance Futures klines cap at 1500/call so 1500 is also the ceiling.
         df = self.client.fetch_ohlcv(self.symbol, self.entry_tf, limit=1500)
+        # Binance returns the still-FORMING current bar as the last row (~5s
+        # after it opens it holds ~0.5% of its eventual volume). The backtest
+        # only ever sees CLOSED bars (backtesting.py never shows a forming bar;
+        # signals_multifactor.next() reads Close[-1] of a closed bar). Drop the
+        # forming bar HERE, before anything downstream touches the frame: every
+        # evaluator, the entry price, SL/TP, the 4H-gate alignment timestamp,
+        # the warmup count, and the dedup ts all read iloc[-1]/index[-1], so a
+        # single slice at the source keeps live↔backtest parity intact. Without
+        # this, the volume gate (cur_vol > 2×SMA20) can never be satisfied →
+        # 0 trades, and entry/SL/TP would anchor to an incomplete bar.
+        df = df.iloc[:-1]
         if len(df) < 250:
             return
         last_ts = df.index[-1]
@@ -1752,8 +2008,12 @@ class Bot:
         while not self._stopped:
             try:
                 self._heartbeat()
-                if is_halted():
-                    self.log.warning("HALT file present — %s.",
+                halt_by = halt_source(self.instance)
+                if halt_by is not None:
+                    which = ("GLOBAL data/HALT (manual stop-all)"
+                             if halt_by == "global"
+                             else f"self data/HALT_{self.instance}")
+                    self.log.warning("HALT flag present [%s] — %s.", which,
                                      "exiting (DRY-RUN, no flatten)" if self.dry_run
                                      else "flattening and exiting")
                     if not self.dry_run:
@@ -1763,18 +2023,20 @@ class Bot:
                             client_order_id_root=root, close_leg="h")
                     state.enqueue_bot_event(
                         "halt",
-                        payload={"dry_run": bool(self.dry_run)},
+                        payload={"dry_run": bool(self.dry_run),
+                                 "halt_source": halt_by},
                     )
                     try:
                         consolidate_push.drain()
                     except Exception as e:
                         self.log.warning("halt push failed: %s", e)
                     send_alert("Bot HALTED",
-                               f"data/HALT detected. "
+                               f"{which} detected. "
                                f"{'DRY-RUN exit, no flatten.' if self.dry_run else 'Position flattened.'} "
                                f"Bot exiting.")
                     return 0
 
+                self._maybe_reconcile_principal()
                 equity = self.client.fetch_equity_usdt()
                 if self._check_kill_switch(equity):
                     if not self.dry_run:

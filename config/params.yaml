@@ -28,9 +28,12 @@ symbol: BTC/USDT:USDT
 #   "multifactor-v1" (default) — v1 RSI/vol/EMA/funding filters, fixed 1.5%/3% SL/TP.
 #   "v3-all-wider-4" — v3 ported: TA confirmations (trendline/SR/Fib) + dist-ema gate
 #                      + vol-regime gate + ATR-based stops (4×/8× ATR, k=4.0).
-#                      Best in extended walk-forward 2020-2026: 10/12 wins at 10bps
-#                      stress, 0/12 kill-switch hits. See EXTENDED_WALKFORWARD.html.
-#                      Switch ONLY after stopping bot cleanly + restarting in tmux.
+#                      ⚠ DO NOT SWITCH (corrected 2026-07-12): reports/
+#                      EXTENDED_WALKFORWARD.html actually shows wider-4 at
+#                      4/12 wins / −27.8% cumulative vs multifactor-v1's
+#                      8/12 / +88.1% at 5bps (worse at 10bps). "Best" only
+#                      ever meant best AMONG the v3 wider variants — all of
+#                      which lose to multifactor-v1. Kept for reference only.
 #                      Requires ~30 days of warm-up before vol-regime gate is valid.
 strategy_name: multifactor-v1
 
@@ -59,8 +62,12 @@ strategy:
   # Funding-rate sentiment gate (refuse crowded trade direction).
   # Funding > +0.15% per 8h = extremely long-crowded → block new longs.
   # Funding < -0.15% per 8h = extremely short-crowded → block new shorts.
-  # (Backport of the deployed value: relaxed 0.0005→0.0015 on 2026-07-12,
-  # droplet 35bfc7b, validated +81.94%/PSR gate-clean on the 4H geometry.)
+  # Relaxed 0.0005 → 0.0015 on 2026-07-12 per MULTIFACTOR_V1_DEEPENING.md rec #2,
+  # re-validated on the deployed 4H-gated geometry across the 5 OOS windows
+  # (reports/fundrelax_0015_validation.json): +77.93%/5-5/PSR 0.9969 →
+  # +81.94%/4-5/PSR 0.9922, both evidence_of_edge. At 0.0015 no in-sample
+  # signal is blocked (identical to no_funding); the gate remains as tail
+  # protection for true 2021-style squeeze regimes only.
   funding_extreme_threshold: 0.0015
   require_funding_not_extreme: true
 
@@ -109,7 +116,15 @@ strategy:
   mtf_4h_ema_period: 200
 
 sizing:
-  risk_per_trade_pct: 3.5       # 3.5% of equity per trade (backport of deployed value: raised 2.75→3.5 on 2026-07-12 after the sizing sweep, reports/sizing_sweep_2026.json; droplet 93076fa).
+  # Raised 2.75 → 3.5 on 2026-07-12 (user-approved) per the sizing sweep
+  # (reports/sizing_sweep_2026.json, 4 risk arms × 5 OOS + 25 quarters):
+  # +109.5% vs +81.9% compounded at identical 4/5 wins and 60% WF positivity
+  # (sizing doesn't touch signals); worst-quarter DD −21.0% keeps a 14.5pp
+  # cushion below the −35.5% principal-anchored kill switch. Moved TOGETHER
+  # with risk.py MAX_DAILY_LOSS_PCT 3.5 → 4.5 so one full SL (−3.5%) does
+  # not freeze the leg for the rest of the UTC day.
+  # (History: 2.0 → 2.75 on 2026-05-23 for combined-deploy yield target.)
+  risk_per_trade_pct: 3.5
   leverage: 20                  # ceiling. Risk-based sizing → ~2.33x effective at 3.5%.
                                 # risk.py MAX_LEVERAGE matches this hard ceiling.
 
