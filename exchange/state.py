@@ -4,7 +4,10 @@ Schema:
   meta(key TEXT PRIMARY KEY, value TEXT)
     'deploy_start_equity'       : float
     'deploy_start_ts'           : ISO ts
-    'last_entry_bar_ts'         : ISO ts of bar bot last considered for entry
+    'last_entry_bar_ts'         : ISO ts (naive UTC, bar OPEN) of the last CLOSED bar
+                                  _maybe_enter evaluated. Written every time
+                                  _last_signal_ts advances; read by boot-resume
+                                  (adopt path ONLY) to stop a same-bar re-entry.
     'consecutive_losses'        : int
     'daily_anchor_date'         : YYYY-MM-DD UTC date of today's equity anchor
     'daily_anchor_equity'       : float equity at UTC-day start
@@ -404,5 +407,18 @@ def latest_entry_coid_root() -> str | None:
             "SELECT client_order_id_root FROM fills "
             "WHERE reason='entry' "
             "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    return row[0] if row else None
+
+
+def latest_entry_fill_ts() -> str | None:
+    """ISO ts of the most recent `reason='entry'` fill, or None.
+
+    Boot-resume (Phase B, B2) fallback for seeding the entry-dedup bar when the
+    `last_entry_bar_ts` meta key is absent. Read-only.
+    """
+    with _conn() as c:
+        row = c.execute(
+            "SELECT ts FROM fills WHERE reason='entry' ORDER BY id DESC LIMIT 1"
         ).fetchone()
     return row[0] if row else None

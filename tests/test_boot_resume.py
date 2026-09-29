@@ -89,10 +89,35 @@ def _flat():
                     entry_price=0.0, unrealized_pnl=0.0, margin_used=0.0)
 
 
+def _keyed_meta(active_bracket: str | None, **extra):
+    """get_meta stand-in that answers PER KEY.
+
+    Phase A returned the bracket JSON for every key. Phase B also reads
+    `last_entry_bar_ts` on the armed path, so a key-blind fake would hand it a
+    bracket JSON (unparseable as a timestamp) and silently exercise the
+    fallback instead of the thing under test.
+    """
+    values = {"active_bracket": active_bracket, **extra}
+    return MagicMock(side_effect=lambda key, default=None: values.get(key, default))
+
+
+# A plausible entry fill: 10:05:03Z lands in the 10:00 bar, so the signal bar
+# (the last CLOSED bar at entry time) is 09:45.
+_ENTRY_FILL_TS = "2026-09-29T10:05:03.120000+00:00"
+
+
 def _with_bracket(raw):
-    """Patch meta so active_bracket reads `raw` (a dict, a str, or None)."""
+    """Patch meta so active_bracket reads `raw` (a dict, a str, or None).
+
+    Also pins the entry-fill fallback so the ARMED path (Phase B) has a
+    dedup bar to seed from; the gate itself never reads it.
+    """
     value = raw if isinstance(raw, str) or raw is None else json.dumps(raw)
-    return patch("bot.state.get_meta", MagicMock(return_value=value))
+    return patch.multiple(
+        "bot.state",
+        get_meta=_keyed_meta(value),
+        latest_entry_fill_ts=MagicMock(return_value=_ENTRY_FILL_TS),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -327,10 +352,11 @@ def _state_patches(bracket=_ARMED_BRACKET, enqueue=None):
         get_float=MagicMock(return_value=0.0),
         set_float=MagicMock(),
         set_meta=MagicMock(),
-        get_meta=MagicMock(return_value=value),
+        get_meta=_keyed_meta(value),
         enqueue_bot_event=enqueue or MagicMock(),
         record_event=MagicMock(),
         latest_entry_coid_root=MagicMock(return_value="sig-1"),
+        latest_entry_fill_ts=MagicMock(return_value=_ENTRY_FILL_TS),
     )
 
 

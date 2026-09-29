@@ -63,6 +63,7 @@ from bot_internals import (
     limit_entry_price,
     order_avg_price,
     resolve_strategy_name,
+    signal_bar_seed,
     strategy_uses_channel_exit,
     strategy_uses_trend_exit,
     time_stop_due,
@@ -315,6 +316,9 @@ class Bot:
         self.constraints: ExchangeConstraints = DEFAULT_CONSTRAINTS
         self._stopped = False
         self._last_signal_ts: pd.Timestamp | None = None
+        # B2 (boot-resume): prepared by _boot_resume_verdict on the ARMED adopt
+        # path only, consumed by _seed_adopted_tracking. None otherwise.
+        self._adopt_signal_ts_seed: pd.Timestamp | None = None
         # Push to consolidate every PUSH_INTERVAL_S; also send a heartbeat
         # event at the same cadence so the dashboard's "alive" check works.
         # 30s is well under consolidate's 60s healthy-threshold.
@@ -874,6 +878,23 @@ class Bot:
         self._daily_loss_blocked = False
         return False
 
+    def _persist_last_signal_ts(self, last_ts) -> None:
+        """B2: mirror `_last_signal_ts` into the `last_entry_bar_ts` meta key.
+
+        The in-memory value dies with the process, so after a restart that
+        ADOPTS a position, _maybe_enter would re-evaluate the same closed bar
+        once the position goes flat and re-enter on the signal it already
+        took. boot() reads this back on the adopt path only.
+
+        Best-effort by construction: a locked or failing DB must never skip
+        this bar's evaluation or entry, so it logs and carries on. The cost of
+        a missed write is only the entry-fill fallback in signal_bar_seed.
+        """
+        try:
+            state.set_meta("last_entry_bar_ts", pd.Timestamp(last_ts).isoformat())
+        except Exception as e:
+            self.log.warning("could not persist last_entry_bar_ts=%s: %s", last_ts, e)
+
     def _maybe_enter(self, equity: float) -> None:
         # Skip entry evaluation if already in a position — bracket SL/TP
         # manage the existing trade. Matches backtest's exclusive_orders=True.
@@ -912,6 +933,7 @@ class Bot:
         funding = self.client.fetch_funding_rate(self.symbol)
         decision = evaluate_for_strategy(self.strategy_name, df, funding, self.params)
         self._last_signal_ts = last_ts
+        self._persist_last_signal_ts(last_ts)
 
         # Snapshot the gate state for heartbeat-payload + log. Computed on every
         # bar evaluation so the dashboard's "current state" panel can always
@@ -1118,7 +1140,7 @@ class Bot:
         self._last_position_entry = float(pos.entry_price)
         self._last_position_qty = float(pos.qty)
         self._last_entry_root = root
-        seed = getattr(self, "_adopt_signal_ts_seed", None)
+        seed = self._adopt_signal_ts_seed
         if seed is not None:
             self._last_signal_ts = seed
         # C12 — the Phase B evidence line.
@@ -1158,7 +1180,34 @@ class Bot:
                 "ADOPT" if adopt else "FLATTEN",
                 pos.side, pos.qty, pos.entry_price, why)
             return False, why
+        # ---- ARMED from here. Nothing below runs while observe_only. ----
+        if adopt:
+            adopt, why = self._prepare_adopt(why)
+        self.log.warning(
+            "boot-resume ARMED: %s %s %.4f @ %.2f — %s",
+            "ADOPT" if adopt else "FLATTEN",
+            pos.side, pos.qty, pos.entry_price, why)
         return adopt, why
+
+    def _prepare_adopt(self, why: str) -> tuple[bool, str]:
+        """Everything the adopt branch needs, computed BEFORE committing.
+
+        boot()'s adopt branch runs after the verdict; if it raised there, the
+        process would die and systemd would adopt again. So anything that can
+        fail runs here, and any failure becomes a refusal → today's flatten.
+        """
+        try:
+            seed = signal_bar_seed(state.get_meta("last_entry_bar_ts"),
+                                   state.latest_entry_fill_ts(),
+                                   int(self.bar_seconds))
+        except Exception:
+            self.log.exception("boot-resume: entry-dedup seed unreadable — flattening")
+            return False, "entry-dedup bar unreadable"
+        if seed is None:
+            return False, ("no entry-dedup bar to seed (no last_entry_bar_ts "
+                           "and no entry fill)")
+        self._adopt_signal_ts_seed = seed
+        return True, why
 
     def _maybe_reprotect(self, equity: float) -> None:
         """Restore a missing SL/TP bracket while a position is still open.

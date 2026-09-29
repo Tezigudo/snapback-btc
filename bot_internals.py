@@ -815,3 +815,48 @@ def can_adopt(params: dict, pos, ab_raw: str | None,
                        f"cap spent ({done}/{cap})")
     return True, (f"bracket missing ({st.describe()}) but reprotect can "
                   f"restore it ({done}/{cap} used)")
+
+
+def _naive_utc(ts) -> pd.Timestamp:
+    """pd.Timestamp in NAIVE UTC — the convention of fetch_ohlcv's index.
+
+    `fills.ts` is tz-AWARE (datetime.now(UTC).isoformat()) while df.index is
+    naive, and comparing the two raises TypeError. In _maybe_enter that would
+    crash the tick loop on every bar — i.e. exactly the crash→adopt loop D5
+    exists to stop — so every seed is normalised here.
+    """
+    t = pd.Timestamp(ts)
+    if t.tzinfo is not None:
+        t = t.tz_convert("UTC").tz_localize(None)
+    return t
+
+
+def signal_bar_seed(persisted_raw: str | None, entry_fill_ts_raw: str | None,
+                    bar_seconds: int) -> pd.Timestamp | None:
+    """B2: the `_last_signal_ts` an ADOPTED position must resume with. PURE.
+
+    Candidates, latest wins:
+      - `last_entry_bar_ts` meta — the last closed bar _maybe_enter evaluated
+        before the restart (exactly what the in-memory value held).
+      - fallback from the newest entry fill: floor(fill_ts, bar) − 1 bar. The
+        fill lands inside the bar AFTER the signal bar (entry is evaluated on
+        the last CLOSED bar, index = bar OPEN time), so the signal bar is one
+        bar before the fill's bar. A plain floor (the plan's wording) would name
+        the fill's own bar and suppress that bar's legitimate evaluation once it
+        closes.
+    Returns None when neither is usable; the caller then refuses to adopt.
+    """
+    out: list[pd.Timestamp] = []
+    if persisted_raw:
+        try:
+            out.append(_naive_utc(persisted_raw))
+        except (ValueError, TypeError):
+            pass
+    if entry_fill_ts_raw and bar_seconds > 0:
+        try:
+            t = _naive_utc(entry_fill_ts_raw)
+            out.append(t.floor(f"{int(bar_seconds)}s")
+                       - pd.Timedelta(seconds=int(bar_seconds)))
+        except (ValueError, TypeError):
+            pass
+    return max(out) if out else None
