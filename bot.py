@@ -523,7 +523,14 @@ class Bot:
                 # if no restart had happened: its age still reads from the fills
                 # table, the daily anchor still reads from state.meta, and the
                 # first _maybe_reprotect will restore the bracket if it is gone.
-                root = state.latest_entry_coid_root()
+                # The verdict already committed to adopt, so a sqlite error here
+                # must not abort boot: fall back to an untagged root.
+                try:
+                    root = state.latest_entry_coid_root()
+                except Exception:
+                    self.log.exception("boot_adopt: latest_entry_coid_root failed; "
+                                       "seeding with root=None")
+                    root = None
                 # B1: seed the exit-tracking snapshot BEFORE anything else can
                 # run (or raise). Without it _last_position_side stays
                 # "unknown", and a bracket that fills between this read and the
@@ -531,22 +538,28 @@ class Bot:
                 # row, no exit event, no alert: the donchian 09-04 dropped-exit
                 # shape through a new door. Plain assignments; cannot raise.
                 self._seed_adopted_tracking(pos, root)
-                self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
-                                 "RESUMING it (root=%s).",
-                                 pos.side, pos.qty, pos.entry_price, root or "—")
-                state.record_event("WARN", "boot_adopt",
-                                   {"side": pos.side, "qty": pos.qty,
-                                    "entry": pos.entry_price, "signal_id": root},
-                                   signal_id=root)
-                state.enqueue_bot_event(
-                    "boot_adopt",
-                    signal_id=root,
-                    side=pos.side,
-                    qty=float(pos.qty),
-                    price_usd=float(pos.entry_price),
-                    payload={"reason": "resumed_at_boot",
-                             "entry_price": float(pos.entry_price)},
-                )
+                # Bookkeeping only: the position is already adopted, so a failure
+                # here is logged and the tick loop carries on owning it.
+                try:
+                    self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
+                                     "RESUMING it (root=%s).",
+                                     pos.side, pos.qty, pos.entry_price, root or "—")
+                    state.record_event("WARN", "boot_adopt",
+                                       {"side": pos.side, "qty": pos.qty,
+                                        "entry": pos.entry_price, "signal_id": root},
+                                       signal_id=root)
+                    state.enqueue_bot_event(
+                        "boot_adopt",
+                        signal_id=root,
+                        side=pos.side,
+                        qty=float(pos.qty),
+                        price_usd=float(pos.entry_price),
+                        payload={"reason": "resumed_at_boot",
+                                 "entry_price": float(pos.entry_price)},
+                    )
+                except Exception:
+                    self.log.exception("boot_adopt bookkeeping failed; position "
+                                       "stays adopted, tick loop owns it")
             else:
                 root = state.latest_entry_coid_root()
                 self.log.warning("Boot found open position %s qty=%.4f @ %.2f. "
