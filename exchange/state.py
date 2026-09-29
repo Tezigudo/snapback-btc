@@ -5,7 +5,8 @@ Schema:
     'deploy_start_equity'       : float
     'deploy_start_ts'           : ISO ts
     'last_entry_bar_ts'         : ISO ts of bar bot last considered for entry
-    'consecutive_losses'        : int
+    'consecutive_losses'        : int  UNENFORCED/DEAD - nothing writes or reads it
+                                  (docs/CONSECUTIVE_LOSS_BREAKER_PLAN.md)
     'daily_anchor_date'         : YYYY-MM-DD UTC date of today's equity anchor
     'daily_anchor_equity'       : float equity at UTC-day start
     'daily_loss_breaker_date'   : YYYY-MM-DD UTC date when breaker was last emitted
