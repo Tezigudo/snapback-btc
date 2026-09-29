@@ -32,15 +32,28 @@ Verdicts:
 The `gate:` line prints the exact reason string `_can_adopt` returns, so it is
 byte-comparable with a boot's `boot-resume OBSERVE: WOULD ... — <reason>` line.
 
+Run it AS ROOT on the droplet (the same user as the leg's service), from the
+repo root, with the repo's venv:  sudo ./.venv/bin/python tools/boot_resume_probe.py v1
+A `mode=ro` open of a WAL database still needs access to its -shm/-wal files.
+
+Also guaranteed while `evaluate` runs: every `exchange.state` connection
+helper is replaced with one that raises, so nothing can open the DB
+read-write through the state module, and exchange-client log lines are
+rewritten to carry exception TYPES only (a raw ccxt error can echo the request).
+
 Exit codes: 0 evaluated; 2 usage / env error; 3 read failure.
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 import sqlite3
 import sys
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +129,47 @@ def open_state_ro(path: Path) -> sqlite3.Connection:
     return conn
 
 
+class _TypeOnlyFilter(logging.Filter):
+    """Replace exception arguments in a log record with their type name."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args:
+            args = record.args if isinstance(record.args, tuple) else (record.args,)
+            record.args = tuple(type(a).__name__ if isinstance(a, BaseException) else a
+                                for a in args)
+        if record.exc_info:
+            record.exc_info = None
+            record.exc_text = None
+        return True
+
+
+_CLIENT_LOGGERS = ("exchange.binance_client",)
+
+
+@contextlib.contextmanager
+def probe_guards() -> Iterator[None]:
+    """While active: the state module cannot open ANY connection, and the
+    exchange client's log lines carry exception types only."""
+    from exchange import state
+
+    def _forbidden(*_a: Any, **_k: Any) -> Any:
+        raise ReadOnlyViolation("read-only probe: exchange.state DB access is forbidden; "
+                                "use the mode=ro connection")
+
+    saved_conn = state._conn
+    flt = _TypeOnlyFilter()
+    loggers = [logging.getLogger(n) for n in _CLIENT_LOGGERS]
+    state._conn = _forbidden
+    for lg in loggers:
+        lg.addFilter(flt)
+    try:
+        yield
+    finally:
+        state._conn = saved_conn
+        for lg in loggers:
+            lg.removeFilter(flt)
+
+
 def _one(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> Any:
     row = conn.execute(sql, args).fetchone()
     return row[0] if row else None
@@ -132,22 +186,34 @@ class ProbeResult:
 def evaluate(params: dict, client: Any, conn: sqlite3.Connection,
              now_s: float | None = None) -> ProbeResult:
     """Run the boot's adopt decision, read-only. `client` must be a ReadOnlyClient."""
+    if not isinstance(client, ReadOnlyClient):
+        raise ReadOnlyViolation("evaluate() only accepts a ReadOnlyClient")
+    with probe_guards():
+        return _evaluate(params, client, conn,
+                         time.time() if now_s is None else now_s)
+
+
+def _evaluate(params: dict, client: Any, conn: sqlite3.Connection,
+              now_s: float) -> ProbeResult:
+    from bot import ARMING_PREREQS_BUILT
     from bot_internals import adopt_loop_guard, bracket_state, can_adopt, signal_bar_seed
     from exchange import state
     from exchange.constraints import fallbacks_for_symbol, merge_with_live
 
-    if not isinstance(client, ReadOnlyClient):
-        raise ReadOnlyViolation("evaluate() only accepts a ReadOnlyClient")
     symbol = str(params["symbol"])
     hedge_cfg = params.get("hedge") or {}
     coid_prefix = str(hedge_cfg.get("client_order_id_prefix", "snap-v1-"))
-    br = params.get("boot_resume") or {}
+    br_raw = params.get("boot_resume")
+    br = br_raw if isinstance(br_raw, dict) else {}   # malformed = disabled, as bot.py
     entry_tf = str((params.get("timeframes") or {}).get("entry", "15m"))
 
     inputs: dict[str, Any] = {
+        "probed_at_utc": datetime.fromtimestamp(now_s, tz=UTC).isoformat(timespec="seconds"),
         "symbol": symbol, "env": client.env, "coid_prefix": coid_prefix,
-        "boot_resume": {"enabled": bool(br.get("enabled", False)),
-                        "observe_only": bool(br.get("observe_only", True))},
+        # Strict booleans, exactly as Bot._boot_resume_verdict reads them.
+        "boot_resume": {"enabled": br.get("enabled", False) is True,
+                        "observe_only": br.get("observe_only", True) is not False},
+        "arming_prereqs_built": bool(ARMING_PREREQS_BUILT),
         "reprotect": params.get("reprotect") or {},
     }
 
@@ -171,8 +237,18 @@ def evaluate(params: dict, client: Any, conn: sqlite3.Connection,
     entry_ts = _one(conn, state.LATEST_ENTRY_TS_SQL)
     last_bar = _one(conn, state.META_GET_SQL, ("last_entry_bar_ts",))
     adopt_log = _one(conn, state.META_GET_SQL, ("boot_adopt_log",))
+    age = None
+    if entry_ts:
+        try:
+            t = datetime.fromisoformat(str(entry_ts))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=UTC)
+            s_ = max(0, int(now_s - t.timestamp()))
+            age = f"{s_ // 3600}h{(s_ % 3600) // 60:02d}m (from latest entry fill)"
+        except ValueError:
+            age = "unknown (entry fill ts unparseable)"
     inputs.update({"active_bracket": ab_raw, "latest_entry_root": latest_root,
-                   "latest_entry_fill_ts": entry_ts,
+                   "latest_entry_fill_ts": entry_ts, "position_age": age,
                    "last_entry_bar_ts": last_bar, "boot_adopt_log": adopt_log})
     try:
         ab_sid = (json.loads(ab_raw) or {}).get("signal_id") if ab_raw else None
@@ -208,8 +284,7 @@ def evaluate(params: dict, client: Any, conn: sqlite3.Connection,
     bar_seconds = int(client.ex.parse_timeframe(entry_tf))
     seed = signal_bar_seed(last_bar, entry_ts, bar_seconds)
     inputs["dedup_seed"] = seed.isoformat() if seed is not None else None
-    allowed, gwhy, _ = adopt_loop_guard(adopt_log, latest_root,
-                                        time.time() if now_s is None else now_s)
+    allowed, gwhy, _ = adopt_loop_guard(adopt_log, latest_root, now_s)
     inputs["loop_guard"] = gwhy
 
     if not inputs["boot_resume"]["enabled"]:
@@ -225,14 +300,22 @@ def evaluate(params: dict, client: Any, conn: sqlite3.Connection,
 
 
 def render(instance: str, res: ProbeResult) -> str:
-    lines = [f"boot-resume probe — instance={instance} (read-only)",
+    lines = [f"boot-resume probe — instance={instance} (read-only) — probed at "
+             f"{res.inputs.get('probed_at_utc', '?')} UTC",
              f"VERDICT: {res.verdict} — {res.reason}"]
+    if (res.verdict == "ADOPT"
+            and res.inputs.get("active_bracket_sid_matches_latest_root") is False):
+        lines.append("WARNING: C5 mismatch — active_bracket.signal_id != latest entry "
+                     "root — treat this probe as a DISAGREEMENT (count resets)")
     if res.gate is not None:
         lines.append(f"gate: {'ADOPT' if res.gate[0] else 'REFUSE'} — {res.gate[1]}")
     br = res.inputs.get("boot_resume") or {}
     if res.verdict != "FLAT":
         if not br.get("enabled"):
             now = "FLATTEN (boot_resume disabled)"
+        elif not br.get("observe_only", True) and not res.inputs.get("arming_prereqs_built"):
+            now = ("FLATTEN (ARMING INTERLOCK: observe_only is false but "
+                   "bot.ARMING_PREREQS_BUILT is False — ERROR + alert, then flatten)")
         elif br.get("observe_only", True):
             now = "FLATTEN (observe_only: verdict is logged, then the position is closed)"
         else:
@@ -272,10 +355,17 @@ def resolve_instance(instance: str) -> tuple[dict, Path]:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    usage = (f"usage: boot_resume_probe.py <{'|'.join(PROBE_INSTANCES)}>\n"
+             "  takes the INSTANCE name (v1), not the systemd unit (snapback-btc).\n"
+             "  READ-ONLY: places no order, cancels nothing, writes nothing.\n"
+             "  Run AS ROOT on the droplet, from the repo root, with the repo venv:\n"
+             "    sudo ./.venv/bin/python tools/boot_resume_probe.py v1\n"
+             "  (a read-only open of the WAL state DB still needs its -shm/-wal files)")
+    if argv in (["-h"], ["--help"]):
+        print(usage)
+        return 0
     if len(argv) != 1 or argv[0] not in PROBE_INSTANCES:
-        print(f"usage: boot_resume_probe.py <{'|'.join(PROBE_INSTANCES)}>\n"
-              "  takes the INSTANCE name (v1), not the systemd unit (snapback-btc)",
-              file=sys.stderr)
+        print(usage, file=sys.stderr)
         return 2
     instance = argv[0]
     try:

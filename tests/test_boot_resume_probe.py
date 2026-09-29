@@ -280,3 +280,86 @@ class TestCli:
              patch.object(probe, "build_readonly_client",
                           side_effect=AssertionError("client built")):
             assert probe.main(["donchian"]) == 2
+
+    @pytest.mark.parametrize("inst", ["donchian", "sol_supertrend"])
+    def test_real_env_error_path_exits_2_before_any_client(self, inst, tmp_path, capsys):
+        """No mock of the loader: point REPO_ROOT at an empty dir so the REAL
+        load_env_for_instance raises EnvError for a sub-account leg."""
+        from exchange.env import EnvError, load_env_for_instance
+        with patch("exchange.env.REPO_ROOT", tmp_path):
+            with pytest.raises(EnvError):
+                load_env_for_instance(inst)
+            with patch.object(probe, "build_readonly_client",
+                              side_effect=AssertionError("client built")):
+                assert probe.main([inst]) == 2
+        assert "FATAL" in capsys.readouterr().err
+
+    def test_help_says_run_as_root(self, capsys):
+        assert probe.main(["--help"]) == 0
+        assert "AS ROOT" in capsys.readouterr().out
+
+
+class TestProbeGuardsAndOutput:
+
+    def test_state_module_cannot_open_the_db_during_evaluate(self, isolated_state_db):
+        """Anything reaching exchange.state while evaluate runs is refused —
+        so no path inside the probe can open the DB read-write."""
+        _seed()
+        conn = open_state_ro(isolated_state_db)
+        inner = _inner_exchange()
+        inner.fetch_positions.side_effect = lambda *_a, **_k: state.set_meta("x", "y")
+        with pytest.raises(ReadOnlyViolation):
+            evaluate(dict(_MINIMAL_PARAMS), _ro_client(inner), conn)
+        conn.close()
+        # Restored afterwards, and the write never happened.
+        assert state.get_meta("x") is None
+
+    def test_client_log_lines_carry_exception_type_only(self, isolated_state_db, caplog):
+        _seed()
+        conn = open_state_ro(isolated_state_db)
+        inner = _inner_exchange()
+        inner.fapiPrivateGetOpenAlgoOrders.side_effect = RuntimeError(
+            "GET /fapi/v1/openAlgoOrders?signature=LEAKME")
+        with caplog.at_level("WARNING"):
+            res = evaluate(dict(_MINIMAL_PARAMS), _ro_client(inner), conn)
+        conn.close()
+        text = "\n".join(r.getMessage() for r in caplog.records)
+        assert "LEAKME" not in text
+        assert "RuntimeError" in text
+        assert res.verdict == "REFUSE"
+
+    def test_output_has_probe_time_and_position_age(self, isolated_state_db):
+        _seed()
+        with open_state_ro(isolated_state_db) as conn:
+            res = evaluate(dict(_MINIMAL_PARAMS), _ro_client(_inner_exchange()), conn)
+        out = probe.render("v1", res)
+        assert "probed at 20" in out and " UTC" in out
+        assert "position_age" in out and "(from latest entry fill)" in out
+
+    def test_c5_mismatch_is_flagged_loudly_on_adopt(self, isolated_state_db):
+        _seed(bracket={**_ARMED_BRACKET, "signal_id": "sig-STALE"})
+        with open_state_ro(isolated_state_db) as conn:
+            res = evaluate(dict(_MINIMAL_PARAMS), _ro_client(_inner_exchange()), conn)
+        assert res.verdict == "ADOPT"               # the gate itself has no C5
+        assert "WARNING: C5 mismatch" in probe.render("v1", res)
+
+    def test_no_c5_warning_when_roots_match(self, isolated_state_db):
+        _seed()
+        with open_state_ro(isolated_state_db) as conn:
+            res = evaluate(dict(_MINIMAL_PARAMS), _ro_client(_inner_exchange()), conn)
+        assert "C5 mismatch" not in probe.render("v1", res)
+
+    def test_restart_line_reports_the_arming_interlock(self, isolated_state_db):
+        _seed()
+        params = {**_MINIMAL_PARAMS,
+                  "boot_resume": {"enabled": True, "observe_only": False}}
+        with open_state_ro(isolated_state_db) as conn:
+            res = evaluate(params, _ro_client(_inner_exchange()), conn)
+        assert "ARMING INTERLOCK" in probe.render("v1", res)
+
+    def test_malformed_boot_resume_reads_as_disabled(self, isolated_state_db):
+        _seed()
+        with open_state_ro(isolated_state_db) as conn:
+            res = evaluate({**_MINIMAL_PARAMS, "boot_resume": ["x"]},
+                           _ro_client(_inner_exchange()), conn)
+        assert res.verdict == "FLATTEN"
