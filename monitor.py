@@ -71,6 +71,12 @@ DEFAULTS: dict[str, Any] = {
     # See the ROLLOVER GRACE section of _equity_from_db. Must comfortably clear
     # the slowest leg's poll interval (60s for donchian/sol_supertrend).
     "equity_anchor_grace_min":    10,
+    # ALERT-ONLY losing-streak monitor (docs/CONSECUTIVE_LOSS_BREAKER_PLAN.md,
+    # decision E3). Per-leg count of consecutive losing closed trades at which
+    # to alert once. Each is the leg's longest backtest streak + 1, i.e. "worse
+    # than anything in 6 years of history". Never blocks entries or changes
+    # risk; a leg missing from this map is not monitored.
+    "streak_alert_thresholds":    {"v1": 13, "donchian": 9, "sol_supertrend": 7},
 }
 
 LEGS: list[dict[str, str]] = [
@@ -432,6 +438,78 @@ def _equity_from_db(
         return None, None
 
 
+def _losing_streak(db_path: Path) -> int | None:
+    """Current run of consecutive losing closed trades, or None on read failure.
+
+    Recomputed from scratch on every call (no incremental counter), so it is
+    idempotent across re-runs and restarts.
+
+    Source: `fills` rows with side='close', in id order. Those are written only
+    for strategy exits (bracket_exit, time_stop, breakeven_exit, channel/flip
+    exits). Infrastructure closes (boot_flatten, HALT, kill) write NO fills row
+    — they are events only — so they are excluded by construction.
+
+    Classification by `pnl_usd` (gross; see bot._exit_pnl_usd):
+      < 0   loss      -> extends the streak
+      > 0   win       -> resets it to 0
+      == 0 or NULL    -> breakeven / unknown: NEUTRAL, neither extends nor
+                         resets. A trade whose outcome we cannot establish
+                         must not manufacture or erase a streak.
+    """
+    try:
+        import sqlite3
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0) as conn:
+            rows = conn.execute(
+                "SELECT pnl_usd FROM fills WHERE side='close' ORDER BY id").fetchall()
+    except Exception as e:
+        log.warning("monitor: streak read failed for %s: %s", db_path, e)
+        return None
+    streak = 0
+    for (pnl,) in rows:
+        try:
+            v = float(pnl)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(v) or v == 0:
+            continue
+        streak = streak + 1 if v < 0 else 0
+    return streak
+
+
+def _check_streak(name: str, db_path: Path, cfg: dict[str, Any],
+                  state: dict[str, Any]) -> None:
+    """ALERT-ONLY. Emit ONE alert when a leg's losing streak reaches its
+    threshold; stay silent until the streak resets (a win), then re-arm.
+
+    Touches nothing but monitor state and the alert path: no HALT file, no
+    bot state write, no risk change. The latch is committed only after a
+    successful send so an SMTP failure retries next tick.
+    """
+    threshold = (cfg.get("streak_alert_thresholds") or {}).get(name)
+    if not threshold:
+        return
+    streak = _losing_streak(db_path)
+    if streak is None:
+        return
+    latched = state.setdefault("streak_alerted", {})
+    if streak < int(threshold):
+        latched.pop(name, None)   # streak broke (or never reached it): re-arm
+        return
+    if latched.get(name):
+        return
+    sent = _emit(
+        f"LOSING STREAK {streak}: {name}",
+        f"{name} has {streak} consecutive losing closed trades "
+        f"(alert threshold {threshold} = longest backtest streak + 1).\n"
+        f"This is worse than anything in the backtest history. It does NOT "
+        f"block trading; re-run the live-vs-backtest parity review.\n"
+        f"See docs/CONSECUTIVE_LOSS_BREAKER_PLAN.md. No further alert until a win resets the streak.",
+        state, kind=f"streak:{name}", cooldown_min=0, force=True,
+    )
+    if sent:
+        latched[name] = streak
+
+
 def _check_leg(leg: dict[str, str], cfg: dict[str, Any], state: dict[str, Any]) -> None:
     name = leg["name"]
     hb_path = DATA / leg["heartbeat"]
@@ -509,6 +587,7 @@ def _check_leg(leg: dict[str, str], cfg: dict[str, Any], state: dict[str, Any]) 
     # 4. equity check (LIVE only — for DRY legs, balance changes are paper)
     if leg.get("live") and db_path.exists():
         _check_equity(name, db_path, cfg, state)
+        _check_streak(name, db_path, cfg, state)
 
 
 def _equity_band(drop_pct: float, cfg: dict[str, Any]) -> str:
