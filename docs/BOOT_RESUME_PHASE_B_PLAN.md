@@ -18,20 +18,67 @@ supersedes that plan's §5 gate wording.
 | C7 / D2: missing qty | Yes. Refuse → flatten. | bot_internals.py |
 | C8 / D5: loop guard | Yes. `boot_adopt_log`: adopts 1–3 proceed and the **4th** flattens and alerts (God's "max 3 / 30 min"; the §6 T6 text said "3rd"). | bot_internals.py, bot.py |
 | Armed verdict log | Added: `boot-resume ARMED: ADOPT\|FLATTEN ... — reason`. | bot.py |
-| C5 root match, C6 re-read, C9 book retry, C10 capped-alert seed, C11 resume alert | **NOT built.** Out of this task's scope. C5 and C6 are §3 arming hazards, and §8 step 9 expects C11's email, so **these block the arming flip**, though not this branch. | — |
+| Fix pass after the fact-check | Added a **hard arming interlock**: `ARMING_PREREQS_BUILT = False` in bot.py. **Observe mode makes zero exchange calls**: it runs only the offline precheck, and the log says the book check was skipped. The per-bar write now has a 0.5 s busy cap. A malformed `boot_resume` counts as disabled, and flags are strict booleans. Probe guards added: state-DB access is forbidden and client logs carry exception types only. The probe now prints probe time and position age, a loud C5 warning, and the interlock status. | bot.py, state.py, tools/ |
 | T9 HALT-after-adopt, T10 kill-after-adopt, T7 retry | **Not written.** T7 depends on C9. | — |
 
-**Still NOT ARMED.** In code, `boot_resume.enabled` defaults to False and `observe_only` defaults
-to True. v1's `params.yaml` ships `observe_only: true`, and donchian and sol have no block. The flatten
-block is byte-identical to `704df89` (sha256 `c95930f5…`, pinned in
-`tests/test_boot_resume_flag_off.py`). `git diff 704df89 -- bot.py` is 218 insertions and 0 deletions. The
-only new flag-off side effect is one `meta` upsert (`last_entry_bar_ts`) per evaluated bar on
-every leg. It is best-effort and never blocks evaluation.
+### Blockers before arming (all must be done before `ARMING_PREREQS_BUILT` flips)
 
-**Tests (local `.venv`):** `704df89` baseline gives 438 passed, 5 skipped. After Phase A: 463 / 5. Phase B
-branch: **548 passed, 5 skipped**, with 0 failures.
+Arming now needs **two** changes: `observe_only: false` in config, **and** a reviewed code change
+that sets `bot.ARMING_PREREQS_BUILT = True`. With only the config line changed, boot logs an ERROR,
+alerts, and flattens as before (tested). The constant may flip only once every item below is built
+and tested:
 
-**Next:** review, then the C5/C6/C11 decision, then deploy with `observe_only: true` (§8 step 3).
+1. **C5: identity.** Require `active_bracket.signal_id == latest entry coid root`. Without it, a
+   stale `active_bracket` or a manual position that lands inside the ±2% / qty tolerance can be adopted.
+2. **C6: re-read before commit.** Re-fetch the position as the last step, and refuse unless side,
+   qty and entry are unchanged. `_can_adopt` does two book round-trips after the single read.
+3. **SL missing and mark already through the stop.** Adopting "bracket missing but reprotect can
+   restore it" when the mark is already past the stop price means reprotect's placement is rejected
+   (it would trigger immediately) and it keeps retrying while the position is **unprotected**.
+   Whether failed placements count toward `max_replaces_per_position` was not verified here. This
+   must flatten instead.
+4. **Plain-book SL legs are not scoped to our COID prefix.** `bracket_state` classifies plain
+   orders with `reduce_only_bracket_leg`, which does not check the `snap-...` prefix, so a foreign
+   or manual reduce-only stop reads as "our SL present". Scope it to the leg's prefix, as algo rows are.
+5. **D5 window anchored on the first adopt.** A *slow* crash loop, one crash every 11+ minutes,
+   re-anchors every 30 min and adopts forever. Use a sliding window, or a count that does not reset
+   on time until the position (signal_id) changes.
+6. **C11: alert on every adopt** ("Position RESUMED after restart"). §8 step 9 expects this email.
+7. **C9: bounded book retry at boot.** This is the reboot network flap. Without it, the most likely
+   reboot outcome is a refusal, then a flatten (safe, but it defeats the feature).
+8. T9/T10 (HALT / kill switch after adopt) written and passing.
+
+**Still NOT ARMED.** It is locked **twice**:
+
+- **Config.** `boot_resume.enabled` defaults to False and `observe_only` defaults to True. Both are
+  read as strict booleans. v1's `params.yaml` ships `observe_only: true`, and donchian and sol have
+  no block.
+- **Code.** `ARMING_PREREQS_BUILT = False`.
+
+Evidence and footprint:
+
+- The flatten block is byte-identical to `704df89` (sha256 `c95930f5…`, pinned in
+  `tests/test_boot_resume_flag_off.py`).
+- `git diff 704df89 -- bot.py` is insertions only; comment text was also edited outside the flatten
+  block.
+- Observe mode's client call sequence is **identical** to a leg with no `boot_resume` block (tested).
+- The only new flag-off side effect is one `meta` upsert (`last_entry_bar_ts`) per evaluated bar on
+  every leg. It is best-effort, with a 0.5 s busy cap, and never blocks or delays evaluation beyond that.
+- Observe-mode log lines changed. Phase B observe prints
+  `boot-resume OBSERVE: PRECHECK OK|WOULD FLATTEN ...`, not the Phase A `WOULD ADOPT` line, because
+  it no longer reads the books. The full verdict comes from the probe, which is the counted evidence
+  anyway.
+
+**Tests (local `.venv`):**
+
+| Tree | Passed | Skipped | Failed |
+|---|---|---|---|
+| `704df89` baseline | 438 | 5 | — |
+| After Phase A | 463 | 5 | — |
+| Phase B, first cut | 548 | 5 | — |
+| Phase B, after the fix pass | **570** | 5 | **0** |
+
+**Next:** review. After that, deploy is possible, safe to run observe-only and interlocked (§8 step 3). The blockers above are a separate build.
 
 Line numbers refer to **`droplet` @ `704df89`** unless marked `f83b8a3` (the Phase A branch).
 On `main`, the same symbols sit roughly 250 lines lower, and some of them do not exist there at all.
