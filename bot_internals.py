@@ -881,6 +881,10 @@ def _naive_utc(ts) -> pd.Timestamp:
     exists to stop — so every seed is normalised here.
     """
     t = pd.Timestamp(ts)
+    if pd.isna(t):
+        # pd.Timestamp('NaT') does not raise, and NaT would win max() in
+        # signal_bar_seed — reject it like any other unparseable value.
+        raise ValueError(f"non-finite timestamp: {ts!r}")
     if t.tzinfo is not None:
         t = t.tz_convert("UTC").tz_localize(None)
     return t

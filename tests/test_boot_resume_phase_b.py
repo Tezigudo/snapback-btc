@@ -253,6 +253,20 @@ class TestSignalBarSeedPure:
         assert signal_bar_seed(None, None, 900) is None
         assert signal_bar_seed("garbage", "also garbage", 900) is None
 
+    def test_nat_persisted_falls_back_to_the_fill(self):
+        from bot_internals import signal_bar_seed
+        got = signal_bar_seed("NaT", "2026-09-29T10:07:00+00:00", 900)
+        assert got == pd.Timestamp("2026-09-29 09:45:00")
+
+    def test_nat_on_both_is_none(self):
+        from bot_internals import signal_bar_seed
+        assert signal_bar_seed("NaT", "NaT", 900) is None
+
+    def test_valid_persisted_beats_nat_fill(self):
+        from bot_internals import signal_bar_seed
+        got = signal_bar_seed("2026-09-29T10:00:00+00:00", "NaT", 900)
+        assert got == pd.Timestamp("2026-09-29 10:00:00")
+
     def test_fill_exactly_on_a_bar_boundary(self):
         from bot_internals import signal_bar_seed
         got = signal_bar_seed(None, "2026-09-29T10:00:00+00:00", 900)
